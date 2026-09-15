@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "vitest run tenant",
-    "test:integration": "vitest run --testTimeout=60000",
+    "test": "vitest run tenant --reporter=default",
+    "test:integration": "vitest run --testTimeout=60000 --reporter=default",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

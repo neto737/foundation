@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --reporter=default",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
