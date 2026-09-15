@@ -7,6 +7,9 @@ updates:
       day: "monday"
       timezone: "UTC"
       time: "03:00"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 30
 
   - package-ecosystem: github-actions
