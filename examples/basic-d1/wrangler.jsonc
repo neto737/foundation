@@ -24,7 +24,7 @@
         {
           "binding": "DB",
           "database_name": "basic-d1-dev",
-          "database_id": "REPLACE_WITH_DEV_D1_DATABASE_ID",
+          "database_id": "1cd6891e-4d58-4781-8786-fe7f78380483",
           "migrations_dir": "migrations",
         },
       ],
@@ -35,7 +35,7 @@
         {
           "binding": "DB",
           "database_name": "basic-d1",
-          "database_id": "REPLACE_WITH_PROD_D1_DATABASE_ID",
+          "database_id": "4584f2df-4330-4c4b-aa25-e2f288a0b90b",
           "migrations_dir": "migrations",
         },
       ],

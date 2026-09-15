@@ -3,12 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.15.1",
   "engines": {
     "node": ">=22.22.0"
   },
   "scripts": {
-    "db:migrate:local": "wrangler d1 migrations apply __PROJECT_NAME__ --local",
     "build": "vite build",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "pnpm db:migrate:local",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:seed": "wrangler d1 execute DB --local --file seeds/local.sql",
+    "db:status": "pnpm db:status:local",
+    "db:status:local": "wrangler d1 migrations list DB --local",
+    "db:status:remote": "wrangler d1 migrations list DB --remote",
     "dev": "vite",
     "deploy": "pnpm build && wrangler deploy",
     "typecheck": "tsc --noEmit"
@@ -28,8 +36,15 @@
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^6.1.1",
+    "drizzle-kit": "^0.31.4",
     "typescript": "^6.0.3",
     "vite": "^8.3.0",
     "wrangler": "^4.35.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
   }
 }

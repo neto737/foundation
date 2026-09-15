@@ -6,7 +6,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./d1": "./dist/d1.js",
-    "./postgres": "./dist/postgres.js"
+    "./postgres": "./dist/postgres.js",
+    "./postgres-migrations": "./dist/postgres-migrations.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260911.1",
-    "@t00ls-dev/typescript-config": "workspace:*"
+    "@t00ls-dev/typescript-config": "workspace:*",
+    "@types/node": "^22.20.0"
   }
 }

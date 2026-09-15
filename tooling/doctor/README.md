@@ -11,6 +11,7 @@ Cloudflare D1 project without exposing secret values.
 - required names in `.dev.vars.example`;
 - configured D1 bindings and at least one SQL migration in each migrations
   directory;
+- standard `db:generate`, `db:migrate`, `db:seed`, and `db:status` scripts;
 - forbidden secret files tracked in Git, including real `.env*`, `.dev.vars*`,
   private key, and PKCS#12 files. Example, sample, and template env files are
   allowed.

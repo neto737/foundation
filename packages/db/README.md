@@ -23,6 +23,8 @@ pnpm --filter <app> add '@t00ls-dev/db@workspace:*'
 - `@t00ls-dev/db/d1`: `createD1Database(binding)` retorna uma instância Drizzle.
 - `@t00ls-dev/db/postgres`: `createPostgresDatabase(connectionString)` retorna
   `{ client, db }`.
+- `@t00ls-dev/db/postgres-migrations`: consulta o status do journal oficial de
+  migrations Drizzle no PostgreSQL.
 
 ## Exemplo
 
@@ -38,6 +40,7 @@ await client.end();
 
 Postgres usa `prepare: false`; o consumidor gerencia ciclo de vida, schema e
 transações. Não registre connection strings e conceda ao usuário do banco apenas
-os privilégios necessários. O pacote não descobre nem executa migrações: gere,
-revise e aplique migrações Drizzle fora do caminho de requisição.
-`MigrationStatus` é somente um contrato de status.
+os privilégios necessários. O pacote não executa migrações: o app gera e aplica
+o histórico com Drizzle Kit fora do caminho de requisição. O helper de status é
+read-only e compara o client PostgreSQL recebido com o journal versionado pelo
+app.

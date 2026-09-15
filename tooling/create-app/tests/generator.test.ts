@@ -26,14 +26,18 @@ describe("generateApp", () => {
     const result = await generateApp("My D1 App", { cwd: sandbox });
     const manifest = JSON.parse(
       await readFile(join(result.target, "package.json"), "utf8"),
-    ) as { name: string; private: boolean };
+    ) as { name: string; packageManager: string; private: boolean };
     const wrangler = await readFile(
       join(result.target, "wrangler.jsonc"),
       "utf8",
     );
 
     expect(result.name).toBe("my-d1-app");
-    expect(manifest).toMatchObject({ name: "my-d1-app", private: true });
+    expect(manifest).toMatchObject({
+      name: "my-d1-app",
+      packageManager: "pnpm@10.15.1",
+      private: true,
+    });
     expect(wrangler).toContain('"binding": "DB"');
     await expect(
       readFile(join(result.target, "src/worker.ts"), "utf8"),
@@ -43,7 +47,13 @@ describe("generateApp", () => {
     ).resolves.toContain("requestPasswordReset");
     await expect(
       readFile(join(result.target, "migrations/0001_better_auth.sql"), "utf8"),
-    ).resolves.toContain("CREATE TABLE user");
+    ).resolves.toContain("CREATE TABLE");
+    await expect(
+      readFile(join(result.target, "migrations/meta/_journal.json"), "utf8"),
+    ).resolves.toContain("0001_better_auth");
+    await expect(
+      readFile(join(result.target, "seeds/local.sql"), "utf8"),
+    ).resolves.toContain("SELECT 1");
     await expect(
       readFile(join(result.target, ".gitignore"), "utf8"),
     ).resolves.toContain("node_modules");

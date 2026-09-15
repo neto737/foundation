@@ -45,7 +45,7 @@ da primeira entrega.
 | Pacote                     | Estado atual                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@t00ls-dev/config`        | Configuração tipada para ambiente, D1/PostgreSQL, Better Auth, tenancy e flags de telemetria.                                                                       |
-| `@t00ls-dev/db`            | Factories Drizzle para D1 e PostgreSQL, sem esconder recursos específicos dos bancos.                                                                               |
+| `@t00ls-dev/db`            | Factories Drizzle para D1 e PostgreSQL e status read-only do journal PostgreSQL, sem esconder recursos específicos dos bancos.                                      |
 | `@t00ls-dev/auth`          | Configuração Better Auth para senha, verificação de e-mail, recuperação, magic link e Google OAuth opcional. Emite JavaScript e declarações TypeScript consumíveis. |
 | `@t00ls-dev/tenant`        | Contexto de tenant, memberships, troca de tenant ativo, convites e repositories D1/PostgreSQL.                                                                      |
 | `@t00ls-dev/access`        | Roles configuráveis como conjuntos de permissões, separadas da autenticação.                                                                                        |
@@ -69,7 +69,8 @@ não é necessária para validar a v0.1.
 - envio de e-mail via Resend;
 - `/health` e fallback de rotas da SPA;
 - configuração separada para local, DEV e PROD;
-- migration inicial do schema de autenticação;
+- migration inicial e journal Drizzle do schema de autenticação;
+- comandos padronizados de geração, migration, seed e status;
 - testes Playwright desktop e mobile.
 
 O ambiente local usa `.dev.vars.example` como contrato de nomes de secrets, sem
@@ -83,7 +84,8 @@ novo ou vazio. O projeto gerado:
 - é autônomo e não contém dependências `workspace:*`;
 - usa React, React Router, Hono, D1, Drizzle e Better Auth;
 - inclui Resend, Google OAuth opcional e recuperação de senha;
-- inclui configuração Wrangler, migration e documentação inicial;
+- inclui configurações Wrangler/Drizzle, migration, seed local e documentação
+  inicial;
 - instala, passa no typecheck e compila fora do monorepo.
 
 O gerador recusa sobrescrever diretórios não vazios e preserva a causa de erros
@@ -97,7 +99,7 @@ D1. Atualmente verifica:
 - versão do Node contra `package.json#engines`;
 - manifesto e configuração Wrangler;
 - nomes obrigatórios em `.dev.vars.example`;
-- bindings D1 e presença de migrations SQL;
+- bindings D1, presença de migrations SQL e scripts de banco padronizados;
 - arquivos de secrets ou chaves indevidamente rastreados pelo Git;
 - saída humana ou JSON e códigos de saída previsíveis.
 
@@ -121,7 +123,8 @@ A cobertura atual inclui:
   convites;
 - D1 real local por Miniflare;
 - PostgreSQL 17 real por Testcontainers;
-- 13 testes no gate de integração completo;
+- 14 testes no gate de integração completo, incluindo migration e seed
+  PostgreSQL pelo histórico Drizzle;
 - quatro cenários Playwright em desktop e mobile;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
@@ -140,6 +143,10 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 - `Smoke Hyperdrive`: execução manual contra um endpoint configurado. É apenas
   um smoke remoto; não implementa um binding Hyperdrive dentro deste
   repositório.
+- Migrations são app-owned: Drizzle Kit gera os históricos por dialeto, Wrangler
+  aplica e consulta D1, e Drizzle Kit aplica PostgreSQL. Seeds são separados e
+  migrations aplicadas recebem somente correções forward-only. O procedimento
+  está em [Migrations](runbooks/migrations.md).
 
 ## Pendências para a v0.1 operacional
 
@@ -147,10 +154,8 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 
 Estas tarefas não exigem mudança de arquitetura, mas bloqueiam os deploys:
 
-- criar ou confirmar os bancos D1 de DEV e PROD;
-- substituir os IDs provisórios em `examples/basic-d1/wrangler.jsonc`;
 - configurar `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` no GitHub;
-- configurar `DEV_HEALTH_URL`, `PROD_D1_DATABASE_NAME` e `PROD_HEALTH_URL`;
+- configurar `DEV_HEALTH_URL` e `PROD_HEALTH_URL`;
 - configurar no Worker `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e
   `RESEND_API_KEY`;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
@@ -164,18 +169,15 @@ as credenciais Cloudflare não estiverem configuradas.
 
 ### Implementação prioritária
 
-1. **Migrations oficiais:** criar comandos consistentes de migrate, seed e
-   status para D1 e PostgreSQL, mantendo seeds separados e documentando
-   forward-fix.
-2. **Proteção de produção:** adicionar GitHub Environment `production`,
+1. **Proteção de produção:** adicionar GitHub Environment `production`,
    aprovação obrigatória e confirmação explícita ao workflow manual.
-3. **Readiness:** adicionar `/ready`, distinguir liveness de readiness e evitar
+2. **Readiness:** adicionar `/ready`, distinguir liveness de readiness e evitar
    exposição de detalhes sensíveis.
-4. **Testes dos primitives:** adicionar testes unitários diretos para config,
+3. **Testes dos primitives:** adicionar testes unitários diretos para config,
    db, tenant, access, email e observability, além da cobertura de integração já
    existente.
-5. **Documentação operacional:** criar runbooks dedicados para migrations,
-   ambientes, deploy, segurança, testes, LGPD e criação de apps.
+4. **Documentação operacional:** criar runbooks dedicados para ambientes,
+   deploy, segurança, testes, LGPD e criação de apps.
 
 ### Evolução após a v0.1
 

@@ -1,4 +1,5 @@
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
+import { getPostgresMigrationStatus } from "@t00ls-dev/db/postgres-migrations";
 import {
   createPostgresInvitationRepository,
   createPostgresTenantRepository,
@@ -10,12 +11,22 @@ import {
   resolveTenantContext,
   TenantAccessDeniedError,
 } from "@t00ls-dev/tenant";
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import {
   GenericContainer,
   type StartedTestContainer,
   Wait,
 } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+const execFileAsync = promisify(execFile);
+const integrationRoot = fileURLToPath(new URL("..", import.meta.url));
+const migrationsFolder = fileURLToPath(
+  new URL("./migrations", import.meta.url),
+);
 
 describe("PostgreSQL adapter", () => {
   let container: StartedTestContainer | undefined;
@@ -46,13 +57,56 @@ describe("PostgreSQL adapter", () => {
     await client.end();
   });
 
+  it("reports, applies, and seeds app-owned Drizzle migrations", async () => {
+    if (!container) throw new Error("PostgreSQL container was not started");
+    const port = container.getMappedPort(5432);
+    const databaseUrl = `postgres://foundation:foundation@${container.getHost()}:${port}/foundation`;
+    const { client } = createPostgresDatabase(databaseUrl);
+
+    await expect(
+      getPostgresMigrationStatus(client, migrationsFolder),
+    ).resolves.toEqual({ applied: [], pending: ["0000_tenancy"] });
+
+    await execFileAsync("pnpm", ["db:migrate"], {
+      cwd: integrationRoot,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    });
+
+    await expect(
+      getPostgresMigrationStatus(client, migrationsFolder),
+    ).resolves.toEqual({ applied: ["0000_tenancy"], pending: [] });
+    await execFileAsync("pnpm", ["db:status"], {
+      cwd: integrationRoot,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    });
+    const beforeSeed = await client<
+      { total: number }[]
+    >`SELECT COUNT(*)::int AS total FROM tenants`;
+    expect(beforeSeed[0]?.total).toBe(0);
+
+    await execFileAsync("pnpm", ["db:seed"], {
+      cwd: integrationRoot,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    });
+    const afterSeed = await client<
+      { total: number }[]
+    >`SELECT COUNT(*)::int AS total FROM tenants WHERE id = 'example-tenant'`;
+    expect(afterSeed[0]?.total).toBe(1);
+    await client.end();
+  });
+
   it("persists tenant context, switching and invitations", async () => {
     if (!container) throw new Error("PostgreSQL container was not started");
     const port = container.getMappedPort(5432);
-    const { client } = createPostgresDatabase(
+    const admin = createPostgresDatabase(
       `postgres://foundation:foundation@${container.getHost()}:${port}/foundation`,
+    ).client;
+    await admin.unsafe("CREATE DATABASE foundation_tenant");
+    await admin.end();
+    const { client, db } = createPostgresDatabase(
+      `postgres://foundation:foundation@${container.getHost()}:${port}/foundation_tenant`,
     );
-    await client.unsafe(POSTGRES_SCHEMA);
+    await migrate(db, { migrationsFolder });
     await client`INSERT INTO tenants (id, name, created_at) VALUES ('tenant-a', 'A', NOW()), ('tenant-b', 'B', NOW())`;
     await client`INSERT INTO tenant_memberships (id, tenant_id, user_id, role, created_at) VALUES ('m1', 'tenant-a', 'user-1', 'owner', NOW()), ('m2', 'tenant-b', 'user-1', 'viewer', NOW())`;
 
@@ -99,11 +153,3 @@ describe("PostgreSQL adapter", () => {
     await client.end();
   });
 });
-
-const POSTGRES_SCHEMA = `
-CREATE TABLE tenants (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL);
-CREATE TABLE tenant_memberships (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL);
-CREATE UNIQUE INDEX tenant_memberships_tenant_user_unique ON tenant_memberships(tenant_id, user_id);
-CREATE TABLE tenant_invitations (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), email TEXT NOT NULL, role TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TIMESTAMPTZ NOT NULL, accepted_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL);
-CREATE TABLE tenant_sessions (session_id TEXT PRIMARY KEY, active_tenant_id TEXT REFERENCES tenants(id), updated_at TIMESTAMPTZ NOT NULL);
-`;

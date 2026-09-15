@@ -15,6 +15,12 @@ async function createValidProject(): Promise<void> {
       name: "test-project",
       version: "1.0.0",
       engines: { node: ">=22" },
+      scripts: {
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "wrangler d1 migrations apply DB --local",
+        "db:seed": "wrangler d1 execute DB --local --file seeds/local.sql",
+        "db:status": "wrangler d1 migrations list DB --local",
+      },
     }),
   );
   await writeFile(
@@ -150,6 +156,27 @@ describe("diagnoseProject", () => {
     const report = await diagnoseProject(sandbox);
     expect(report.results).toContainEqual(
       expect.objectContaining({ check: "migrations", severity: "error" }),
+    );
+  });
+
+  it("requires the standard database scripts", async () => {
+    await createValidProject();
+    await writeFile(
+      join(sandbox, "package.json"),
+      JSON.stringify({
+        name: "test-project",
+        version: "1.0.0",
+        engines: { node: ">=22" },
+      }),
+    );
+
+    const report = await diagnoseProject(sandbox);
+    expect(report.results).toContainEqual(
+      expect.objectContaining({
+        check: "migrations",
+        severity: "error",
+        path: "package.json",
+      }),
     );
   });
 });

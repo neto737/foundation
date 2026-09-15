@@ -47,6 +47,7 @@ export interface DoctorOptions {
 interface Manifest {
   engines?: { node?: unknown };
   name?: unknown;
+  scripts?: unknown;
   version?: unknown;
 }
 
@@ -583,6 +584,39 @@ export async function diagnoseProject(
       }
     }
   }
+
+  const migrationScripts = [
+    "db:generate",
+    "db:migrate",
+    "db:seed",
+    "db:status",
+  ];
+  const scripts =
+    typeof manifest?.scripts === "object" &&
+    manifest.scripts !== null &&
+    !Array.isArray(manifest.scripts)
+      ? manifest.scripts
+      : {};
+  const missingScripts = migrationScripts.filter(
+    (name) =>
+      !(name in scripts) ||
+      typeof (scripts as Record<string, unknown>)[name] !== "string",
+  );
+  results.push(
+    missingScripts.length > 0
+      ? result(
+          "migrations",
+          "error",
+          `Required database scripts are missing: ${missingScripts.join(", ")}.`,
+          "package.json",
+        )
+      : result(
+          "migrations",
+          "info",
+          "Database generate, migrate, seed, and status scripts are configured.",
+          "package.json",
+        ),
+  );
 
   results.push(...(await checkTrackedSecrets(projectPath)));
   return makeReport(projectPath, results);
