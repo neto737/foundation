@@ -5,9 +5,10 @@ Cloudflare-first, internal-first e nao contem regras de negocio de produtos.
 
 ## Estado
 
-A v0.1 esta em desenvolvimento e e validada dentro deste workspace. Os pacotes
-nao sao publicados automaticamente; a publicacao ocorre quando existir um
-consumidor real.
+A v0.1 possui um caminho local completo e CI verde. O primeiro deploy remoto
+depende da configuração dos recursos e secrets Cloudflare. Consulte
+[`docs/project-status.md`](docs/project-status.md) para entregas, validações,
+pendências priorizadas e itens deliberadamente adiados.
 
 ## Inicio rapido
 
@@ -20,7 +21,8 @@ pnpm check
 pnpm dev
 ```
 
-Veja `docs/architecture/overview.md` para arquitetura, limites e decisoes.
+Veja [`docs/architecture/overview.md`](docs/architecture/overview.md) para a
+arquitetura e [`docs/decisions`](docs/decisions) para as decisões vigentes.
 
 ## Posicionamento
 
