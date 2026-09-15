@@ -21,7 +21,7 @@ const app = new Hono<{ Bindings: Env }>();
 app.use("*", secureHeaders());
 app.get("/health", (context) => context.json({ status: "ok" }));
 
-app.on(["GET", "POST"], "/api/auth/**", async (context) => {
+app.on(["GET", "POST"], "/api/auth/**", (context) => {
   const email = async (to: string, subject: string, text: string) => {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",

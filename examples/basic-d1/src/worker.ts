@@ -22,7 +22,7 @@ app.use("*", foundationSecurityHeaders());
 
 app.get("/health", (context) => context.json({ status: "ok" }));
 
-app.on(["GET", "POST"], "/api/auth/**", async (context) => {
+app.on(["GET", "POST"], "/api/auth/**", (context) => {
   const database = createD1Database(context.env.DB);
   const email = createResendEmail({
     apiKey: context.env.RESEND_API_KEY,
