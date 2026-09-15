@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - tooling/*
+  - examples/*
+  - tests/*
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

@@ -1,0 +1,4 @@
+{
+  "extends": "@t00ls-dev/typescript-config/base.json",
+  "include": ["src", "test"]
+}

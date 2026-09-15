@@ -1,0 +1,31 @@
+{
+  "name": "@t00ls-dev/foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e",
+    "dev": "turbo run dev --filter=@t00ls-dev/example-basic-d1",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "test:integration": "turbo run test:integration",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "@t00ls-dev/eslint-config": "workspace:*",
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

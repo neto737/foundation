@@ -1,0 +1,32 @@
+{
+  "name": "@t00ls-dev/doctor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "doctor": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src tests",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@t00ls-dev/typescript-config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

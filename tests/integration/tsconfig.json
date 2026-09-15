@@ -1,0 +1,10 @@
+{
+  "extends": "@t00ls-dev/typescript-config/base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["DOM", "ES2023"],
+    "types": ["@cloudflare/workers-types", "vitest/globals"]
+  },
+  "include": ["**/*.ts"]
+}

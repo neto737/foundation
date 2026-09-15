@@ -1,0 +1,25 @@
+{
+  "name": "@t00ls-dev/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run tenant",
+    "test:integration": "vitest run --testTimeout=60000",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@t00ls-dev/access": "workspace:*",
+    "@t00ls-dev/db": "workspace:*",
+    "@t00ls-dev/tenant": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "miniflare": "^4.20250906.0",
+    "testcontainers": "^11.5.1",
+    "vitest": "^3.2.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "@t00ls-dev/typescript-config": "workspace:*"
+  }
+}

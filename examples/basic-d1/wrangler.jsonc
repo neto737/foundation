@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "t00ls-basic-d1",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/health"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "basic-d1-local",
+      "database_id": "local",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "env": {
+    "dev": {
+      "name": "t00ls-basic-d1-dev",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "basic-d1-dev",
+          "database_id": "REPLACE_WITH_DEV_D1_DATABASE_ID",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+    "production": {
+      "name": "t00ls-basic-d1",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "basic-d1",
+          "database_id": "REPLACE_WITH_PROD_D1_DATABASE_ID",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+  },
+}

@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+:root {
+  color: #17231d;
+  background: #e9f0e7;
+  font-family: Georgia, serif;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+button,
+input {
+  font: inherit;
+}
+.shell {
+  width: min(1100px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 8vh 0;
+}
+.hero {
+  border-left: 8px solid #e84b2c;
+  padding: 1rem 2rem;
+  max-width: 760px;
+}
+.hero h1 {
+  font-size: clamp(2.5rem, 7vw, 6.5rem);
+  line-height: 0.92;
+  margin: 0.4rem 0 1.5rem;
+  letter-spacing: -0.05em;
+}
+.eyebrow {
+  font:
+    700 0.75rem/1.2 ui-monospace,
+    monospace;
+  letter-spacing: 0.16em;
+}
+.forms {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 4rem;
+}
+form {
+  background: #f7faf5;
+  border: 1px solid #a9b8ae;
+  padding: 1.5rem;
+}
+label {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0;
+  font:
+    600 0.8rem/1.2 ui-sans-serif,
+    sans-serif;
+}
+input {
+  border: 1px solid #829189;
+  padding: 0.75rem;
+  background: white;
+}
+button {
+  border: 0;
+  background: #17231d;
+  color: white;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+.message {
+  min-height: 1.5rem;
+  font-family: ui-sans-serif, sans-serif;
+}
+@media (max-width: 760px) {
+  .forms {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    padding-left: 1rem;
+  }
+}

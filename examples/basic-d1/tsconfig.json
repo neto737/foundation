@@ -1,0 +1,15 @@
+{
+  "extends": "@t00ls-dev/typescript-config/react.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["@cloudflare/workers-types", "node", "vite/client"]
+  },
+  "include": [
+    "e2e",
+    "src",
+    "playwright.config.ts",
+    "t00ls.config.ts",
+    "vite.config.ts"
+  ]
+}

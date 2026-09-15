@@ -1,0 +1,78 @@
+name: Deploy DEV
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run:
+          pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install
+          --with-deps chromium
+
+      - name: Run checks
+        run: pnpm check
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply DEV D1 migrations
+        working-directory: examples/basic-d1
+        run:
+          pnpm exec wrangler d1 migrations apply basic-d1-dev --remote --env dev
+
+      - name: Deploy DEV
+        working-directory: examples/basic-d1
+        run: pnpm exec wrangler deploy --env dev
+
+      - name: Smoke test
+        if: env.HEALTH_URL != ''
+        run:
+          curl --fail --silent --show-error --retry 5 --retry-delay 5
+          --retry-all-errors "${HEALTH_URL%/}/health"

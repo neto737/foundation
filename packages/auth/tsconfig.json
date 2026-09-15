@@ -1,0 +1,9 @@
+{
+  "extends": "@t00ls-dev/typescript-config/worker.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["vitest/globals"]
+  },
+  "include": ["src", "test"]
+}

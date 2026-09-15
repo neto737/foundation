@@ -1,0 +1,16 @@
+{
+  "name": "@t00ls-dev/email",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@t00ls-dev/typescript-config": "workspace:*"
+  }
+}

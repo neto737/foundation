@@ -1,0 +1,6 @@
+AUTH_SECRET=replace-with-at-least-32-random-characters
+BASE_URL=http://localhost:5173
+EMAIL_FROM=__PROJECT_NAME__ <noreply@example.com>
+RESEND_API_KEY=re_example
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
