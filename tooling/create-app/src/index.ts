@@ -113,6 +113,7 @@ export async function generateApp(
         ) {
           throw new Error(
             "Target directory became non-empty during generation.",
+            { cause: error },
           );
         }
         throw error;
@@ -129,7 +130,12 @@ export async function generateApp(
           (error as NodeJS.ErrnoException).code ?? "",
         )
       ) {
-        throw new Error("Target directory became non-empty during generation.");
+        throw new Error(
+          "Target directory became non-empty during generation.",
+          {
+            cause: error,
+          },
+        );
       }
       throw error;
     }
