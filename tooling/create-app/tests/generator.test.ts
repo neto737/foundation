@@ -43,6 +43,9 @@ describe("generateApp", () => {
     expect(worker).toContain("betterAuth");
     expect(worker).toContain("/ready");
     expect(worker).toContain('context.header("Cache-Control", "no-store")');
+    expect(worker).toContain(
+      'context.header("Cache-Control", "private, no-store")',
+    );
     await expect(
       readFile(join(result.target, "src/client/app.tsx"), "utf8"),
     ).resolves.toContain("requestPasswordReset");

@@ -24,6 +24,10 @@ test("keeps service and missing API routes outside the SPA fallback", async ({
   expect(ready.headers()["cache-control"]).toBe("no-store");
   await expect(ready.json()).resolves.toEqual({ status: "ready" });
 
+  const session = await request.get("/api/auth/get-session");
+  expect(session.ok()).toBe(true);
+  expect(session.headers()["cache-control"]).toBe("private, no-store");
+
   const missing = await request.get("/api/missing");
   expect(missing.status()).toBe(404);
   await expect(missing.json()).resolves.toEqual({ error: "Not found" });

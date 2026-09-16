@@ -22,7 +22,9 @@ pnpm dev
 ```
 
 Veja [`docs/architecture/overview.md`](docs/architecture/overview.md) para a
-arquitetura e [`docs/decisions`](docs/decisions) para as decisões vigentes.
+arquitetura, [`docs/decisions`](docs/decisions) para as decisões vigentes e
+[`docs/runbooks/cache.md`](docs/runbooks/cache.md) para a regra obrigatoria de
+cache bypass nos dominios Cloudflare.
 
 ## Posicionamento
 

@@ -33,6 +33,11 @@ app.get("/ready", async (context) => {
   }
 });
 
+app.use("/api/auth/**", async (context, next) => {
+  await next();
+  context.header("Cache-Control", "private, no-store");
+});
+
 app.on(["GET", "POST"], "/api/auth/**", (context) => {
   const email = async (to: string, subject: string, text: string) => {
     const response = await fetch("https://api.resend.com/emails", {

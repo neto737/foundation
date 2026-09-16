@@ -23,10 +23,17 @@ pnpm test:e2e
 `GET /health` verifica apenas se o Worker esta ativo. `GET /ready` consulta o D1
 e retorna `503` sem detalhes internos quando o banco nao esta disponivel. Ambos
 enviam `Cache-Control: no-store` para impedir resultados operacionais obsoletos.
+As respostas de `/api/auth/**` enviam `Cache-Control: private, no-store`.
 
 Para DEV e PROD remotos, substitua os IDs D1 em `wrangler.jsonc` e cadastre os
 secrets com `wrangler secret put --env <ambiente>`. Nao edite uma migration ja
 aplicada; corrija mudancas com uma nova migration forward-only.
+
+Em cada dominio Cloudflare, configure uma Cache Rule com acao `Bypass cache`
+para `/api`, `/auth`, `/account`, `/webhooks`, `/health` e `/ready`. Os headers
+da aplicacao sao defesa adicional, nao substituem essa regra quando existe uma
+politica ampla de cache. Consulte `docs/runbooks/cache.md` no repositorio do
+foundation para a expressao recomendada e o procedimento de validacao.
 
 Google OAuth e ativado somente quando `GOOGLE_CLIENT_ID` e
 `GOOGLE_CLIENT_SECRET` estao presentes. Os demais providers nao fazem parte da
