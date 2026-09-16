@@ -20,6 +20,9 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
+`GET /health` verifica apenas se o Worker esta ativo. `GET /ready` consulta o D1
+e retorna `503` sem detalhes internos quando o banco nao esta disponivel.
+
 Para DEV e PROD remotos, substitua os IDs D1 em `wrangler.jsonc` e cadastre os
 secrets com `wrangler secret put --env <ambiente>`. Nao edite uma migration ja
 aplicada; corrija mudancas com uma nova migration forward-only.

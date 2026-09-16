@@ -31,6 +31,7 @@ describe("generateApp", () => {
       join(result.target, "wrangler.jsonc"),
       "utf8",
     );
+    const worker = await readFile(join(result.target, "src/worker.ts"), "utf8");
 
     expect(result.name).toBe("my-d1-app");
     expect(manifest).toMatchObject({
@@ -39,9 +40,8 @@ describe("generateApp", () => {
       private: true,
     });
     expect(wrangler).toContain('"binding": "DB"');
-    await expect(
-      readFile(join(result.target, "src/worker.ts"), "utf8"),
-    ).resolves.toContain("betterAuth");
+    expect(worker).toContain("betterAuth");
+    expect(worker).toContain("/ready");
     await expect(
       readFile(join(result.target, "src/client/app.tsx"), "utf8"),
     ).resolves.toContain("requestPasswordReset");

@@ -20,6 +20,14 @@ interface Env {
 const app = new Hono<{ Bindings: Env }>();
 app.use("*", secureHeaders());
 app.get("/health", (context) => context.json({ status: "ok" }));
+app.get("/ready", async (context) => {
+  try {
+    await context.env.DB.prepare("SELECT 1").first();
+    return context.json({ status: "ready" });
+  } catch {
+    return context.json({ status: "unavailable" }, 503);
+  }
+});
 
 app.on(["GET", "POST"], "/api/auth/**", (context) => {
   const email = async (to: string, subject: string, text: string) => {

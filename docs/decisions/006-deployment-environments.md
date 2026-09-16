@@ -20,8 +20,8 @@ ou conclusão do deploy DEV.
 
 Cada ambiente usa bindings, banco e secrets próprios. Migrations rodam apenas
 para o alvo escolhido e quando forem seguras; falhas de schema preferem
-forward-fix. Todo deploy termina com smoke/health check. Staging não faz parte
-da v0.1.
+forward-fix. Todo deploy termina com smoke/readiness check das dependências
+essenciais. Staging não faz parte da v0.1.
 
 ## Consequências
 

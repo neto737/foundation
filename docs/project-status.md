@@ -5,7 +5,7 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: 15 de setembro de 2026.
+Última revisão: 16 de setembro de 2026.
 
 ## Objetivo e escopo
 
@@ -67,7 +67,8 @@ não é necessária para validar a v0.1.
 - Better Auth por meio dos pacotes do foundation;
 - senha, verificação, recuperação, magic link e Google opcional;
 - envio de e-mail via Resend;
-- `/health` e fallback de rotas da SPA;
+- `/health` para liveness, `/ready` para readiness do D1 e fallback de rotas da
+  SPA;
 - configuração separada para local, DEV e PROD;
 - migration inicial e journal Drizzle do schema de autenticação;
 - comandos padronizados de geração, migration, seed e status;
@@ -136,10 +137,10 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 - `CI`: executa o gate completo em PRs e pushes para `master`; execuções antigas
   da mesma ref são canceladas.
 - `Deploy DEV`: inicia após uma CI verde em `master`, faz checkout do SHA
-  validado, aplica migrations D1, implanta e executa smoke test quando uma URL
+  validado, aplica migrations D1, implanta e consulta `/ready` quando uma URL
   foi configurada. Não repete a suíte de testes.
 - `Deploy PROD`: execução manual para um ref explícito, com novo gate completo,
-  migration D1, deploy e smoke test opcional.
+  migration D1, deploy e smoke/readiness test opcional.
 - `Smoke Hyperdrive`: execução manual contra um endpoint configurado. É apenas
   um smoke remoto; não implementa um binding Hyperdrive dentro deste
   repositório.
@@ -152,31 +153,30 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 
 ### Infraestrutura externa
 
-Estas tarefas não exigem mudança de arquitetura, mas bloqueiam os deploys:
+DEV possui banco, secrets, envio de e-mail e deploy automático validados. Ainda
+faltam para a operação completa:
 
-- configurar `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` no GitHub;
-- configurar `DEV_HEALTH_URL` e `PROD_HEALTH_URL`;
-- configurar no Worker `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e
-  `RESEND_API_KEY`;
+- configurar `PROD_HEALTH_URL`;
+- configurar no Worker PROD `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e
+  `RESEND_API_KEY`, com secret de autenticação distinto de DEV;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
   for usado;
 - configurar domínio ou rota Cloudflare quando o endereço definitivo existir;
-- executar o primeiro deploy DEV e validar migration, login, e-mail e health;
+- concluir a validação manual de cadastro, verificação, login, logout e magic
+  link em DEV;
 - executar o primeiro deploy PROD somente depois da validação de DEV.
 
-O último gate de CI está verde. O deploy DEV chega à migration e falha enquanto
-as credenciais Cloudflare não estiverem configuradas.
+O gate de CI, a migration, o deploy, o envio de recuperação de senha e o smoke
+DEV estão validados.
 
 ### Implementação prioritária
 
 1. **Proteção de produção:** adicionar GitHub Environment `production`,
    aprovação obrigatória e confirmação explícita ao workflow manual.
-2. **Readiness:** adicionar `/ready`, distinguir liveness de readiness e evitar
-   exposição de detalhes sensíveis.
-3. **Testes dos primitives:** adicionar testes unitários diretos para config,
+2. **Testes dos primitives:** adicionar testes unitários diretos para config,
    db, tenant, access, email e observability, além da cobertura de integração já
    existente.
-4. **Documentação operacional:** criar runbooks dedicados para ambientes,
+3. **Documentação operacional:** criar runbooks dedicados para ambientes,
    deploy, segurança, testes, LGPD e criação de apps.
 
 ### Evolução após a v0.1

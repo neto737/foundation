@@ -133,7 +133,8 @@ inicialmente remote-first sem impedir o fluxo local futuro.
   ambiente selecionado e confirmação inequívoca.
 - migrations são executadas apenas no ambiente alvo e quando forem seguras para
   o fluxo.
-- smoke/health check encerra o deploy; correções de schema preferem forward-fix.
+- smoke/readiness check com D1 encerra o deploy; correções de schema preferem
+  forward-fix.
 - staging não existe na v0.1.
 
 ## Escopo v0.1

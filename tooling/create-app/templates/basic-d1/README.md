@@ -19,6 +19,7 @@ SQL. `pnpm db:migrate` and `pnpm db:status` target the local database; use the
 data belongs in `seeds/local.sql` and runs with `pnpm db:seed`. Never edit an
 applied migration; ship a new forward-only migration instead.
 
-`GET /health` reports service health. The SPA and auth API share the same
-origin; Better Auth stores accounts and sessions in D1. Google OAuth is enabled
-only when both Google credentials are configured.
+`GET /health` reports liveness. `GET /ready` checks D1 and returns a generic 503
+when the database is unavailable. The SPA and auth API share the same origin;
+Better Auth stores accounts and sessions in D1. Google OAuth is enabled only
+when both Google credentials are configured.
