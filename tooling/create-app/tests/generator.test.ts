@@ -42,6 +42,7 @@ describe("generateApp", () => {
     expect(wrangler).toContain('"binding": "DB"');
     expect(worker).toContain("betterAuth");
     expect(worker).toContain("/ready");
+    expect(worker).toContain('context.header("Cache-Control", "no-store")');
     await expect(
       readFile(join(result.target, "src/client/app.tsx"), "utf8"),
     ).resolves.toContain("requestPasswordReset");

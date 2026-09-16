@@ -20,6 +20,7 @@ data belongs in `seeds/local.sql` and runs with `pnpm db:seed`. Never edit an
 applied migration; ship a new forward-only migration instead.
 
 `GET /health` reports liveness. `GET /ready` checks D1 and returns a generic 503
-when the database is unavailable. The SPA and auth API share the same origin;
-Better Auth stores accounts and sessions in D1. Google OAuth is enabled only
-when both Google credentials are configured.
+when the database is unavailable. Both send `Cache-Control: no-store` to prevent
+stale operational results. The SPA and auth API share the same origin; Better
+Auth stores accounts and sessions in D1. Google OAuth is enabled only when both
+Google credentials are configured.

@@ -16,10 +16,12 @@ test("keeps service and missing API routes outside the SPA fallback", async ({
 }) => {
   const health = await request.get("/health");
   expect(health.ok()).toBe(true);
+  expect(health.headers()["cache-control"]).toBe("no-store");
   await expect(health.json()).resolves.toEqual({ status: "ok" });
 
   const ready = await request.get("/ready");
   expect(ready.ok()).toBe(true);
+  expect(ready.headers()["cache-control"]).toBe("no-store");
   await expect(ready.json()).resolves.toEqual({ status: "ready" });
 
   const missing = await request.get("/api/missing");
@@ -37,5 +39,6 @@ test("reports unavailable without exposing D1 failures", async () => {
   });
 
   expect(response.status).toBe(503);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
   await expect(response.json()).resolves.toEqual({ status: "unavailable" });
 });
