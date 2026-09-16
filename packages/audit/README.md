@@ -1,14 +1,14 @@
 # @t00ls-dev/audit
 
-Contrato append-only para eventos de auditoria e adapters D1/PostgreSQL. O
-pacote nao expoe operacoes de update ou delete.
+Contrato append-only para eventos de auditoria e adaptadores D1/PostgreSQL. O
+pacote não expõe operações de atualização ou exclusão.
 
-Use `createAuditEvent` para validar metadata e `AuditStore.append` para
-persistir. Chaves sensiveis como `password`, `token`, `cookie` e `secret` sao
-rejeitadas recursivamente, sem diferenca entre maiusculas e minusculas ou
-separadores, antes da escrita. O evento retornado contem uma copia profunda da
-metadata validada.
+Use `createAuditEvent` para validar metadados e `AuditStore.append` para
+persisti-los. Chaves sensíveis como `password`, `token`, `cookie` e `secret` são
+rejeitadas recursivamente antes da escrita, sem distinção entre maiúsculas e
+minúsculas ou entre separadores. O evento retornado contém uma cópia profunda
+dos metadados validados.
 
 As migrations ficam em `migrations/d1` e `migrations/postgres`. Garantias fortes
-contra alteracao direta exigem credenciais e permissoes de banco separadas no
+contra alteração direta exigem credenciais e permissões de banco separadas no
 produto consumidor.

@@ -1,14 +1,14 @@
-# Cache de rotas dinamicas
+# Cache de rotas dinâmicas
 
-Este runbook define a protecao de cache obrigatoria para os dominios Cloudflare
-de DEV e PROD. O objetivo e impedir que autenticacao, dados personalizados,
+Este runbook define a proteção de cache obrigatória para os domínios Cloudflare
+de DEV e PROD. O objetivo é impedir que autenticação, dados personalizados,
 webhooks e sinais operacionais sejam servidos a partir de uma resposta obsoleta.
 
 ## Regra Cloudflare
 
-Crie uma Cache Rule no zoneamento de cada dominio com acao `Bypass cache`. A
-regra deve ter prioridade sobre politicas amplas, como `Cache Everything`, e
-usar a expressao:
+Crie uma Cache Rule no zoneamento de cada domínio com ação `Bypass cache`. A
+regra deve ter prioridade sobre políticas amplas, como `Cache Everything`, e
+usar a expressão:
 
 ```text
 (http.request.uri.path eq "/api") or
@@ -26,19 +26,19 @@ usar a expressao:
 Os pares `eq` e `starts_with` preservam o caminho raiz e seus descendentes sem
 incluir nomes apenas parecidos, como `/apiary`.
 
-## Responsabilidades da aplicacao
+## Responsabilidades da aplicação
 
 - `/health` e `/ready` enviam `Cache-Control: no-store`.
 - `/api/auth/**` envia `Cache-Control: private, no-store`.
-- novos endpoints privados devem definir uma politica de resposta equivalente.
-- APIs publicas so podem habilitar cache por decisao explicita e com testes.
+- novos endpoints privados devem definir uma política de resposta equivalente.
+- APIs públicas só podem habilitar cache por decisão explícita e com testes.
 
-Os headers sao defesa em profundidade. Eles nao substituem o bypass na borda
-quando o dominio possui regras amplas de cache.
+Os headers são uma defesa em profundidade. Eles não substituem o bypass na borda
+quando o domínio possui regras amplas de cache.
 
-## Validacao
+## Validação
 
-Depois de cada mudanca de regra ou deploy, consulte os endpoints no dominio
+Depois de cada mudança de regra ou deploy, consulte os endpoints no domínio
 real:
 
 ```bash
@@ -51,5 +51,5 @@ curl --fail --silent --show-error --dump-header - --output /dev/null \
 ```
 
 Confirme `Cache-Control: no-store` nos endpoints operacionais e
-`Cache-Control: private, no-store` na autenticacao. Se a resposta apresentar
-`CF-Cache-Status`, ela nao pode indicar `HIT` nessas rotas.
+`Cache-Control: private, no-store` na autenticação. Se a resposta apresentar
+`CF-Cache-Status`, ela não pode indicar `HIT` nessas rotas.

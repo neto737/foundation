@@ -1,7 +1,8 @@
 # t00ls-dev/foundation
 
-Fundacao tecnica compartilhada para apps da organizacao `t00ls-dev`. O projeto e
-Cloudflare-first, internal-first e nao contem regras de negocio de produtos.
+Fundação técnica compartilhada para aplicações da organização `t00ls-dev`. O
+projeto é Cloudflare-first, internal-first e não contém regras de negócio dos
+produtos.
 
 ## Estado
 
@@ -10,7 +11,7 @@ depende da configuração dos recursos e secrets Cloudflare. Consulte
 [`docs/project-status.md`](docs/project-status.md) para entregas, validações,
 pendências priorizadas e itens deliberadamente adiados.
 
-## Inicio rapido
+## Início rápido
 
 Requisitos: Node.js 22+, Corepack e Docker para os testes PostgreSQL.
 
@@ -23,16 +24,16 @@ pnpm dev
 
 Veja [`docs/architecture/overview.md`](docs/architecture/overview.md) para a
 arquitetura, [`docs/decisions`](docs/decisions) para as decisões vigentes e
-[`docs/runbooks/cache.md`](docs/runbooks/cache.md) para a regra obrigatoria de
-cache bypass nos dominios Cloudflare.
+[`docs/runbooks/cache.md`](docs/runbooks/cache.md) para a regra obrigatória de
+bypass de cache nos domínios Cloudflare.
 
 Runbooks operacionais adicionais cobrem
 [ambientes](docs/runbooks/environments.md),
-[deploy](docs/runbooks/deployment.md), [seguranca](docs/runbooks/security.md),
+[deploy](docs/runbooks/deployment.md), [segurança](docs/runbooks/security.md),
 [testes](docs/runbooks/testing.md), [LGPD](docs/runbooks/lgpd.md) e
-[criacao de apps](docs/runbooks/creating-an-app.md).
+[criação de aplicações](docs/runbooks/creating-an-app.md).
 
 ## Posicionamento
 
-Uso externo e permitido sob a licenca MIT, sem garantia de suporte, estabilidade
-perpetua ou alteracao do roadmap para consumidores externos.
+O uso externo é permitido sob a licença MIT, sem garantia de suporte,
+estabilidade perpétua ou alteração do roadmap para consumidores externos.

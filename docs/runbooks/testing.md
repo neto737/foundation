@@ -1,13 +1,13 @@
 # Testes
 
-O gate oficial e:
+O gate oficial é:
 
 ```bash
 pnpm check
 ```
 
-Ele verifica formatacao e executa lint, typecheck, testes unitarios,
-integracoes, builds e Playwright. Docker deve estar disponivel para PostgreSQL
+Ele verifica a formatação e executa lint, typecheck, testes unitários,
+integrações, builds e Playwright. O Docker deve estar disponível para PostgreSQL
 por Testcontainers. O Playwright requer Chromium instalado.
 
 ## Durante o desenvolvimento
@@ -21,15 +21,15 @@ pnpm --filter <pacote> test
 pnpm --filter <pacote> build
 ```
 
-Antes de enviar uma mudanca, execute `pnpm check` e `pnpm format:check`.
+Antes de enviar uma mudança, execute `pnpm check` e `pnpm format:check`.
 
 ## Cobertura esperada
 
-- primitives publicos: testes unitarios de contrato;
-- D1/PostgreSQL e isolamento de tenant: testes de integracao reais;
-- gerador: conteudo, seguranca do destino e build fora do workspace;
-- fluxos de usuario e acessibilidade: Playwright desktop e mobile;
-- deploy: smoke em `/ready` no ambiente publicado.
+- primitivas públicas: testes unitários de contrato;
+- D1/PostgreSQL e isolamento de tenant: testes de integração reais;
+- gerador: conteúdo, segurança do destino e build fora do workspace;
+- fluxos de usuário e acessibilidade: Playwright desktop e mobile;
+- deploy: smoke test em `/ready` no ambiente publicado.
 
-Mocks nao substituem os testes de banco existentes. Testes E2E nao devem
+Mocks não substituem os testes de banco existentes. Testes E2E não devem
 depender de providers externos para permanecer deterministas.

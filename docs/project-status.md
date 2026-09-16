@@ -165,7 +165,7 @@ faltam para a operação completa:
 
 - configurar `PROD_HEALTH_URL`;
 - configurar secrets no GitHub Environment `production`; required reviewers e
-  wait timer nao estao disponiveis no plano atual do repositorio privado;
+  wait timer não estão disponíveis no plano atual do repositório privado;
 - configurar no Worker PROD `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e
   `RESEND_API_KEY`, com secret de autenticação distinto de DEV;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google

@@ -1,15 +1,15 @@
-# Criacao de uma aplicacao
+# Criação de uma aplicação
 
-Na v0.1, `@t00ls-dev/create-app` gera apenas o preset autonomo `basic-d1`.
+Na v0.1, `@t00ls-dev/create-app` gera apenas o preset autônomo `basic-d1`.
 
 ```bash
 pnpm --filter @t00ls-dev/create-app build
 pnpm exec create-app /caminho/para/meu-app --preset basic-d1
 ```
 
-O destino deve ser novo ou vazio. O gerador nao sobrescreve arquivos.
+O destino deve ser novo ou vazio. O gerador não sobrescreve arquivos.
 
-## Depois da geracao
+## Depois da geração
 
 1. execute `pnpm install` no projeto gerado;
 2. copie `.dev.vars.example` para `.dev.vars` e preencha valores locais;
@@ -19,17 +19,17 @@ O destino deve ser novo ou vazio. O gerador nao sobrescreve arquivos.
 6. configure ambientes, cache bypass e secrets antes do deploy remoto.
 
 O preset inclui React, React Router, React Hook Form, Zod, Hono, D1, Drizzle,
-Better Auth e Resend. Ele nao inclui tenancy, billing, storage ou telemetria.
+Better Auth e Resend. Ele não inclui tenancy, billing, storage ou telemetria.
 
-## Decisoes no ponto zero
+## Decisões no ponto zero
 
 Antes de iniciar um produto real, registre pelo menos:
 
 - D1 ou PostgreSQL;
 - Better Auth, Cloudflare Access ou nenhuma auth;
-- tenancy habilitada ou nao;
-- e-mail e telemetria necessarios;
+- tenancy habilitada ou não;
+- e-mail e telemetria necessários;
 - imagens, storage e billing somente quando houver consumidor real.
 
-PostgreSQL e preferivel para SaaS, multi-tenancy, crescimento e queries
-avancadas. D1 permanece opcao de primeira classe para apps simples.
+PostgreSQL é preferível para SaaS, multi-tenancy, crescimento e consultas
+avançadas. D1 permanece uma opção de primeira classe para aplicações simples.
