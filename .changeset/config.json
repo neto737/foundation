@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "access": "public",
-  "baseBranch": "main",
+  "baseBranch": "master",
   "commit": false,
   "fixed": [],
   "ignore": ["@t00ls-dev/example-basic-d1", "@t00ls-dev/integration-tests"],

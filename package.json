@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e",
     "dev": "turbo run dev --filter=@t00ls-dev/example-basic-d1",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

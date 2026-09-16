@@ -20,8 +20,19 @@ export interface AuditStore {
   append(event: AuditEvent): Promise<void>;
 }
 
+const SENSITIVE_METADATA_KEYS = ["password", "token", "cookie", "secret"];
+
+export function createAuditEvent(event: AuditEvent): AuditEvent {
+  const metadata = copyJsonValue(event.metadata, new Set(), "$metadata", true);
+  if (!isJsonObject(metadata)) {
+    throw new TypeError("Audit metadata must be a JSON object");
+  }
+
+  return { ...event, metadata };
+}
+
 export function serializeAuditMetadata(metadata: JsonObject): string {
-  return JSON.stringify(copyJsonValue(metadata, new Set(), "$"));
+  return JSON.stringify(copyJsonValue(metadata, new Set(), "$", false));
 }
 
 export function parseAuditMetadata(value: string): JsonObject {
@@ -32,7 +43,7 @@ export function parseAuditMetadata(value: string): JsonObject {
     throw new TypeError("Audit metadata must be valid JSON", { cause: error });
   }
 
-  const metadata = copyJsonValue(parsed, new Set(), "$metadata");
+  const metadata = copyJsonValue(parsed, new Set(), "$metadata", false);
   if (!isJsonObject(metadata)) {
     throw new TypeError("Audit metadata must be a JSON object");
   }
@@ -43,6 +54,7 @@ function copyJsonValue(
   value: unknown,
   ancestors: Set<object>,
   path: string,
+  rejectSensitiveKeys: boolean,
 ): JsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean")
     return value;
@@ -62,7 +74,12 @@ function copyJsonValue(
   try {
     if (Array.isArray(value)) {
       return value.map((item, index) =>
-        copyJsonValue(item, ancestors, `${path}[${index}]`),
+        copyJsonValue(
+          item,
+          ancestors,
+          `${path}[${index}]`,
+          rejectSensitiveKeys,
+        ),
       );
     }
     const prototype = Object.getPrototypeOf(value) as object | null;
@@ -77,6 +94,9 @@ function copyJsonValue(
           `Audit metadata at ${path} cannot contain symbol keys`,
         );
       }
+      if (rejectSensitiveKeys && isSensitiveMetadataKey(key)) {
+        throw new TypeError(`Audit metadata at ${path}.${key} is sensitive`);
+      }
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor?.enumerable) continue;
       if (!("value" in descriptor)) {
@@ -84,12 +104,24 @@ function copyJsonValue(
           `Audit metadata at ${path}.${key} cannot contain accessors`,
         );
       }
-      copy[key] = copyJsonValue(descriptor.value, ancestors, `${path}.${key}`);
+      copy[key] = copyJsonValue(
+        descriptor.value,
+        ancestors,
+        `${path}.${key}`,
+        rejectSensitiveKeys,
+      );
     }
     return copy;
   } finally {
     ancestors.delete(value);
   }
+}
+
+function isSensitiveMetadataKey(key: string): boolean {
+  const normalizedKey = key.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+  return SENSITIVE_METADATA_KEYS.some((sensitiveKey) =>
+    normalizedKey.includes(sensitiveKey),
+  );
 }
 
 function isJsonObject(value: JsonValue): value is JsonObject {

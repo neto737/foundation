@@ -7,12 +7,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
+    "test": "vitest run --reporter=default",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@t00ls-dev/typescript-config": "workspace:*"
+    "@t00ls-dev/typescript-config": "workspace:*",
+    "vitest": "^5.0.1"
   }
 }

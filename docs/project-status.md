@@ -52,7 +52,7 @@ da primeira entrega.
 | `@t00ls-dev/security`      | Headers, CSP, CORS, CSRF, Turnstile e rate limiting com storage injetável.                                                                                          |
 | `@t00ls-dev/email`         | Contrato substituível de e-mail e implementação Resend sem espalhar chamadas do provider.                                                                           |
 | `@t00ls-dev/observability` | Logging JSON estruturado com contexto de request, usuário e tenant.                                                                                                 |
-| `@t00ls-dev/audit`         | Eventos de auditoria e persistência append-only para D1 e PostgreSQL.                                                                                               |
+| `@t00ls-dev/audit`         | Eventos append-only para D1/PostgreSQL, com validação recursiva que rejeita chaves sensíveis na metadata.                                                           |
 
 Os pacotes continuam privados e consumidos com `workspace:*`. Publicação no npm
 não é necessária para validar a v0.1.
@@ -61,7 +61,7 @@ não é necessária para validar a v0.1.
 
 `examples/basic-d1` demonstra:
 
-- React, React Router e Tailwind CSS;
+- React, React Router, React Hook Form, Zod e Tailwind CSS;
 - Hono no mesmo Worker que serve os assets da SPA;
 - D1 e Drizzle;
 - Better Auth por meio dos pacotes do foundation;
@@ -72,7 +72,8 @@ não é necessária para validar a v0.1.
 - configuração separada para local, DEV e PROD;
 - migration inicial e journal Drizzle do schema de autenticação;
 - comandos padronizados de geração, migration, seed e status;
-- testes Playwright desktop e mobile.
+- formulários com labels, erros associados, foco inválido e estados de envio;
+- cinco cenários Playwright executados em desktop e mobile.
 
 O ambiente local usa `.dev.vars.example` como contrato de nomes de secrets, sem
 versionar valores reais.
@@ -85,6 +86,7 @@ novo ou vazio. O projeto gerado:
 - é autônomo e não contém dependências `workspace:*`;
 - usa React, React Router, Hono, D1, Drizzle e Better Auth;
 - inclui Resend, Google OAuth opcional e recuperação de senha;
+- inclui React Hook Form, validação Zod e estados acessíveis de formulário;
 - inclui configurações Wrangler/Drizzle, migration, seed local e documentação
   inicial;
 - instala, passa no typecheck e compila fora do monorepo.
@@ -110,23 +112,25 @@ Valores de secrets nunca são incluídos no relatório.
 
 O comando `pnpm check` executa, nesta ordem:
 
-1. lint;
-2. typecheck;
-3. testes unitários;
-4. testes de integração;
-5. builds;
-6. testes E2E.
+1. verificação de formatação;
+2. lint;
+3. typecheck;
+4. testes unitários;
+5. testes de integração;
+6. builds;
+7. testes E2E.
 
 A cobertura atual inclui:
 
-- testes unitários de auth, audit, security, create-app e Doctor;
+- testes unitários de config, db, auth, tenant, access, security, email,
+  observability, audit, create-app e Doctor;
 - testes de tenancy, permissões, memberships, isolamento, troca de tenant e
   convites;
 - D1 real local por Miniflare;
 - PostgreSQL 17 real por Testcontainers;
 - 14 testes no gate de integração completo, incluindo migration e seed
   PostgreSQL pelo histórico Drizzle;
-- quatro cenários Playwright em desktop e mobile;
+- cinco cenários Playwright em desktop e mobile, totalizando dez execuções;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
 Pacotes sem testes próprios não executam Vitest vazio. A CI usa o reporter
@@ -139,8 +143,9 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 - `Deploy DEV`: inicia após uma CI verde em `master`, faz checkout do SHA
   validado, aplica migrations D1, implanta e consulta `/ready` quando uma URL
   foi configurada. Não repete a suíte de testes.
-- `Deploy PROD`: execução manual para um ref explícito, com novo gate completo,
-  migration D1, deploy e smoke/readiness test opcional.
+- `Deploy PROD`: execução manual com alvo e confirmação explícitos; resolve o
+  ref uma vez, usa o mesmo SHA imutável no gate e deploy, passa pelo GitHub
+  Environment `production`, aplica migration e executa readiness opcional.
 - `Smoke Hyperdrive`: execução manual contra um endpoint configurado. É apenas
   um smoke remoto; não implementa um binding Hyperdrive dentro deste
   repositório.
@@ -148,6 +153,8 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
   aplica e consulta D1, e Drizzle Kit aplica PostgreSQL. Seeds são separados e
   migrations aplicadas recebem somente correções forward-only. O procedimento
   está em [Migrations](runbooks/migrations.md).
+- Respostas operacionais e auth usam headers conservadores, e os domínios devem
+  aplicar o bypass descrito em [Cache](runbooks/cache.md).
 
 ## Pendências para a v0.1 operacional
 
@@ -157,6 +164,8 @@ DEV possui banco, secrets, envio de e-mail e deploy automático validados. Ainda
 faltam para a operação completa:
 
 - configurar `PROD_HEALTH_URL`;
+- configurar secrets no GitHub Environment `production`; required reviewers e
+  wait timer nao estao disponiveis no plano atual do repositorio privado;
 - configurar no Worker PROD `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e
   `RESEND_API_KEY`, com secret de autenticação distinto de DEV;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
@@ -169,15 +178,20 @@ faltam para a operação completa:
 O gate de CI, a migration, o deploy, o envio de recuperação de senha e o smoke
 DEV estão validados.
 
-### Implementação prioritária
+### Fechamento operacional
 
-1. **Proteção de produção:** adicionar GitHub Environment `production`,
-   aprovação obrigatória e confirmação explícita ao workflow manual.
-2. **Testes dos primitives:** adicionar testes unitários diretos para config,
-   db, tenant, access, email e observability, além da cobertura de integração já
-   existente.
-3. **Documentação operacional:** criar runbooks dedicados para ambientes,
-   deploy, segurança, testes, LGPD e criação de apps.
+O código necessário para a v0.1 está implementado. O fechamento depende agora de
+configuração externa e validação operacional:
+
+1. configurar os secrets do GitHub Environment `production`;
+2. concluir os fluxos manuais de autenticação em DEV;
+3. configurar os recursos/secrets PROD e executar o primeiro deploy deliberado.
+
+Os runbooks vigentes cobrem [ambientes](runbooks/environments.md),
+[deploy](runbooks/deployment.md), [segurança](runbooks/security.md),
+[testes](runbooks/testing.md), [cache](runbooks/cache.md),
+[migrations](runbooks/migrations.md), [LGPD](runbooks/lgpd.md) e
+[criação de apps](runbooks/creating-an-app.md).
 
 ### Evolução após a v0.1
 
@@ -188,7 +202,6 @@ Estes itens dependem de necessidade concreta ou de um segundo preset/consumidor:
 - diagnóstico Doctor para PostgreSQL/Hyperdrive, R2, Images, providers, backups
   e endpoints remotos;
 - adapter e teste real de Hyperdrive;
-- React Hook Form e Zod nos formulários do starter;
 - alternativa de autenticação por Cloudflare Access;
 - contratos compartilhados de request/response preparados para futura adoção de
   OpenAPI;

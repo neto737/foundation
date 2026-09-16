@@ -26,7 +26,12 @@ describe("generateApp", () => {
     const result = await generateApp("My D1 App", { cwd: sandbox });
     const manifest = JSON.parse(
       await readFile(join(result.target, "package.json"), "utf8"),
-    ) as { name: string; packageManager: string; private: boolean };
+    ) as {
+      dependencies: Record<string, string>;
+      name: string;
+      packageManager: string;
+      private: boolean;
+    };
     const wrangler = await readFile(
       join(result.target, "wrangler.jsonc"),
       "utf8",
@@ -39,6 +44,9 @@ describe("generateApp", () => {
       packageManager: "pnpm@10.15.1",
       private: true,
     });
+    expect(manifest.dependencies["@hookform/resolvers"]).toMatch(/^\^/);
+    expect(manifest.dependencies["react-hook-form"]).toMatch(/^\^/);
+    expect(manifest.dependencies.zod).toMatch(/^\^/);
     expect(wrangler).toContain('"binding": "DB"');
     expect(worker).toContain("betterAuth");
     expect(worker).toContain("/ready");
@@ -46,9 +54,20 @@ describe("generateApp", () => {
     expect(worker).toContain(
       'context.header("Cache-Control", "private, no-store")',
     );
-    await expect(
-      readFile(join(result.target, "src/client/app.tsx"), "utf8"),
-    ).resolves.toContain("requestPasswordReset");
+    const client = await readFile(
+      join(result.target, "src/client/app.tsx"),
+      "utf8",
+    );
+    expect(client).toContain("requestPasswordReset");
+    expect(client).toContain("<FormField");
+    const form = await readFile(
+      join(result.target, "src/client/auth-form.tsx"),
+      "utf8",
+    );
+    expect(form).toContain("zodResolver(formSchema)");
+    expect(form).toContain("useForm<FormValues>");
+    expect(form).toContain("aria-live=");
+    expect(form).toContain("disabled={pending}");
     await expect(
       readFile(join(result.target, "migrations/0001_better_auth.sql"), "utf8"),
     ).resolves.toContain("CREATE TABLE");

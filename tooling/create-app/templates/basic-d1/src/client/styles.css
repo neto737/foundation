@@ -30,6 +30,13 @@ form {
   border: 1px solid #a9b8ae;
   padding: 1.5rem;
 }
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-family: ui-sans-serif, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
 input,
 button {
   font: inherit;
@@ -40,6 +47,24 @@ button {
   background: #17231d;
   color: white;
   cursor: pointer;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #e84b2c;
+  outline-offset: 3px;
+}
+.form-message {
+  min-height: 1.5rem;
+  margin: 0;
+  font-family: ui-sans-serif, sans-serif;
+}
+.field-error {
+  color: #a72c18;
+  font-weight: 400;
 }
 @media (max-width: 760px) {
   section {

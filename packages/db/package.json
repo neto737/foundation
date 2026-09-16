@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
+    "test": "vitest run --reporter=default",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260911.1",
     "@t00ls-dev/typescript-config": "workspace:*",
-    "@types/node": "^22.20.0"
+    "@types/node": "^22.20.0",
+    "vitest": "^5.0.1"
   }
 }

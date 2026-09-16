@@ -1,1 +1,4 @@
-{ "extends": "@t00ls-dev/typescript-config/worker.json", "include": ["src"] }
+{
+  "extends": "@t00ls-dev/typescript-config/worker.json",
+  "include": ["src", "test"]
+}

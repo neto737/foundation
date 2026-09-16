@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createD1AuditStore } from "../src/d1.js";
 import {
+  createAuditEvent,
   parseAuditMetadata,
   serializeAuditMetadata,
   type AuditEvent,
@@ -20,6 +21,71 @@ const event: AuditEvent = {
 };
 
 describe("audit metadata", () => {
+  it("creates an event with a recursively detached metadata copy", () => {
+    const metadata = {
+      context: {
+        changes: [{ field: "title", values: ["before", "after"] }],
+      },
+      requestedAt: "2026-09-15T12:00:00.000Z",
+    };
+
+    const created = createAuditEvent({ ...event, metadata });
+
+    expect(created).not.toBe(event);
+    expect(created.metadata).toEqual(metadata);
+    expect(created.metadata).not.toBe(metadata);
+    expect(created.metadata.context).not.toBe(metadata.context);
+    expect(created.metadata.context).toEqual(metadata.context);
+
+    metadata.context.changes[0]!.values[0] = "mutated";
+    expect(created.metadata.context).toEqual({
+      changes: [{ field: "title", values: ["before", "after"] }],
+    });
+  });
+
+  it.each([
+    ["exact", { password: "redacted" }],
+    ["case-insensitive", { PASSWORD: "redacted" }],
+    ["separator-tolerant", { access_token: "redacted" }],
+    ["camel case", { clientSecret: "redacted" }],
+    ["nested object", { context: { sessionCookie: "redacted" } }],
+    ["nested array", { changes: [{ apiToken: "redacted" }] }],
+    ["separated letters", { "client-s_e.c/r e t": "redacted" }],
+  ])("rejects sensitive keys in %s metadata", (_case, metadata) => {
+    expect(() => createAuditEvent({ ...event, metadata })).toThrow(
+      "is sensitive",
+    );
+  });
+
+  it("allows benign keys at every nesting level", () => {
+    expect(() =>
+      createAuditEvent({
+        ...event,
+        metadata: {
+          attempts: 2,
+          authorizationMethod: "passkey",
+          context: [{ operation: "rotate", result: { status: "success" } }],
+          source: "dashboard",
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects non-JSON metadata while creating an event", () => {
+    expect(() =>
+      createAuditEvent({
+        ...event,
+        metadata: { context: [{ value: undefined }] } as never,
+      }),
+    ).toThrow("not JSON-compatible");
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.context = [cyclic];
+    expect(() =>
+      createAuditEvent({ ...event, metadata: cyclic as never }),
+    ).toThrow("contains a cycle");
+  });
+
   it("round-trips JSON objects without retaining mutable references", () => {
     const parsed = parseAuditMetadata(serializeAuditMetadata(event.metadata));
 

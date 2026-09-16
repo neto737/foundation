@@ -36,6 +36,7 @@ logger.info("request completed", { status: 200, durationMs: 12 });
 ## Limitações e segurança
 
 O sink é síncrono e falhas dele se propagam; não há filtragem por nível nem
-serialização de `Error`. O contexto aceita campos arbitrários e pode
-sobrescrever defaults e campos básicos. Não registre tokens, cookies, senhas,
-dados pessoais ou outros segredos; aplique redação no chamador ou no sink.
+serialização de `Error`. Chaves de contexto relacionadas a authorization,
+cartão, cookie, password, secret e token são redigidas por padrão, e o contexto
+não sobrescreve timestamp, nível ou mensagem. Ainda assim, não coloque secrets
+ou dados pessoais em mensagens ou em campos com nomes ambíguos.

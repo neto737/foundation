@@ -1,62 +1,51 @@
-import { useState, type FormEvent } from "react";
 import { authClient } from "./auth-client.js";
-
-function value(data: FormData, name: string): string {
-  const field = data.get(name);
-  if (typeof field !== "string") throw new Error(`Missing ${name}`);
-  return field;
-}
+import {
+  AsyncForm,
+  FormField,
+  type Feedback,
+  type FormValues,
+} from "./auth-form.js";
 
 export function App() {
   const session = authClient.useSession();
-  const [message, setMessage] = useState("");
 
   if (globalThis.location.pathname === "/reset-password") {
     return <ResetPassword />;
   }
 
-  async function submit(
-    event: FormEvent<HTMLFormElement>,
-    action: "sign-in" | "sign-up",
-  ) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const result =
-      action === "sign-up"
-        ? await authClient.signUp.email({
-            name: value(data, "name"),
-            email: value(data, "email"),
-            password: value(data, "password"),
-          })
-        : await authClient.signIn.email({
-            email: value(data, "email"),
-            password: value(data, "password"),
-          });
-    setMessage(
-      result.error?.message ??
-        (action === "sign-up"
-          ? "Check your email to verify your account"
-          : "Signed in"),
-    );
+  async function signIn(data: FormValues): Promise<Feedback> {
+    const result = await authClient.signIn.email({
+      email: field(data, "email"),
+      password: field(data, "password"),
+    });
+    return feedback(result.error, "Signed in");
   }
 
-  async function magicLink(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function signUp(data: FormValues): Promise<Feedback> {
+    const result = await authClient.signUp.email({
+      email: field(data, "email"),
+      name: field(data, "name"),
+      password: field(data, "password"),
+    });
+    return feedback(result.error, "Check your email to verify your account");
+  }
+
+  async function sendMagicLink(data: FormValues): Promise<Feedback> {
     const result = await authClient.signIn.magicLink({
-      email: value(new FormData(event.currentTarget), "email"),
+      email: field(data, "email"),
       callbackURL: "/",
     });
-    setMessage(result.error?.message ?? "Magic link sent");
+    return feedback(result.error, "Magic link sent");
   }
 
-  async function requestPasswordReset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function requestPasswordReset(data: FormValues): Promise<Feedback> {
     const result = await authClient.requestPasswordReset({
-      email: value(new FormData(event.currentTarget), "email"),
+      email: field(data, "email"),
       redirectTo: "/reset-password",
     });
-    setMessage(
-      result.error?.message ?? "If the account exists, a reset link was sent",
+    return feedback(
+      result.error,
+      "If the account exists, a reset link was sent",
     );
   }
 
@@ -78,107 +67,114 @@ export function App() {
       <p>__PROJECT_NAME__</p>
       <h1>React, Hono, Better Auth, and D1.</h1>
       <section aria-label="Authentication">
-        <form onSubmit={(event) => void submit(event, "sign-up")}>
-          <h2>Create account</h2>
-          <input required name="name" placeholder="Name" autoComplete="name" />
-          <input
-            required
+        <AuthForm title="Create account" action={signUp} includeName />
+        <AuthForm title="Sign in" action={signIn} />
+        <AsyncForm
+          title="Magic link"
+          submitLabel="Send link"
+          pendingLabel="Sending link..."
+          action={sendMagicLink}
+        >
+          <FormField
+            label="Email"
             name="email"
-            placeholder="Email"
             type="email"
             autoComplete="email"
           />
-          <input
-            required
-            minLength={8}
-            name="password"
-            placeholder="Password"
-            type="password"
-            autoComplete="new-password"
-          />
-          <button>Create account</button>
-        </form>
-        <form onSubmit={(event) => void submit(event, "sign-in")}>
-          <h2>Sign in</h2>
-          <input
-            required
+        </AsyncForm>
+        <AsyncForm
+          title="Reset password"
+          submitLabel="Request reset"
+          pendingLabel="Requesting reset..."
+          action={requestPasswordReset}
+        >
+          <FormField
+            label="Email"
             name="email"
-            placeholder="Email"
             type="email"
             autoComplete="email"
           />
-          <input
-            required
-            name="password"
-            placeholder="Password"
-            type="password"
-            autoComplete="current-password"
-          />
-          <button>Sign in</button>
-        </form>
-        <form onSubmit={(event) => void magicLink(event)}>
-          <h2>Magic link</h2>
-          <input
-            required
-            name="email"
-            placeholder="Email"
-            type="email"
-            autoComplete="email"
-          />
-          <button>Send link</button>
-        </form>
-        <form onSubmit={(event) => void requestPasswordReset(event)}>
-          <h2>Reset password</h2>
-          <input
-            required
-            name="email"
-            placeholder="Email"
-            type="email"
-            autoComplete="email"
-          />
-          <button>Request reset</button>
-        </form>
+        </AsyncForm>
       </section>
-      <p role="status">{message}</p>
     </main>
   );
 }
 
 function ResetPassword() {
-  const [message, setMessage] = useState("");
-
-  async function reset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function reset(data: FormValues): Promise<Feedback> {
     const token = new URLSearchParams(globalThis.location.search).get("token");
     if (!token) {
-      setMessage("The reset link is invalid");
-      return;
+      return { kind: "error", message: "The reset link is invalid" };
     }
     const result = await authClient.resetPassword({
-      newPassword: value(new FormData(event.currentTarget), "password"),
+      newPassword: field(data, "password"),
       token,
     });
-    setMessage(
-      result.error?.message ?? "Password updated. You can sign in now.",
-    );
+    return feedback(result.error, "Password updated. You can sign in now.");
   }
 
   return (
     <main>
       <p>__PROJECT_NAME__</p>
       <h1>Choose a new password.</h1>
-      <form onSubmit={(event) => void reset(event)}>
-        <input
-          required
-          minLength={8}
-          name="password"
-          placeholder="New password"
-          type="password"
-          autoComplete="new-password"
-        />
-        <button>Update password</button>
-      </form>
-      <p role="status">{message}</p>
+      <section aria-label="Password reset">
+        <AsyncForm
+          title="Reset password"
+          submitLabel="Update password"
+          pendingLabel="Updating password..."
+          action={reset}
+        >
+          <FormField
+            label="New password"
+            name="password"
+            type="password"
+            minLength={8}
+            autoComplete="new-password"
+          />
+        </AsyncForm>
+      </section>
     </main>
   );
+}
+
+function AuthForm(props: {
+  action: (data: FormValues) => Promise<Feedback>;
+  includeName?: boolean;
+  title: string;
+}) {
+  return (
+    <AsyncForm
+      title={props.title}
+      submitLabel={props.title}
+      pendingLabel={props.includeName ? "Creating account..." : "Signing in..."}
+      action={props.action}
+    >
+      {props.includeName ? (
+        <FormField label="Name" name="name" autoComplete="name" />
+      ) : null}
+      <FormField label="Email" name="email" type="email" autoComplete="email" />
+      <FormField
+        label="Password"
+        name="password"
+        type="password"
+        minLength={8}
+        autoComplete={props.includeName ? "new-password" : "current-password"}
+      />
+    </AsyncForm>
+  );
+}
+
+function feedback(
+  error: { message?: string | undefined } | null | undefined,
+  successMessage: string,
+): Feedback {
+  return error
+    ? { kind: "error", message: error.message ?? "The request failed" }
+    : { kind: "success", message: successMessage };
+}
+
+function field(data: FormValues, name: keyof FormValues): string {
+  const value = data[name];
+  if (!value) throw new Error(`Missing form field: ${name}`);
+  return value;
 }

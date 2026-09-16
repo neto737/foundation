@@ -26,6 +26,12 @@ arquitetura, [`docs/decisions`](docs/decisions) para as decisões vigentes e
 [`docs/runbooks/cache.md`](docs/runbooks/cache.md) para a regra obrigatoria de
 cache bypass nos dominios Cloudflare.
 
+Runbooks operacionais adicionais cobrem
+[ambientes](docs/runbooks/environments.md),
+[deploy](docs/runbooks/deployment.md), [seguranca](docs/runbooks/security.md),
+[testes](docs/runbooks/testing.md), [LGPD](docs/runbooks/lgpd.md) e
+[criacao de apps](docs/runbooks/creating-an-app.md).
+
 ## Posicionamento
 
 Uso externo e permitido sob a licenca MIT, sem garantia de suporte, estabilidade

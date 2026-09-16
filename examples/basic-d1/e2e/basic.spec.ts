@@ -9,6 +9,55 @@ test("serves the React shell and SPA fallback", async ({ page }) => {
   await expect(
     page.getByRole("region", { name: "Authentication" }),
   ).toBeVisible();
+  const createAccount = page
+    .getByRole("heading", { name: "Create account" })
+    .locator("..");
+  await expect(createAccount.getByLabel("Name")).toBeVisible();
+  await expect(createAccount.getByLabel("Email")).toBeVisible();
+  await expect(createAccount.getByLabel("Password")).toBeVisible();
+});
+
+test("exposes pending and error states for authentication forms", async ({
+  page,
+}) => {
+  await page.route("**/api/auth/sign-in/email", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fulfill({
+      contentType: "application/json",
+      status: 401,
+      body: JSON.stringify({ message: "Invalid credentials" }),
+    });
+  });
+  await page.goto("/");
+
+  const signIn = page.getByRole("heading", { name: "Sign in" }).locator("..");
+  await signIn.getByLabel("Email").fill("person@example.com");
+  await signIn.getByLabel("Password").fill("not-the-password");
+  await signIn.getByRole("button", { name: "Sign in" }).click();
+
+  const pendingButton = signIn.getByRole("button", { name: "Signing in..." });
+  await expect(pendingButton).toBeDisabled();
+  await expect(signIn).toHaveAttribute("aria-busy", "true");
+  await expect(signIn.getByRole("alert")).toContainText("Invalid credentials");
+});
+
+test("announces Zod field errors and focuses the invalid field", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const magicLink = page
+    .getByRole("heading", { name: "Magic link" })
+    .locator("..");
+  const email = magicLink.getByLabel("Email");
+  await email.fill("not-an-email");
+  await magicLink.getByRole("button", { name: "Send link" }).click();
+
+  await expect(email).toBeFocused();
+  await expect(email).toHaveAttribute("aria-invalid", "true");
+  await expect(magicLink.getByRole("alert")).toHaveText(
+    "Enter a valid email address",
+  );
 });
 
 test("keeps service and missing API routes outside the SPA fallback", async ({
