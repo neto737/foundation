@@ -3,19 +3,19 @@
   "default_agent": "plan",
   "agent": {
     "build": {
-      "model": "openai/gpt-5.6-sol",
+      "model": "openai/gpt-6-sol",
       "mode": "primary",
       "description": "Build, compilation, and deployment tasks",
       "color": "success"
     },
     "plan": {
-      "model": "openai/gpt-5.6-terra",
+      "model": "openai/gpt-6-sol",
       "mode": "primary",
       "description": "Planning, analysis, and architectural decisions",
       "color": "primary"
     },
     "explore": {
-      "model": "openai/gpt-5.6-luna",
+      "model": "openai/gpt-6-luna",
       "mode": "subagent",
       "description": "Code exploration, search, and discovery",
       "color": "info"
