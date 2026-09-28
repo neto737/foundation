@@ -20,6 +20,10 @@
   "env": {
     "dev": {
       "name": "foundation",
+      "vars": {
+        "BASE_URL": "https://foundation.t00ls.dev",
+        "EMAIL_FROM": "Foundation <foundation@t00ls.dev>",
+      },
       "workers_dev": false,
       "preview_urls": false,
       "routes": [

@@ -159,29 +159,26 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 
 ### Infraestrutura externa
 
-DEV possui banco, secrets, envio de e-mail e deploy automático validados. Ainda
-faltam para a operação completa:
+DEV possui banco, secrets, envio de e-mail e deploy automático validados. O
+Custom Domain `foundation.t00ls.dev` responde ao smoke em `/health` com o Worker
+e o D1 operacionais. `DEV_HEALTH_URL` está configurado no GitHub; `BASE_URL` e
+`EMAIL_FROM` estão declarados em `env.dev.vars`. O bypass de cache no domínio
+foi configurado e as respostas verificadas não apresentaram
+`CF-Cache-Status: HIT`.
 
-- associar `foundation.t00ls.dev` ao Worker DEV como Custom Domain na zona
-  Cloudflare, sem CNAME conflitante;
-- definir `BASE_URL` no Worker DEV e `DEV_HEALTH_URL` no GitHub como
-  `https://foundation.t00ls.dev`;
-- configurar o bypass de cache para `/health` e rotas dinâmicas nesse domínio;
+Ainda faltam para a operação completa:
+
+- confirmar que `foundation@t00ls.dev` é um remetente autorizado no Resend;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
   for usado;
 - concluir a validação manual de cadastro, verificação, login, logout e magic
   link em DEV.
 
-O gate de CI, a migration, o deploy, o envio de recuperação de senha e o smoke
-DEV foram validados no endereço anterior; o Custom Domain ainda precisa de
-validação remota após a configuração externa.
-
 ### Fechamento operacional
 
-O código necessário para a v0.1 está implementado. O fechamento depende agora de
-configuração externa do domínio DEV e validação manual dos fluxos de
-autenticação em DEV. O PROD de aplicações consumidoras não pertence ao
-Foundation.
+O código necessário para a v0.1 está implementado. O fechamento depende agora da
+confirmação do remetente e da validação manual dos fluxos de autenticação em
+DEV. O PROD de aplicações consumidoras não pertence ao Foundation.
 
 Os runbooks vigentes cobrem [ambientes](runbooks/environments.md),
 [deploy](runbooks/deployment.md), [segurança](runbooks/security.md),
