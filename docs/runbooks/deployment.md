@@ -1,28 +1,19 @@
 # Deploy
 
-Cada produto possui deploy independente. O foundation valida o fluxo usando
-`examples/basic-d1`.
+Cada produto possui deploy independente. O Foundation valida somente o fluxo DEV
+usando `examples/basic-d1`.
 
 ## DEV automático
 
 Um push em `master` executa a CI completa. O workflow `Deploy DEV` recebe o SHA
-validado, aplica migrations D1, publica o Worker e consulta `/ready`. O deploy
-não repete os testes.
+validado, aplica migrations D1, publica o Worker e consulta `/health` no Custom
+Domain `foundation.t00ls.dev`. O endpoint verifica também o D1. O deploy não
+repete os testes.
 
-Uma falha de migration, deploy ou readiness encerra o workflow com erro. Não
-ignore o smoke test ao promover a mesma revisão para PROD.
-
-## PROD deliberado
-
-O workflow `Deploy PROD` exige:
-
-- `git_ref`: branch, tag ou commit selecionado pelo operador;
-- `deployment_target`: `prod`;
-- `confirmation`: texto exato `DEPLOY PROD`;
-- aprovação do GitHub Environment `production`, quando configurada no GitHub.
-
-O workflow resolve o ref uma vez, registra o commit SHA e usa exatamente esse
-SHA nos checks e no deploy. Depois executa migration, deploy e `/ready`.
+Uma falha de migration, deploy ou health check encerra o workflow com erro.
+`DEV_HEALTH_URL` deve conter `https://foundation.t00ls.dev` para habilitar o
+smoke test. Aplicações consumidoras implementam seus próprios deploys DEV e
+PROD.
 
 ## Migrations e rollback
 

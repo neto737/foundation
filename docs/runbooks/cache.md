@@ -1,7 +1,7 @@
 # Cache de rotas dinâmicas
 
 Este runbook define a proteção de cache obrigatória para os domínios Cloudflare
-de DEV e PROD. O objetivo é impedir que autenticação, dados personalizados,
+do exemplo em DEV. O objetivo é impedir que autenticação, dados personalizados,
 webhooks e sinais operacionais sejam servidos a partir de uma resposta obsoleta.
 
 ## Regra Cloudflare
@@ -19,8 +19,7 @@ usar a expressão:
 (starts_with(http.request.uri.path, "/account/")) or
 (http.request.uri.path eq "/webhooks") or
 (starts_with(http.request.uri.path, "/webhooks/")) or
-(http.request.uri.path eq "/health") or
-(http.request.uri.path eq "/ready")
+(http.request.uri.path eq "/health")
 ```
 
 Os pares `eq` e `starts_with` preservam o caminho raiz e seus descendentes sem
@@ -28,7 +27,7 @@ incluir nomes apenas parecidos, como `/apiary`.
 
 ## Responsabilidades da aplicação
 
-- `/health` e `/ready` enviam `Cache-Control: no-store`.
+- `/health` envia `Cache-Control: no-store` e verifica a conectividade D1.
 - `/api/auth/**` envia `Cache-Control: private, no-store`.
 - novos endpoints privados devem definir uma política de resposta equivalente.
 - APIs públicas só podem habilitar cache por decisão explícita e com testes.
@@ -43,11 +42,9 @@ real:
 
 ```bash
 curl --fail --silent --show-error --dump-header - --output /dev/null \
-  https://<host>/health
+  https://foundation.t00ls.dev/health
 curl --fail --silent --show-error --dump-header - --output /dev/null \
-  https://<host>/ready
-curl --fail --silent --show-error --dump-header - --output /dev/null \
-  https://<host>/api/auth/get-session
+  https://foundation.t00ls.dev/api/auth/get-session
 ```
 
 Confirme `Cache-Control: no-store` nos endpoints operacionais e

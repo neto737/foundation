@@ -20,17 +20,19 @@ interface Env {
 const app = new Hono<{ Bindings: Env }>();
 app.use("*", foundationSecurityHeaders());
 
-app.get("/health", (context) => {
-  context.header("Cache-Control", "no-store");
-  return context.json({ status: "ok" });
-});
-app.get("/ready", async (context) => {
+app.get("/health", async (context) => {
   context.header("Cache-Control", "no-store");
   try {
     await context.env.DB.prepare("SELECT 1").first();
-    return context.json({ status: "ready" });
+    return context.json({
+      status: "ok",
+      checks: { worker: "ok", database: "ok" },
+    });
   } catch {
-    return context.json({ status: "unavailable" }, 503);
+    return context.json(
+      { status: "error", checks: { worker: "ok", database: "error" } },
+      503,
+    );
   }
 });
 

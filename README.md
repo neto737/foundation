@@ -6,10 +6,11 @@ produtos.
 
 ## Estado
 
-A v0.1 possui um caminho local completo e CI verde. O primeiro deploy remoto
-depende da configuração dos recursos e secrets Cloudflare. Consulte
-[`docs/project-status.md`](docs/project-status.md) para entregas, validações,
-pendências priorizadas e itens deliberadamente adiados.
+A v0.1 possui um caminho local completo, CI e deploy automático do exemplo em
+DEV. O Foundation não possui ambiente PROD; aplicações consumidoras são donas
+dos seus ambientes. Consulte [`docs/project-status.md`](docs/project-status.md)
+para entregas, validações, pendências priorizadas e itens deliberadamente
+adiados.
 
 ## Início rápido
 

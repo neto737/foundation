@@ -125,15 +125,15 @@ pode evoluir de forma independente.
 
 ## Ambientes e entrega
 
-Existem `local`, `dev` e `prod`, com recursos e secrets separados. O projeto é
-inicialmente remote-first sem impedir o fluxo local futuro.
+O exemplo do Foundation possui apenas `local` e `dev`. Aplicações consumidoras
+definem seus próprios ambientes DEV e PROD com recursos e secrets separados.
 
-- DEV recebe deploy automático após integração e gates de qualidade.
-- PROD só recebe deploy por workflow manual, com um ref de código explícito,
-  ambiente selecionado e confirmação inequívoca.
+- O exemplo recebe deploy DEV automático após integração e gates de qualidade,
+  no Custom Domain `foundation.t00ls.dev`.
+- O Foundation não possui deploy PROD.
 - migrations são executadas apenas no ambiente alvo e quando forem seguras para
   o fluxo.
-- smoke/readiness check com D1 encerra o deploy; correções de schema preferem
+- smoke em `/health` com D1 encerra o deploy; correções de schema preferem
   forward-fix.
 - staging não existe na v0.1.
 
@@ -153,7 +153,7 @@ A v0.1 entrega uma fundação pequena e executável:
 - testes unitários, PostgreSQL em container e smoke Hyperdrive opcional;
 - `create-app` e `doctor` básicos, se necessários para validar o caminho do
   consumidor;
-- CI, publicação workspace-first e deploy DEV/PROD conforme os ADRs.
+- CI, publicação workspace-first e deploy DEV do exemplo conforme os ADRs.
 
 ## Não objetivos da v0.1
 
@@ -173,5 +173,5 @@ sofisticados permanecem direções futuras, não entregas implícitas.
 - [ADR-003: Better Auth](../decisions/003-better-auth.md)
 - [ADR-004: Bancos e testes de integração](../decisions/004-databases-and-integration-tests.md)
 - [ADR-005: Publicação workspace-first](../decisions/005-workspace-first-publication.md)
-- [ADR-006: Deploy DEV automático e PROD manual](../decisions/006-deployment-environments.md)
+- [ADR-006: Foundation DEV-only](../decisions/006-deployment-environments.md)
 - [ADR-007: Escopo da v0.1](../decisions/007-v01-scope.md)

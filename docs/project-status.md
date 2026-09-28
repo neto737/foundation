@@ -5,7 +5,7 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: 16 de setembro de 2026.
+Última revisão: 28 de setembro de 2026.
 
 ## Objetivo e escopo
 
@@ -20,7 +20,7 @@ A v0.1 valida um caminho completo e pequeno:
 - D1 como preset inicial e PostgreSQL como adapter suportado;
 - Better Auth, e-mail, segurança, tenancy e autorização;
 - gerador de projeto e diagnóstico básico;
-- desenvolvimento local, CI e workflows de deploy separados por ambiente.
+- desenvolvimento local, CI e deploy automático do exemplo somente em DEV.
 
 O projeto é Cloudflare-first e internal-first, sem regras de negócio de um
 produto específico. Providers e capabilities sem consumidor real não fazem parte
@@ -67,9 +67,9 @@ não é necessária para validar a v0.1.
 - Better Auth por meio dos pacotes do foundation;
 - senha, verificação, recuperação, magic link e Google opcional;
 - envio de e-mail via Resend;
-- `/health` para liveness, `/ready` para readiness do D1 e fallback de rotas da
-  SPA;
-- configuração separada para local, DEV e PROD;
+- `/health` para saúde do Worker e do D1 e fallback de rotas da SPA;
+- configuração local e DEV, com Custom Domain `foundation.t00ls.dev`, sem
+  `*.workers.dev` nem Preview URLs e com Workers Logs habilitados;
 - migration inicial e journal Drizzle do schema de autenticação;
 - comandos padronizados de geração, migration, seed e status;
 - formulários com labels, erros associados, foco inválido e estados de envio;
@@ -141,11 +141,10 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 - `CI`: executa o gate completo em PRs e pushes para `master`; execuções antigas
   da mesma ref são canceladas.
 - `Deploy DEV`: inicia após uma CI verde em `master`, faz checkout do SHA
-  validado, aplica migrations D1, implanta e consulta `/ready` quando uma URL
+  validado, aplica migrations D1, implanta e consulta `/health` quando uma URL
   foi configurada. Não repete a suíte de testes.
-- `Deploy PROD`: execução manual com alvo e confirmação explícitos; resolve o
-  ref uma vez, usa o mesmo SHA imutável no gate e deploy, passa pelo GitHub
-  Environment `production`, aplica migration e executa readiness opcional.
+- O Foundation não possui ambiente ou workflow PROD. Aplicações consumidoras
+  definem seus próprios ambientes e processos de deploy.
 - `Smoke Hyperdrive`: execução manual contra um endpoint configurado. É apenas
   um smoke remoto; não implementa um binding Hyperdrive dentro deste
   repositório.
@@ -163,29 +162,26 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 DEV possui banco, secrets, envio de e-mail e deploy automático validados. Ainda
 faltam para a operação completa:
 
-- configurar `PROD_HEALTH_URL`;
-- configurar secrets no GitHub Environment `production`; required reviewers e
-  wait timer não estão disponíveis no plano atual do repositório privado;
-- configurar no Worker PROD `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e
-  `RESEND_API_KEY`, com secret de autenticação distinto de DEV;
+- associar `foundation.t00ls.dev` ao Worker DEV como Custom Domain na zona
+  Cloudflare, sem CNAME conflitante;
+- definir `BASE_URL` no Worker DEV e `DEV_HEALTH_URL` no GitHub como
+  `https://foundation.t00ls.dev`;
+- configurar o bypass de cache para `/health` e rotas dinâmicas nesse domínio;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
   for usado;
-- configurar domínio ou rota Cloudflare quando o endereço definitivo existir;
 - concluir a validação manual de cadastro, verificação, login, logout e magic
-  link em DEV;
-- executar o primeiro deploy PROD somente depois da validação de DEV.
+  link em DEV.
 
 O gate de CI, a migration, o deploy, o envio de recuperação de senha e o smoke
-DEV estão validados.
+DEV foram validados no endereço anterior; o Custom Domain ainda precisa de
+validação remota após a configuração externa.
 
 ### Fechamento operacional
 
 O código necessário para a v0.1 está implementado. O fechamento depende agora de
-configuração externa e validação operacional:
-
-1. configurar os secrets do GitHub Environment `production`;
-2. concluir os fluxos manuais de autenticação em DEV;
-3. configurar os recursos/secrets PROD e executar o primeiro deploy deliberado.
+configuração externa do domínio DEV e validação manual dos fluxos de
+autenticação em DEV. O PROD de aplicações consumidoras não pertence ao
+Foundation.
 
 Os runbooks vigentes cobrem [ambientes](runbooks/environments.md),
 [deploy](runbooks/deployment.md), [segurança](runbooks/security.md),
@@ -242,7 +238,7 @@ As decisões arquiteturais permanecem registradas em `docs/decisions`:
 - [Better Auth](decisions/003-better-auth.md);
 - [bancos e testes de integração](decisions/004-databases-and-integration-tests.md);
 - [publicação workspace-first](decisions/005-workspace-first-publication.md);
-- [deploy DEV automático e PROD manual](decisions/006-deployment-environments.md);
+- [Foundation DEV-only](decisions/006-deployment-environments.md);
 - [escopo da v0.1](decisions/007-v01-scope.md).
 
 Mudanças que contradigam essas decisões devem atualizar ou substituir o ADR

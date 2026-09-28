@@ -29,7 +29,7 @@ Antes de enviar uma mudança, execute `pnpm check` e `pnpm format:check`.
 - D1/PostgreSQL e isolamento de tenant: testes de integração reais;
 - gerador: conteúdo, segurança do destino e build fora do workspace;
 - fluxos de usuário e acessibilidade: Playwright desktop e mobile;
-- deploy: smoke test em `/ready` no ambiente publicado.
+- deploy: smoke test em `/health` no DEV publicado, incluindo conectividade D1.
 
 Mocks não substituem os testes de banco existentes. Testes E2E não devem
 depender de providers externos para permanecer deterministas.

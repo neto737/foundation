@@ -1,32 +1,28 @@
-# ADR-006: Deploy DEV automático e PROD manual
+# ADR-006: Foundation DEV-only
 
 - Status: aceito
 - Escopo: v0.1
 
 ## Contexto
 
-O fluxo é inicialmente remoto, mas produção exige uma barreira explícita contra
-promoção acidental. DEV e PROD não podem compartilhar recursos ou secrets.
+O Foundation fornece packages e valida a integração com `examples/basic-d1`.
+Essa aplicação de referência não é um produto de produção. Cada aplicação
+consumidora é responsável pelos próprios ambientes DEV e PROD.
 
 ## Decisão
 
-Após os gates de lint, typecheck, testes e build, merges na branch principal
-fazem deploy automático no ambiente Cloudflare DEV. PROD é implantado somente
-por workflow manual, que exige um ref de código explícito (preferencialmente
-commit SHA ou tag imutável), seleção de `prod`, permissões de ambiente e
-confirmação inequívoca. O workflow resolve e registra o ref e implanta
-exatamente essa revisão. Não há promoção implícita baseada apenas em branch, tag
-ou conclusão do deploy DEV.
+Após os gates de lint, typecheck, testes e build, merges em `master` fazem
+deploy automático do exemplo no ambiente Cloudflare DEV. O Worker usa o Custom
+Domain `foundation.t00ls.dev`, sem `*.workers.dev` nem Preview URLs. O
+Foundation não provisiona nem implanta um ambiente PROD.
 
-Cada ambiente usa bindings, banco e secrets próprios. Migrations rodam apenas
-para o alvo escolhido e quando forem seguras; falhas de schema preferem
-forward-fix. Todo deploy termina com smoke/readiness check das dependências
-essenciais. Staging não faz parte da v0.1.
+O D1 e os secrets do exemplo são exclusivos de DEV. O deploy aplica migrations
+no D1 DEV e termina com smoke em `/health`, que verifica o Worker e o banco.
+Falhas de schema preferem forward-fix.
 
 ## Consequências
 
-- DEV oferece feedback contínuo remoto.
-- PROD mantém trilha de auditoria e intenção humana explícita.
+- DEV oferece feedback contínuo remoto sem operar um produto em PROD.
+- Consumidores definem e operam seus próprios ambientes e políticas de promoção.
 - Rollback de código não deve presumir rollback destrutivo de migration.
-- O mesmo desenho preserva um fluxo local futuro sem compartilhar credenciais
-  remotas.
+- O fluxo local continua separado do D1 e dos secrets remotos.

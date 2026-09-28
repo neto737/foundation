@@ -1,13 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "t00ls-basic-d1",
+  "name": "foundation",
   "main": "src/worker.ts",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/health", "/ready"],
+    "run_worker_first": ["/api/*", "/health"],
   },
   "d1_databases": [
     {
@@ -19,23 +19,33 @@
   ],
   "env": {
     "dev": {
-      "name": "t00ls-basic-d1-dev",
+      "name": "foundation",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        {
+          "pattern": "foundation.t00ls.dev",
+          "custom_domain": true,
+        },
+      ],
+      "observability": {
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true,
+        },
+        "traces": {
+          "enabled": false,
+          "head_sampling_rate": 1,
+          "persist": true,
+        },
+      },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "basic-d1-dev",
           "database_id": "1cd6891e-4d58-4781-8786-fe7f78380483",
-          "migrations_dir": "migrations",
-        },
-      ],
-    },
-    "production": {
-      "name": "t00ls-basic-d1",
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "basic-d1",
-          "database_id": "4584f2df-4330-4c4b-aa25-e2f288a0b90b",
           "migrations_dir": "migrations",
         },
       ],

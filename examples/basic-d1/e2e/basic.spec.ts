@@ -66,12 +66,10 @@ test("keeps service and missing API routes outside the SPA fallback", async ({
   const health = await request.get("/health");
   expect(health.ok()).toBe(true);
   expect(health.headers()["cache-control"]).toBe("no-store");
-  await expect(health.json()).resolves.toEqual({ status: "ok" });
-
-  const ready = await request.get("/ready");
-  expect(ready.ok()).toBe(true);
-  expect(ready.headers()["cache-control"]).toBe("no-store");
-  await expect(ready.json()).resolves.toEqual({ status: "ready" });
+  await expect(health.json()).resolves.toEqual({
+    status: "ok",
+    checks: { worker: "ok", database: "ok" },
+  });
 
   const session = await request.get("/api/auth/get-session");
   expect(session.ok()).toBe(true);
@@ -82,8 +80,8 @@ test("keeps service and missing API routes outside the SPA fallback", async ({
   await expect(missing.json()).resolves.toEqual({ error: "Not found" });
 });
 
-test("reports unavailable without exposing D1 failures", async () => {
-  const response = await app.request("/ready", undefined, {
+test("reports unhealthy without exposing D1 failures", async () => {
+  const response = await app.request("/health", undefined, {
     DB: {
       prepare() {
         throw new Error("internal database details");
@@ -93,5 +91,8 @@ test("reports unavailable without exposing D1 failures", async () => {
 
   expect(response.status).toBe(503);
   expect(response.headers.get("Cache-Control")).toBe("no-store");
-  await expect(response.json()).resolves.toEqual({ status: "unavailable" });
+  await expect(response.json()).resolves.toEqual({
+    status: "error",
+    checks: { worker: "ok", database: "error" },
+  });
 });

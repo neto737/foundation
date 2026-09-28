@@ -7,7 +7,7 @@ e configurar os controles adequados às suas rotas.
 
 - use `foundationSecurityHeaders()` ou baseline equivalente;
 - mantenha auth e respostas privadas com `private, no-store`;
-- mantenha `/health` e `/ready` com `no-store`;
+- mantenha `/health` com `no-store`;
 - configure o bypass Cloudflare descrito em [Cache](cache.md);
 - valide toda entrada externa;
 - nunca registre senha, token, cookie, secret ou dados pessoais desnecessários;

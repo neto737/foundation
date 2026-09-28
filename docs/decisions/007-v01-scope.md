@@ -13,7 +13,8 @@ criaria abstrações sem consumidores e atrasaria uma fundação utilizável.
 A v0.1 valida o caminho completo de um app: monorepo e qualidade, configuração,
 SPA/API no Worker, D1 e PostgreSQL, Better Auth, tenancy/access opcionais,
 segurança e observabilidade básicas, e-mail necessário aos fluxos, exemplo D1,
-testes, documentação e entrega DEV/PROD. `create-app` e `doctor` começam apenas
+testes, documentação e deploy DEV do exemplo; ambientes DEV/PROD de aplicações
+consumidoras são responsabilidade delas. `create-app` e `doctor` começam apenas
 no nível necessário para validar configuração e consumo dos pacotes.
 
 Ficam fora: SSR, microservices, Kubernetes, GraphQL, OpenAPI obrigatório,
