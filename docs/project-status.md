@@ -164,21 +164,21 @@ Custom Domain `foundation.t00ls.dev` responde ao smoke em `/health` com o Worker
 e o D1 operacionais. `DEV_HEALTH_URL` está configurado no GitHub; `BASE_URL` e
 `EMAIL_FROM` estão declarados em `env.dev.vars`. O bypass de cache no domínio
 foi configurado e as respostas verificadas não apresentaram
-`CF-Cache-Status: HIT`.
+`CF-Cache-Status: HIT`. O envio do e-mail de Magic Link foi validado manualmente
+em DEV; o acesso pelo link ainda não foi testado.
 
 Ainda faltam para a operação completa:
 
-- confirmar que `foundation@t00ls.dev` é um remetente autorizado no Resend;
 - configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
   for usado;
-- concluir a validação manual de cadastro, verificação, login, logout e magic
-  link em DEV.
+- concluir a validação manual de cadastro com um endereço não cadastrado,
+  verificação de e-mail, login, logout e acesso pelo Magic Link em DEV.
 
 ### Fechamento operacional
 
 O código necessário para a v0.1 está implementado. O fechamento depende agora da
-confirmação do remetente e da validação manual dos fluxos de autenticação em
-DEV. O PROD de aplicações consumidoras não pertence ao Foundation.
+validação manual dos fluxos de autenticação restantes em DEV. O PROD de
+aplicações consumidoras não pertence ao Foundation.
 
 Os runbooks vigentes cobrem [ambientes](runbooks/environments.md),
 [deploy](runbooks/deployment.md), [segurança](runbooks/security.md),
