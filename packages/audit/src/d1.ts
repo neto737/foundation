@@ -1,5 +1,6 @@
 import type { AuditStore } from "./index.js";
 import { serializeAuditMetadata } from "./index.js";
+import type { D1Database } from "@cloudflare/workers-types";
 
 export function createD1AuditStore(database: D1Database): AuditStore {
   return {

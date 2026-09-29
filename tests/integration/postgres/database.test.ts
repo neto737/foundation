@@ -1,3 +1,4 @@
+import nodeProcess from "node:process";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { getPostgresMigrationStatus } from "@t00ls-dev/db/postgres-migrations";
 import {
@@ -23,6 +24,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
+const process = nodeProcess as NodeJS.Process;
 const integrationRoot = fileURLToPath(new URL("..", import.meta.url));
 const migrationsFolder = fileURLToPath(
   new URL("./migrations", import.meta.url),
