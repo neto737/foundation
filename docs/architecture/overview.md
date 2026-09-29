@@ -7,9 +7,10 @@ apps da `t00ls-dev`. Os produtos vivem em repositórios independentes, possuem
 deploy e ciclo de atualização próprios e não colocam regras de negócio neste
 monorepo.
 
-O projeto é Cloudflare-first, internal-first, modular e seguro por padrão.
-Código público pode ser reutilizado por terceiros, mas não há compromisso de
-suporte externo ou compatibilidade além do versionamento semântico publicado.
+O projeto é Cloudflare-first, internal-first, modular e seguro por padrão. Os
+pacotes podem ser reutilizados por consumidores autorizados, mas não há
+compromisso de suporte externo ou compatibilidade além do versionamento
+semântico publicado.
 
 ## Arquitetura de uma aplicação
 
@@ -84,7 +85,7 @@ config <--- observability
 config <--- email
 
 app ---> auth + tenant + access
-tooling/create-app ---> pacotes públicos
+tooling/create-app ---> pacotes compartilhados
 tooling/doctor -----> config e adaptadores de diagnóstico
 apps/basic-d1 -----> pacotes via workspace
 ```
@@ -117,11 +118,10 @@ Regras de dependência:
 
 ## Publicação e consumo
 
-Na v0.1, exemplos e tooling consomem pacotes com o protocolo `workspace:`. Esse
-é o caminho principal até que APIs, ownership e automação de release estejam
-validados. A publicação pública em `@t00ls-dev/*` vem depois da confirmação do
-scope npm e usa Changesets, Semantic Versioning e GitHub Releases. Cada pacote
-pode evoluir de forma independente.
+Na v0.1, exemplos e tooling consomem pacotes com o protocolo `workspace:`. Os
+nove pacotes em `packages/*` são preparados para distribuição privada via GitHub
+Packages, com Changesets e versões independentes. A publicação está bloqueada
+até habilitação revisada. Veja o [runbook de pacotes](../runbooks/packages.md).
 
 ## Ambientes e entrega
 

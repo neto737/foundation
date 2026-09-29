@@ -1,15 +1,33 @@
 {
   "name": "@t00ls-dev/audit",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "license": "UNLICENSED",
+  "repository": "https://github.com/t00ls-dev/foundation",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
-    ".": "./dist/index.js",
-    "./d1": "./dist/d1.js",
-    "./postgres": "./dist/postgres.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./d1": {
+      "types": "./dist/d1.d.ts",
+      "default": "./dist/d1.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "default": "./dist/postgres.js"
+    }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "test": "vitest run --reporter=default",
     "typecheck": "tsc -p tsconfig.json"

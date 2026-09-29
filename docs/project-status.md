@@ -5,7 +5,7 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: 28 de setembro de 2026.
+Última revisão: 29 de setembro de 2026.
 
 ## Objetivo e escopo
 
@@ -54,8 +54,9 @@ da primeira entrega.
 | `@t00ls-dev/observability` | Logging JSON estruturado com contexto de request, usuário e tenant.                                                                                                 |
 | `@t00ls-dev/audit`         | Eventos append-only para D1/PostgreSQL, com validação recursiva que rejeita chaves sensíveis na metadata.                                                           |
 
-Os pacotes continuam privados e consumidos com `workspace:*`. Publicação no npm
-não é necessária para validar a v0.1.
+Os nove pacotes estão preparados para publicação privada no GitHub Packages;
+internamente são consumidos com `workspace:*`. A publicação automatizada está
+bloqueada.
 
 ### Aplicação de referência
 
@@ -217,9 +218,10 @@ Não serão implementados sem consumidor real:
 
 ## Publicação e releases
 
-Changesets, Semantic Versioning, GitHub Releases e publicação pública serão
-ativados quando houver um consumidor externo ao workspace e depois de confirmar
-o ownership do scope npm `@t00ls-dev`. Até lá:
+Changesets prepara releases independentes dos nove pacotes reutilizáveis em
+`packages/*` para GitHub Packages privado. O workflow abre Release PRs, mas a
+publicação permanece explicitamente bloqueada até uma ativação revisada. Veja o
+[runbook de pacotes](runbooks/packages.md). Nesse período:
 
 - APIs podem amadurecer sem releases artificiais;
 - cada pacote mantém versão própria;

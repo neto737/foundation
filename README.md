@@ -28,6 +28,9 @@ arquitetura, [`docs/decisions`](docs/decisions) para as decisões vigentes e
 [`docs/runbooks/cache.md`](docs/runbooks/cache.md) para a regra obrigatória de
 bypass de cache nos domínios Cloudflare.
 
+O [runbook de pacotes privados](docs/runbooks/packages.md) descreve Changesets,
+Release PRs e instalação via GitHub Packages.
+
 Runbooks operacionais adicionais cobrem
 [ambientes](docs/runbooks/environments.md),
 [deploy](docs/runbooks/deployment.md), [segurança](docs/runbooks/security.md),
@@ -36,5 +39,4 @@ Runbooks operacionais adicionais cobrem
 
 ## Posicionamento
 
-O uso externo é permitido sob a licença MIT, sem garantia de suporte,
-estabilidade perpétua ou alteração do roadmap para consumidores externos.
+O acesso aos pacotes depende das permissões do GitHub Packages.

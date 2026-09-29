@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
-  "access": "public",
+  "access": "restricted",
   "baseBranch": "master",
   "commit": false,
   "fixed": [],
@@ -8,7 +8,7 @@
   "linked": [],
   "privatePackages": {
     "tag": false,
-    "version": true
+    "version": false
   },
   "updateInternalDependencies": "patch"
 }

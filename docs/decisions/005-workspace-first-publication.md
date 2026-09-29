@@ -5,20 +5,19 @@
 
 ## Contexto
 
-Publicar cedo demais congela APIs imaturas e depende da disponibilidade e
-configuração do scope npm `@t00ls-dev`.
+Publicar cedo demais congela APIs imaturas e depende da configuração do GitHub
+Packages para o scope `@t00ls-dev`.
 
 ## Decisão
 
-O consumo inicial entre exemplos, tooling e pacotes usa dependências
-`workspace:` no monorepo. Publicação npm não é requisito para validar a v0.1.
-Antes da primeira publicação pública, o scope e as permissões no npm devem ser
-confirmados.
+O consumo entre exemplos, tooling e pacotes usa dependências `workspace:` no
+monorepo. A preparação de nove pacotes reutilizáveis em `packages/*` para GitHub
+Packages privado não altera o deploy DEV. A publicação permanece bloqueada até
+revisão explícita do acesso e da automação.
 
-Quando publicada, cada unidade tecnicamente justificada usa `@t00ls-dev/*`,
-Changesets, Semantic Versioning, GitHub Releases e release automatizado. Pacotes
-permanecem versionáveis independentemente e apps consumidores escolhem quando
-atualizar.
+Quando publicados, esses pacotes usam `@t00ls-dev/*`, Changesets e Semantic
+Versioning, sem GitHub Releases automáticos. Pacotes permanecem versionáveis
+independentemente e apps consumidores escolhem quando atualizar.
 
 ## Consequências
 
