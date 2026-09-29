@@ -138,7 +138,11 @@ jobs:
 
   publish:
     # Deliberately disabled. A separate reviewed change must enable first publication.
-    if: ${{ false }}
+    if:
+      ${{ github.event_name == 'workflow_dispatch' && github.ref ==
+      'refs/heads/master' && inputs.confirmation ==
+      'PUBLISH_NINE_PRIVATE_PACKAGES_0.1.0' && inputs.expected_sha == github.sha
+      && needs.bootstrap-audit.result == 'success' }}
     needs: bootstrap-audit
     runs-on: ubuntu-latest
     permissions:
