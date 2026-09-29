@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description:
+          "Type PUBLISH_NINE_PRIVATE_PACKAGES_0.1.0 to audit the initial release"
+        required: true
+        type: string
+      expected_sha:
+        description: "Full 40-character SHA of the current master commit"
+        required: true
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
@@ -11,6 +22,7 @@ concurrency:
 
 jobs:
   version:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,10 +58,88 @@ jobs:
           create-github-releases: false
           push-git-tags: false
 
+  bootstrap-audit:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js and GitHub Packages authentication
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@t00ls-dev"
+
+      - name: Verify explicit bootstrap request and master SHA
+        run: node .github/scripts/bootstrap.mjs context
+        env:
+          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
+          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run:
+          pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install
+          --with-deps chromium
+
+      - name: Run checks
+        run: pnpm check
+
+      - name: Verify all workspace manifests and build outputs
+        run: node .github/scripts/bootstrap.mjs manifests
+
+      - name: Verify absence in GitHub Packages with authentication
+        run: node .github/scripts/bootstrap.mjs registry
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate Changesets publish plan
+        run:
+          pnpm exec changeset publish-plan --output
+          "$RUNNER_TEMP/bootstrap-plan.json"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify exact first-release plan
+        run:
+          node .github/scripts/bootstrap.mjs plan
+          "$RUNNER_TEMP/bootstrap-plan.json"
+
+      - name: Pack publishable packages locally
+        run: |
+          mkdir -p "$RUNNER_TEMP/bootstrap-packages"
+          pnpm --filter './packages/*' -r pack --pack-destination "$RUNNER_TEMP/bootstrap-packages"
+
+      - name: Verify tarballs
+        run:
+          node .github/scripts/bootstrap.mjs tarballs
+          "$RUNNER_TEMP/bootstrap-packages"
+
+      - name: Recheck master SHA before approving any later publish
+        run: node .github/scripts/bootstrap.mjs context
+        env:
+          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
+          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish:
     # Deliberately disabled. A separate reviewed change must enable first publication.
     if: ${{ false }}
-    needs: version
+    needs: bootstrap-audit
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -57,6 +147,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -72,10 +164,41 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Recheck explicit bootstrap request and master SHA
+        run: node .github/scripts/bootstrap.mjs context
+        env:
+          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
+          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build publishable packages
         run: pnpm --filter './packages/*' build
 
+      - name: Recheck manifest allowlist
+        run: node .github/scripts/bootstrap.mjs manifests
+
+      - name: Recheck authenticated registry and publish plan
+        run: |
+          node .github/scripts/bootstrap.mjs registry
+          pnpm exec changeset publish-plan --output "$RUNNER_TEMP/bootstrap-plan.json"
+          node .github/scripts/bootstrap.mjs plan "$RUNNER_TEMP/bootstrap-plan.json"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Recheck tarballs
+        run: |
+          mkdir -p "$RUNNER_TEMP/bootstrap-packages"
+          pnpm --filter './packages/*' -r pack --pack-destination "$RUNNER_TEMP/bootstrap-packages"
+          node .github/scripts/bootstrap.mjs tarballs "$RUNNER_TEMP/bootstrap-packages"
+
+      - name: Recheck master SHA immediately before publishing
+        run: node .github/scripts/bootstrap.mjs context
+        env:
+          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
+          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to GitHub Packages
-        run: pnpm exec changeset publish
+        run: pnpm exec changeset publish --no-git-tag
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
