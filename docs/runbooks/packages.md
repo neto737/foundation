@@ -5,6 +5,20 @@ Packages (`@t00ls-dev`, `https://npm.pkg.github.com`). Cada pacote tem sua
 própria versão SemVer; a raiz, exemplos, testes de integração e tooling
 (inclusive `create-app` e `doctor`) permanecem privados.
 
+## Base inicial 0.1.0
+
+Os nove pacotes ainda não foram publicados. A primeira publicação privada deve
+usar exatamente as versões `0.1.0` já declaradas em seus manifests, sem
+changeset de incremento nem Release PR de versionamento inicial. Antes de
+habilitar o job `publish` em uma mudança posterior, confira que essas nove
+versões ainda não existem no GitHub Packages e revise o plano de publicação.
+
+O changeset histórico `safe-audit-logs` descrevia a rejeição recursiva de
+metadados sensíveis em `@t00ls-dev/audit` e a redação de campos sensíveis no
+contexto dos logs de `@t00ls-dev/observability` (implementação em `12f1f8d`).
+Ambos os comportamentos integram a base inicial `0.1.0`; não representam uma
+mudança posterior que exija `0.2.0`.
+
 ## Versionamento e Release PR
 
 Ao modificar uma API ou comportamento publicável, crie um changeset com
@@ -14,17 +28,17 @@ Dependências internas publicáveis são atualizadas pelo Changesets quando
 necessário; pacotes não compartilham uma versão fixa.
 
 Quando alterações chegam à `master`, o workflow Release instala com lockfile
-congelado, roda `pnpm check` e usa Changesets para abrir ou atualizar um Release
-PR com versões e changelogs. O merge desse PR atualiza as versões na `master`.
-PRs criados pelo `GITHUB_TOKEN` não disparam automaticamente o workflow CI de
-`pull_request`; se o branch protection exigir esse check, será preciso acionar
-uma execução por alteração humana no PR antes do merge. **A publicação está
-bloqueada por `if: ${{ false }}` no job `publish`**. Esse job deverá ser
-habilitado por uma alteração revisada, com condição que execute somente depois
-do merge de um Release PR e sem changesets pendentes. A etapa preparada usará
-`changeset publish`, `GITHUB_TOKEN` e `packages: write`, sem PAT e sem criar
-GitHub Releases. Até essa habilitação, merges não publicam pacotes nem criam
-tags.
+congelado, roda `pnpm check` e, se houver changesets pendentes, abre ou atualiza
+um Release PR com versões e changelogs. O merge desse PR atualiza as versões na
+`master`. PRs criados pelo `GITHUB_TOKEN` não disparam automaticamente o
+workflow CI de `pull_request`; se o branch protection exigir esse check, será
+preciso acionar uma execução por alteração humana no PR antes do merge. **A
+publicação está bloqueada por `if: ${{ false }}` no job `publish`**. Esse job
+deverá ser habilitado por uma alteração revisada, com condição que execute
+somente depois do merge de um Release PR e sem changesets pendentes. A etapa
+preparada usará `changeset publish`, `GITHUB_TOKEN` e `packages: write`, sem PAT
+e sem criar GitHub Releases. Até essa habilitação, merges não publicam pacotes
+nem criam tags.
 
 O `access: "restricted"` do Changesets é a opção conservadora para publicação
 restrita; **não define a visibilidade no GitHub Packages**. Na primeira
