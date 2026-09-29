@@ -23,7 +23,7 @@ concurrency:
 jobs:
   version:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
@@ -60,7 +60,7 @@ jobs:
 
   bootstrap-audit:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -144,7 +144,7 @@ jobs:
       'PUBLISH_NINE_PRIVATE_PACKAGES_0.1.0' && inputs.expected_sha == github.sha
       && needs.bootstrap-audit.result == 'success' }}
     needs: bootstrap-audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
