@@ -55,11 +55,30 @@ nove nomes, demais workspaces privados, UNLICENSED e registry. O registry é
 consultado autenticadamente; erros não são interpretados como versões ausentes.
 Versões inesperadas, downgrade, pacote inacessível ou alvo já publicado falham.
 
+A identidade de autor Git sozinha não comprova geração automática. O único
+commit precisa ser o `head.sha` do PR, ter exatamente um parent igual ao SHA
+base e possuir assinatura verificada (`verified: true`, `reason: valid`), autor
+`github-actions[bot]` e committer `web-flow`, compatíveis com o caminho API da
+Changesets Action utilizado aqui. Não use commits manuais ou o modo de push via
+Git CLI para esse PR de versionamento.
+
+Após instalar as dependências congeladas, os gates recuperam pela API os
+manifests, configuração de workspaces/Changesets e changesets do SHA base. Em
+diretório temporário isolado, as bibliotecas do CLI instalado recalculam o
+release plan sem executar versionamento ou publicação. O record inteiro deve
+corresponder ao resultado, incluindo packages, versões, bumps, hashes e bumps
+derivados de dependências internas. Falhas de consulta, árvore truncada ou
+inputs obrigatórios ausentes interrompem o fluxo.
+
 O plano calculado por Changesets precisa corresponder exatamente ao registro
 aprovado ainda ausente no registry. Só esses packages são empacotados pelo CLI;
 metadata, exports e arquivos são inspecionados. O resultado inclui hashes
 SHA-256/SHA-512 e um `plan_digest` SHA-256 do envelope canônico contendo PR,
 SHA, registro e artifacts. Anote também o ID `audit_run`.
+
+Audit e preflight compartilham a validação do caminho exato do tarball derivado
+de nome e versão, como `packages/t00ls-dev-access-0.1.1.tgz`; nomes arbitrários,
+traversal, subdiretórios e artifacts fora do plano são rejeitados.
 
 Revise o summary e o artifact `foundation-release-<plan_digest>` da execução
 bem-sucedida. O digest cobre os **bytes** dos tarballs, não apenas os números de

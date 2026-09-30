@@ -22,7 +22,11 @@ import {
   validateRecord,
   validatePublishPlan,
   recordFromStatus,
+  validateArtifactPath,
+  validateReleaseCommit,
+  validateRecordPlan,
 } from "./release-core.mjs";
+import { recordFromBase } from "./release-planning.mjs";
 
 const sha = "a".repeat(40);
 const record = () => ({
@@ -62,6 +66,7 @@ const pr = () => ({
   merged: true,
   base: { ref: "master", repo: { full_name: "t00ls-dev/foundation" } },
   head: {
+    sha,
     ref: "changeset-release/master",
     repo: { full_name: "t00ls-dev/foundation" },
   },
@@ -72,7 +77,7 @@ const artifacts = () => [
   {
     name: names[0],
     version: "0.1.1",
-    path: "packages/access.tgz",
+    path: "packages/t00ls-dev-access-0.1.1.tgz",
     hash: "f".repeat(64),
     integrity: "sha512-YWJj",
     packIntegrity: "sha256-YWJj",
@@ -97,6 +102,245 @@ const registry = (versions = ["0.1.0"], latest = versions.at(-1)) => ({
   },
 });
 const invalid = (name, fn) => test(name, () => assert.throws(fn));
+
+const commit = () => ({
+  sha,
+  author: { login: "github-actions[bot]" },
+  committer: { login: "web-flow" },
+  commit: { verification: { verified: true, reason: "valid" } },
+  parents: [{ sha: record().baseSha }],
+});
+test("verified API-generated release commit matches PR head and single base parent", () =>
+  validateReleaseCommit([commit()], pr(), record()));
+for (const [label, change] of [
+  [
+    "head SHA",
+    (c) => {
+      c.sha = "c".repeat(40);
+    },
+  ],
+  [
+    "parent",
+    (c) => {
+      c.parents[0].sha = "c".repeat(40);
+    },
+  ],
+  [
+    "extra parent",
+    (c) => {
+      c.parents.push({ sha });
+    },
+  ],
+  [
+    "unsigned",
+    (c) => {
+      c.commit.verification.verified = false;
+    },
+  ],
+  [
+    "invalid signature",
+    (c) => {
+      c.commit.verification.reason = "invalid";
+    },
+  ],
+  [
+    "missing signature evidence",
+    (c) => {
+      delete c.commit.verification;
+    },
+  ],
+  [
+    "human committer with bot author",
+    (c) => {
+      c.committer.login = "human";
+    },
+  ],
+])
+  invalid(`release commit rejects ${label}`, () => {
+    const c = commit();
+    change(c);
+    validateReleaseCommit([c], pr(), record());
+  });
+
+function baseSnapshot(overrides = {}) {
+  const files = new Map([
+    [
+      "package.json",
+      Buffer.from(
+        JSON.stringify({
+          name: "@t00ls-dev/release-fixture",
+          version: "0.1.0",
+          private: true,
+          packageManager: "pnpm@10.15.1",
+        }),
+      ),
+    ],
+    ["pnpm-workspace.yaml", readFileSync("pnpm-workspace.yaml")],
+    [".changeset/config.json", readFileSync(".changeset/config.json")],
+    [
+      ".changeset/fix-package-distribution.md",
+      Buffer.from(
+        `---\n${names.map((name) => `"${name}": patch`).join("\n")}\n---\nFixture: original nine-package patch release.\n`,
+      ),
+    ],
+    ...names.map((name) => {
+      const path = `packages/${name.split("/")[1]}/package.json`;
+      return [path, Buffer.from(JSON.stringify({ name, version: "0.1.0" }))];
+    }),
+  ]);
+  for (const [path, bytes] of Object.entries(overrides))
+    files.set(path, Buffer.from(bytes));
+  return {
+    baseSha: record().baseSha,
+    cliVersion: "3.0.3",
+    tree: {
+      truncated: false,
+      tree: [...files.keys()].map((path) => ({
+        path,
+        type: "blob",
+        mode: "100644",
+      })),
+    },
+    content: async (path, ref) => {
+      assert.equal(ref, record().baseSha);
+      assert(files.has(path));
+      return files.get(path);
+    },
+  };
+}
+test("independent planning uses original nine-package PATCH changeset and accepts correct record", async () => {
+  const expected = await recordFromBase(baseSnapshot());
+  assert.equal(expected.packages.length, 9);
+  assert(
+    expected.packages.every(
+      (pkg) =>
+        pkg.oldVersion === "0.1.0" &&
+        pkg.version === "0.1.1" &&
+        pkg.type === "patch",
+    ),
+  );
+  validateRecordPlan(structuredClone(expected), expected);
+});
+test("regression: correct PATCH hash and bot author/parent cannot authorize access-only major", async () => {
+  const expected = await recordFromBase(baseSnapshot());
+  const forged = structuredClone(expected);
+  forged.packages = [
+    { ...forged.packages[0], type: "major", version: "1.0.0" },
+  ];
+  assert.equal(forged.changesets[0].hash, expected.changesets[0].hash);
+  const unsigned = commit();
+  unsigned.commit.verification.verified = false;
+  assert.throws(() => validateReleaseCommit([unsigned], pr(), forged));
+  // Even a verified commit cannot replace Changesets' independent derivation.
+  validateReleaseCommit([commit()], pr(), forged);
+  assert.throws(
+    () => validateRecordPlan(forged, expected),
+    /independently recalculated/,
+  );
+});
+test("independent plan comparison rejects changed/omitted/extra packages, versions, bumps and changesets", async () => {
+  const expected = await recordFromBase(baseSnapshot());
+  for (const mutate of [
+    (r) => {
+      r.packages.pop();
+    },
+    (r) => {
+      r.packages.push({ ...r.packages[0] });
+    },
+    (r) => {
+      r.packages[0].name = "@t00ls-dev/unexpected";
+    },
+    (r) => {
+      r.packages[0].oldVersion = "0.0.0";
+      r.packages[0].type = "minor";
+      r.packages[0].version = "0.1.0";
+    },
+    (r) => {
+      r.packages[0].type = "minor";
+      r.packages[0].version = "0.2.0";
+    },
+    (r) => {
+      r.changesets[0].id = "different";
+      r.packages.forEach((p) => {
+        p.changesets = ["different"];
+      });
+    },
+  ]) {
+    const changed = structuredClone(expected);
+    mutate(changed);
+    assert.throws(() => validateRecordPlan(changed, expected));
+  }
+});
+test("real Changesets planning derives internal dependency bump and rejects divergent derived record", async () => {
+  const audit = {
+    name: names[1],
+    version: "0.1.0",
+    dependencies: { [names[0]]: "workspace:^0.1.0" },
+  };
+  const expected = await recordFromBase(
+    baseSnapshot({
+      "packages/audit/package.json": JSON.stringify(audit),
+      ".changeset/fix-package-distribution.md": `---\n"${names[0]}": minor\n---\nFixture dependency propagation.\n`,
+    }),
+  );
+  const derived = expected.packages.find((pkg) => pkg.name === names[1]);
+  assert.equal(derived.reason, "internal-dependency");
+  assert.equal(derived.version, "0.1.1");
+  assert.deepEqual(derived.dependencies, [names[0]]);
+  validateRecordPlan(expected, expected);
+  const changed = structuredClone(expected);
+  changed.packages.find((pkg) => pkg.name === names[1]).version = "0.2.0";
+  changed.packages.find((pkg) => pkg.name === names[1]).type = "minor";
+  assert.throws(() => validateRecordPlan(changed, expected));
+});
+test("planning base fails closed on truncated tree, links and missing inputs", async () => {
+  for (const mutate of [
+    (s) => {
+      s.tree.truncated = true;
+    },
+    (s) => {
+      s.tree.tree[0].mode = "120000";
+    },
+    (s) => {
+      s.tree.tree = s.tree.tree.filter(
+        (file) => file.path !== ".changeset/config.json",
+      );
+    },
+  ]) {
+    const snapshot = baseSnapshot();
+    mutate(snapshot);
+    await assert.rejects(recordFromBase(snapshot));
+  }
+});
+
+for (const [label, path] of [
+  ["wrong version", "packages/t00ls-dev-access-0.1.2.tgz"],
+  ["wrong package", "packages/t00ls-dev-audit-0.1.1.tgz"],
+  ["traversal", "packages/../t00ls-dev-access-0.1.1.tgz"],
+  ["absolute path", "/packages/t00ls-dev-access-0.1.1.tgz"],
+  ["subdirectory", "packages/extra/t00ls-dev-access-0.1.1.tgz"],
+  ["wrong extension", "packages/t00ls-dev-access-0.1.1.tar"],
+  ["arbitrary filename", "packages/access.tgz"],
+])
+  invalid(`audit and preflight artifact rule rejects ${label}`, () => {
+    const p = packet();
+    p.artifacts[0].path = path;
+    assert.throws(() => validateArtifactPath(p.artifacts[0]));
+    validatePacket(
+      p,
+      { ...context(), planDigest: envelopeDigest(p) },
+      record(),
+    );
+  });
+invalid("unexpected extra artifact rejected even with matching digest", () => {
+  const p = packet();
+  p.artifacts.push({
+    ...p.artifacts[0],
+    name: names[1],
+    path: "packages/t00ls-dev-audit-0.1.1.tgz",
+  });
+  validatePacket(p, { ...context(), planDigest: envelopeDigest(p) }, record());
+});
 
 test("record generation from Changesets status is deterministic, without versioning", () => {
   const status = {
@@ -427,6 +671,37 @@ test("actual Changesets 3.0.3 pack-directory format works offline without publis
     assert.equal(entry.name, pkg.name);
     assert.equal(entry.version, pkg.version);
     const bytes = readFileSync(join(out, entry.tarball.path));
+    validateArtifactPath({ ...entry, path: entry.tarball.path });
+    assert.equal(
+      entry.tarball.path,
+      `packages/t00ls-dev-access-${pkg.version}.tgz`,
+    );
+    const r = record();
+    const [major, minor, patch] = pkg.version.split(".").map(BigInt);
+    const previous =
+      patch > 0n
+        ? { oldVersion: `${major}.${minor}.${patch - 1n}`, type: "patch" }
+        : minor > 0n
+          ? { oldVersion: `${major}.${minor - 1n}.0`, type: "minor" }
+          : { oldVersion: `${major - 1n}.0.0`, type: "major" };
+    r.packages[0] = {
+      ...r.packages[0],
+      ...previous,
+      version: pkg.version,
+    };
+    const p = packet();
+    p.record = r;
+    p.artifacts = [
+      {
+        name: entry.name,
+        version: entry.version,
+        path: entry.tarball.path,
+        hash: hash(bytes),
+        packIntegrity: entry.tarball.integrity,
+        integrity: `sha512-${hash(bytes, "sha512", "base64")}`,
+      },
+    ];
+    validatePacket(p, { ...context(), planDigest: envelopeDigest(p) }, r);
     assert.equal(
       entry.tarball.integrity,
       `sha256-${hash(bytes, "sha256", "base64")}`,

@@ -17,6 +17,54 @@ export const names = [
 ].map((name) => `@t00ls-dev/${name}`);
 export const shaPattern = /^[0-9a-f]{40}$/;
 
+export function validateArtifactPath(item) {
+  assert(names.includes(item.name), "Unexpected artifact package");
+  compareVersions(item.version, item.version);
+  assert.equal(
+    item.path,
+    `packages/${item.name.replace(/^@/, "").replace("/", "-")}-${item.version}.tgz`,
+    "Artifact path differs from Changesets package/version filename",
+  );
+}
+
+export function validateReleaseCommit(commits, pr, record) {
+  assert.equal(
+    commits.length,
+    1,
+    "Exactly one generated release commit required",
+  );
+  const commit = commits[0];
+  assert(shaPattern.test(pr.head.sha), "Invalid release head SHA");
+  assert.equal(commit.sha, pr.head.sha, "Release commit differs from PR head");
+  assert.equal(commit.author?.login, "github-actions[bot]");
+  assert.equal(
+    commit.committer?.login,
+    "web-flow",
+    "GitHub API-generated commit required",
+  );
+  assert.equal(
+    commit.commit?.verification?.verified,
+    true,
+    "Verified release signature required",
+  );
+  assert.equal(commit.commit?.verification?.reason, "valid");
+  assert.deepEqual(
+    commit.parents?.map((parent) => parent.sha),
+    [record.baseSha],
+    "Single planning-base parent required",
+  );
+}
+
+export function validateRecordPlan(record, expected) {
+  validateRecord(record);
+  validateRecord(expected);
+  assert.equal(
+    digest(record),
+    digest(expected),
+    "Release record differs from independently recalculated Changesets plan",
+  );
+}
+
 export function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value !== null && typeof value === "object")
@@ -374,10 +422,7 @@ export function validatePacket(packet, context, record) {
     record.packages.map((p) => `${p.name}@${p.version}`).sort(),
   );
   for (const item of packet.artifacts) {
-    assert(
-      /^packages\/[a-zA-Z0-9_-]+\.tgz$/.test(item.path),
-      "Unsafe artifact path",
-    );
+    validateArtifactPath(item);
     assert(
       /^[0-9a-f]{64}$/.test(item.hash) &&
         /^sha512-[a-zA-Z0-9+/]+={0,2}$/.test(item.integrity),

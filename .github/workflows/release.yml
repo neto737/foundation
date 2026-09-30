@@ -93,11 +93,11 @@ jobs:
           cache: pnpm
           registry-url: https://npm.pkg.github.com
           scope: "@t00ls-dev"
+      - run: pnpm install --frozen-lockfile
       - name: Validate manual context, merged Release PR and record
         run: node .github/scripts/release.mjs context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: pnpm install --frozen-lockfile
       - name: Install Playwright browser
         run:
           pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install
@@ -147,11 +147,11 @@ jobs:
           cache: pnpm
           registry-url: https://npm.pkg.github.com
           scope: "@t00ls-dev"
+      - run: pnpm install --frozen-lockfile
       - name: Validate current authorization and Release PR again
         run: node .github/scripts/release.mjs context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: pnpm install --frozen-lockfile
       - name: Install Playwright browser
         run:
           pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install

@@ -25,7 +25,11 @@ import {
   validatePacket,
   validatePr,
   validatePublishPlan,
+  validateArtifactPath,
+  validateReleaseCommit,
+  validateRecordPlan,
 } from "./release-core.mjs";
+import { recordFromBase } from "./release-planning.mjs";
 
 const require = createRequire(import.meta.url);
 const recordPath = ".changeset/release-plan.json";
@@ -131,13 +135,16 @@ async function provenance(value) {
     );
   }
   const commits = await pages(`${gh}/pulls/${value.releasePr}/commits`);
-  assert(
-    commits.length === 1 && commits[0].author?.login === "github-actions[bot]",
-    "Release commit must be generated, not manually extended",
-  );
-  assert(
-    commits[0].parents.some((parent) => parent.sha === record.baseSha),
-    "Planning base not the generated commit parent",
+  validateReleaseCommit(commits, pr, record);
+  const tree = await request(`${gh}/git/trees/${record.baseSha}?recursive=1`);
+  validateRecordPlan(
+    record,
+    await recordFromBase({
+      baseSha: record.baseSha,
+      cliVersion: record.cliVersion,
+      tree,
+      content,
+    }),
   );
   for (const item of record.packages) {
     const path = `packages/${item.name.split("/")[1]}/package.json`;
@@ -403,7 +410,7 @@ async function prepare(directory) {
           ),
         );
         const path = item.tarball.path;
-        assert(/^packages\/[a-zA-Z0-9_-]+\.tgz$/.test(path));
+        validateArtifactPath({ name: item.name, version: item.version, path });
         const bytes = readFileSync(join(directory, "packed", path));
         assert.equal(
           item.tarball.integrity,
