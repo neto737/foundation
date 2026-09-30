@@ -19,6 +19,8 @@
     "dev": "pnpm build && wrangler dev",
     "deploy:dev": "pnpm --workspace-root exec turbo run build --filter=@t00ls-dev/example-basic-d1... && cross-env CLOUDFLARE_ENV=dev vite build && wrangler deploy",
     "lint": "eslint .",
+    "test": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.json"
   },
@@ -50,8 +52,10 @@
     "@vitejs/plugin-react": "^6.1.1",
     "cross-env": "^10.0.0",
     "drizzle-kit": "^0.31.11",
+    "miniflare": "^4.20250906.0",
     "tailwindcss": "^4.1.13",
     "vite": "^8.3.0",
+    "vitest": "^5.0.1",
     "wrangler": "^4.135.0"
   }
 }
