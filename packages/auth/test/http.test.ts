@@ -61,6 +61,57 @@ describe("foundation auth HTTP flows", () => {
     ]);
   });
 
+  it("requires verification and resolves and revokes a persistent session", async () => {
+    const credentials = {
+      email: "person@example.com",
+      password: "correct-horse-battery-staple",
+    };
+    await post("/api/auth/sign-up/email", { ...credentials, name: "Person" });
+    expect((await post("/api/auth/sign-in/email", credentials)).status).toBe(
+      403,
+    );
+    const verification = sent.find(
+      (message) => message.subject === "Verify your email",
+    );
+    expect(verification).toBeDefined();
+    const verified = await auth.handler(new Request(verification!.text));
+    expect([200, 302]).toContain(verified.status);
+    const login = await post("/api/auth/sign-in/email", credentials);
+    expect(login.ok).toBe(true);
+    const cookie = login.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    expect(cookie).toContain("session_token");
+    const headers = new Headers({ Cookie: cookie });
+    const resolved = await auth.resolveSession(headers);
+    expect(resolved.data?.user.email).toBe(credentials.email);
+    expect(resolved.data?.session.expiresAt).toBeInstanceOf(Date);
+    expect(resolved.headers).toBeInstanceOf(Headers);
+    expect(await auth.resolveSession(new Headers())).toMatchObject({
+      data: null,
+    });
+    expect(
+      await auth.resolveSession(
+        new Headers({ Cookie: "better-auth.session_token=invalid" }),
+      ),
+    ).toMatchObject({ data: null });
+    const logout = await auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-out", {
+        method: "POST",
+        headers: {
+          "Cookie": cookie,
+          "Origin": "http://localhost:3000",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(logout.ok).toBe(true);
+    expect((await auth.resolveSession(headers)).data).toBeNull();
+    expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+  });
+
   function post(path: string, body: Readonly<Record<string, string>>) {
     return auth.handler(
       new Request(`http://localhost:3000${path}`, {

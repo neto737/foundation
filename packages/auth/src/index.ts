@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type Auth } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 
 export interface FoundationEmail {
@@ -19,12 +19,18 @@ export interface FoundationAuthOptions {
 
 export interface FoundationAuth {
   handler(request: Request): Promise<Response>;
+  resolveSession(headers: Headers): Promise<{
+    data: FoundationSession | null;
+    headers: Headers;
+  }>;
 }
+
+export type FoundationSession = Auth["$Infer"]["Session"];
 
 export function createFoundationAuth(
   options: FoundationAuthOptions,
 ): FoundationAuth {
-  return betterAuth({
+  const auth = betterAuth({
     baseURL: options.baseURL,
     // Better Auth intentionally accepts several unrelated database adapter shapes.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -63,4 +69,14 @@ export function createFoundationAuth(
     ],
     ...(options.google ? { socialProviders: { google: options.google } } : {}),
   });
+  return {
+    handler: auth.handler,
+    async resolveSession(headers) {
+      const result = await auth.api.getSession({
+        headers,
+        returnHeaders: true,
+      });
+      return { data: result.response, headers: result.headers };
+    },
+  };
 }

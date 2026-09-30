@@ -19,7 +19,12 @@ pnpm --filter <app> add '@t00ls-dev/auth@workspace:*'
 
 ## API
 
-- `createFoundationAuth(options)`: cria `{ handler(request) }`.
+- `createFoundationAuth(options)`: cria
+  `{ handler(request), resolveSession(headers) }`.
+- `resolveSession(headers)`: retorna `{ data, headers }`. `data` é uma
+  `FoundationSession` tipada (`user` e `session`) ou `null`. Falhas de banco não
+  são convertidas em sessão anônima. Encaminhe os headers retornados, incluindo
+  cada `Set-Cookie`, para preservar renovação e limpeza de cookies.
 - `FoundationAuthOptions`: exige `baseURL`, adaptador `database`, `email` e
   `secret`; aceita credenciais `google`.
 - `FoundationEmail`: contrato mínimo de envio usado pelos fluxos de
@@ -42,8 +47,9 @@ export default { fetch: (request: Request) => auth.handler(request) };
 
 ## Limitações, segurança e migrações
 
-O pacote não expõe a API completa do Better Auth nem cria rotas. E-mails são
-texto simples e têm assuntos fixos em inglês. Guarde `secret` e credenciais fora
-do código, use HTTPS, valide `baseURL` e não registre links ou tokens. O schema
-e as migrações exigidos pelo Better Auth devem ser gerados e aplicados pela
-aplicação conforme a versão instalada.
+O pacote não expõe a API completa do Better Auth nem cria rotas. A resolução de
+sessão no servidor reutiliza a validação do Better Auth; não interprete cookies
+manualmente. E-mails são texto simples e têm assuntos fixos em inglês. Guarde
+`secret` e credenciais fora do código, use HTTPS, valide `baseURL` e não
+registre links ou tokens. O schema e as migrações exigidos pelo Better Auth
+devem ser gerados e aplicados pela aplicação conforme a versão instalada.
