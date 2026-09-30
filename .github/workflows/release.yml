@@ -6,18 +6,41 @@ on:
       - master
   workflow_dispatch:
     inputs:
-      confirmation:
+      mode:
         description:
-          "Type PUBLISH_NINE_PRIVATE_PACKAGES_0.1.0 to audit the initial release"
+          Audit only, explicitly publish, or resume an authorized partial
+          release
+        type: choice
+        options: [audit, publish, resume]
+        default: audit
         required: true
+      release_pr:
+        description: Merged Version Packages PR number
         type: string
+        required: true
       expected_sha:
-        description: "Full 40-character SHA of the current master commit"
-        required: true
+        description:
+          Full current master SHA, equal to the Release PR merge commit
         type: string
+        required: true
+      confirmation:
+        description: Publish/resume require PUBLISH_PRIVATE_FOUNDATION_PACKAGES
+        type: string
+        required: false
+      plan_digest:
+        description: Exact digest shown by the successful audit
+        type: string
+        required: false
+      audit_run:
+        description: Successful audit run ID owning the approved artifacts
+        type: string
+        required: false
 
+permissions: {}
+
+# Serialize versioning, audit and publication; never cancel a running publish.
 concurrency:
-  group: release-${{ github.ref }}
+  group: foundation-private-release
   cancel-in-progress: false
 
 jobs:
@@ -28,181 +51,185 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      - run: pnpm install --frozen-lockfile
       - name: Install Playwright browser
         run:
           pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install
           --with-deps chromium
-
-      - name: Run checks
-        run: pnpm check
-
-      # Without a publish input, this action only creates/updates the version PR.
-      - name: Create or update Release PR
+      - run: pnpm check
+      - name: Create or update Version Packages and reviewed release record
         uses: changesets/action@v2.1.2
         with:
+          version-script: node .github/scripts/release-version.mjs
           create-github-releases: false
           push-git-tags: false
+          # Deliberately no publish-script: pushes can never publish packages.
 
-  bootstrap-audit:
-    if: github.event_name == 'workflow_dispatch'
+  audit:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'audit'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      pull-requests: read
       packages: read
+    env:
+      RELEASE_MODE: ${{ inputs.mode }}
+      RELEASE_PR: ${{ inputs.release_pr }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node.js and GitHub Packages authentication
-        uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
           cache: pnpm
           registry-url: https://npm.pkg.github.com
           scope: "@t00ls-dev"
-
-      - name: Verify explicit bootstrap request and master SHA
-        run: node .github/scripts/bootstrap.mjs context
+      - run: pnpm install --frozen-lockfile
+      - name: Validate manual context, merged Release PR and record
+        run: node .github/scripts/release.mjs context
         env:
-          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
-          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Install Playwright browser
         run:
           pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install
           --with-deps chromium
-
-      - name: Run checks
-        run: pnpm check
-
-      - name: Verify all workspace manifests and build outputs
-        run: node .github/scripts/bootstrap.mjs manifests
-
-      - name: Verify absence in GitHub Packages with authentication
-        run: node .github/scripts/bootstrap.mjs registry
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Calculate Changesets publish plan
+      - run: pnpm check
+      - name: Inspect registry, create exact pack artifacts and print digest
+        id: plan
         run:
-          pnpm exec changeset publish-plan --output
-          "$RUNNER_TEMP/bootstrap-plan.json"
+          node .github/scripts/release.mjs prepare
+          "$RUNNER_TEMP/private-release"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify exact first-release plan
-        run:
-          node .github/scripts/bootstrap.mjs plan
-          "$RUNNER_TEMP/bootstrap-plan.json"
-
-      - name: Pack publishable packages locally
-        run: |
-          mkdir -p "$RUNNER_TEMP/bootstrap-packages"
-          pnpm --filter './packages/*' -r pack --pack-destination "$RUNNER_TEMP/bootstrap-packages"
-
-      - name: Verify tarballs
-        run:
-          node .github/scripts/bootstrap.mjs tarballs
-          "$RUNNER_TEMP/bootstrap-packages"
-
-      - name: Recheck master SHA before approving any later publish
-        run: node .github/scripts/bootstrap.mjs context
-        env:
-          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
-          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Preserve immutable audit artifacts for later authorization
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-release-${{ steps.plan.outputs.plan_digest }}
+          path: ${{ runner.temp }}/private-release/
+          if-no-files-found: error
+          retention-days: 30
 
-  publish:
-    # Deliberately disabled. A separate reviewed change must enable first publication.
+  preflight:
     if:
-      ${{ github.event_name == 'workflow_dispatch' && github.ref ==
-      'refs/heads/master' && inputs.confirmation ==
-      'PUBLISH_NINE_PRIVATE_PACKAGES_0.1.0' && inputs.expected_sha == github.sha
-      && needs.bootstrap-audit.result == 'success' }}
-    needs: bootstrap-audit
+      github.event_name == 'workflow_dispatch' && (inputs.mode == 'publish' ||
+      inputs.mode == 'resume')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      packages: write
+      pull-requests: read
+      packages: read
+      actions: read
+    env:
+      RELEASE_MODE: ${{ inputs.mode }}
+      RELEASE_PR: ${{ inputs.release_pr }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+      PLAN_DIGEST: ${{ inputs.plan_digest }}
+      AUDIT_RUN: ${{ inputs.audit_run }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node.js and GitHub Packages authentication
-        uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
           cache: pnpm
           registry-url: https://npm.pkg.github.com
           scope: "@t00ls-dev"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Recheck explicit bootstrap request and master SHA
-        run: node .github/scripts/bootstrap.mjs context
+      - run: pnpm install --frozen-lockfile
+      - name: Validate current authorization and Release PR again
+        run: node .github/scripts/release.mjs context
         env:
-          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
-          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build publishable packages
-        run: pnpm --filter './packages/*' build
-
-      - name: Recheck manifest allowlist
-        run: node .github/scripts/bootstrap.mjs manifests
-
-      - name: Recheck authenticated registry and publish plan
-        run: |
-          node .github/scripts/bootstrap.mjs registry
-          pnpm exec changeset publish-plan --output "$RUNNER_TEMP/bootstrap-plan.json"
-          node .github/scripts/bootstrap.mjs plan "$RUNNER_TEMP/bootstrap-plan.json"
+      - name: Install Playwright browser
+        run:
+          pnpm --filter @t00ls-dev/example-basic-d1 exec playwright install
+          --with-deps chromium
+      - run: pnpm check
+      - name: Retrieve original audit artifacts, never repack them
+        uses: actions/download-artifact@v4
+        with:
+          name: foundation-release-${{ inputs.plan_digest }}
+          run-id: ${{ inputs.audit_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/private-release
+      - name:
+          Revalidate SHA, PR, audit provenance, bytes and remaining registry
+          plan
+        run:
+          node .github/scripts/release.mjs prepare
+          "$RUNNER_TEMP/private-release"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Recheck tarballs
-        run: |
-          mkdir -p "$RUNNER_TEMP/bootstrap-packages"
-          pnpm --filter './packages/*' -r pack --pack-destination "$RUNNER_TEMP/bootstrap-packages"
-          node .github/scripts/bootstrap.mjs tarballs "$RUNNER_TEMP/bootstrap-packages"
-
-      - name: Recheck master SHA immediately before publishing
-        run: node .github/scripts/bootstrap.mjs context
-        env:
-          BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
-          BOOTSTRAP_EXPECTED_SHA: ${{ inputs.expected_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to GitHub Packages
-        run: pnpm exec changeset publish --no-git-tag
-        env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-private-release
+          path: ${{ runner.temp }}/private-release/
+          if-no-files-found: error
+
+  publish:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' && github.ref ==
+      'refs/heads/master'
+          && (inputs.mode == 'publish' || inputs.mode == 'resume')
+          && inputs.confirmation == 'PUBLISH_PRIVATE_FOUNDATION_PACKAGES'
+          && inputs.expected_sha == github.sha && needs.preflight.result ==
+      'success' }}
+    needs: preflight
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      packages: write
+      actions: read
+    env:
+      RELEASE_MODE: ${{ inputs.mode }}
+      RELEASE_PR: ${{ inputs.release_pr }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+      PLAN_DIGEST: ${{ inputs.plan_digest }}
+      AUDIT_RUN: ${{ inputs.audit_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@t00ls-dev"
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-private-release
+          path: ${{ runner.temp }}/private-release
+      - name:
+          Final gates, artifact-only publish without tags, then reconcile (no
+          retry)
+        run:
+          node .github/scripts/release.mjs publish
+          "$RUNNER_TEMP/private-release"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Preserve reconciliation evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-release-result
+          path: ${{ runner.temp }}/private-release/
+          if-no-files-found: warn

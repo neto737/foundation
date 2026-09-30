@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution && pnpm test:release",
     "dev": "turbo run dev --filter=@t00ls-dev/example-basic-d1",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -17,6 +17,7 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "test:distribution": "pnpm --filter './packages/*' -r build && node tests/distribution.mjs",
+    "test:release": "node --test .github/scripts/release.test.mjs",
     "test:integration": "turbo run test:integration",
     "typecheck": "turbo run typecheck"
   },
@@ -27,6 +28,7 @@
     "prettier": "^3.9.8",
     "turbo": "^2.11.4",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "yaml": "2.9.1"
   }
 }
