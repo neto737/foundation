@@ -35,9 +35,10 @@ safe-audit-logs) já integram a base inicial `0.1.0`.
    o PR com identidade humana) e confira o SHA validado. Não use PAT de
    publicação.
 5. Após a revisão e merge do Version Packages, espere a CI verde do merge. A
-   publicação requer autorização separada. Na primeira versão deste sistema,
-   `expected_sha` precisa ser exatamente o merge commit desse PR e a ponta atual
-   da `master`: não mescle outros commits antes de audit/publish/resume.
+   publicação requer autorização separada. `release_sha` identifica o merge
+   commit imutável desse PR; `execution_sha` identifica o HEAD atual de master
+   com o executor autorizado. Correções posteriores do mecanismo só podem mudar
+   os arquivos de infraestrutura explicitamente permitidos abaixo.
 
 ## Audit manual (nenhuma publicação)
 
@@ -45,7 +46,11 @@ Execute Release em `master` por `workflow_dispatch` com:
 
 - `mode=audit` (padrão);
 - `release_pr`: número do Version Packages **mesclado**;
-- `expected_sha`: SHA completo atual da master e do merge desse PR.
+- `release_sha`: SHA completo do merge do Version Packages;
+- `execution_sha`: SHA completo atual de master, com o executor revisado.
+
+O antigo input `expected_sha` foi removido e é rejeitado explicitamente, sem
+fallback. Dispatches antigos não devem ser reutilizados.
 
 O job audit tem somente leitura de packages. Verifica repositório privado,
 evento/ref/SHA, estado/base/head/autor do PR gerado, commit do bot, registro
@@ -54,6 +59,51 @@ instalação congelada, `pnpm check`, ausência de changesets ativos, allowlist 
 nove nomes, demais workspaces privados, UNLICENSED e registry. O registry é
 consultado autenticadamente; erros não são interpretados como versões ausentes.
 Versões inesperadas, downgrade, pacote inacessível ou alvo já publicado falham.
+
+### Conteúdo aprovado e executor autorizado
+
+Exige-se `release_pr.merge_commit_sha == release_sha` e, separadamente,
+`execution_sha == github.sha == master remoto == HEAD do checkout`. A API deve
+comprovar que release_sha é ancestral de execution_sha. As árvores Git completas
+e identificadas por commits/tree OIDs imutáveis são comparadas pela projeção
+ordenada de cada entrada final: path, mode, type e object/blob ID. Trees pais
+agregadas não entram na projeção, pois mudam quando uma folha de infraestrutura
+permitida muda. API incompleta/truncada, identidade de objeto divergente e
+entradas ausentes/duplicadas interrompem o fluxo.
+
+TODO o repository é protegido por padrão, com exceção apenas destes arquivos:
+
+- `.github/workflows/release.yml`
+- `.github/scripts/release-core.mjs`
+- `.github/scripts/release.mjs`
+- `.github/scripts/release-planning.mjs`
+- `.github/scripts/release.test.mjs`
+- `docs/runbooks/packages.md`
+
+Não há exceções por diretório. Manifests, versões, changelogs, release-plan,
+fontes, READMEs dos packages, tooling, scripts/configs de build, lockfile e
+dependências permanecem idênticos ao conteúdo aprovado. A projeção também é
+conferida entre o head do Release PR e seu merge commit. Adição, remoção,
+rename, bytes, mode ou tipo divergente em inputs protegidos falham. Symlinks e
+gitlinks não são inputs de release suportados, inclusive nos arquivos de
+infraestrutura permitidos. A integridade do workspace rastreado e dos arquivos
+não ignorados é revalidada após preparar os artifacts e antes da tentativa.
+
+O executor continua parte da base de confiança: os scripts/workflow do
+execution_sha precisam de revisão e autorização explícitas. Igualdade dos inputs
+não promete reprodução bit a bit nem protege contra executor malicioso aprovado.
+O audit gera os artifacts e a autorização vincula seus bytes exatos.
+
+O inventário consulta diretamente os packuments completos dos nove nomes em
+`npm.pkg.github.com` com `GITHUB_TOKEN` (`NODE_AUTH_TOKEN`), sem enumerar
+packages pela REST API de usuário. Exige HTTP 200, identidade exata, versões,
+`latest`, identidade de cada versão, `dist.integrity` SHA-512 e URLs de tarball
+do registry com nome/versão coerentes. A versão anterior aprovada deve existir.
+A ausência do alvo só é aceita dentro desse documento válido. HTTP 401/403/404,
+falha de rede/timeout, 5xx, JSON inválido ou campos obrigatórios ausentes
+interrompem o fluxo. Um 404 do package significa ausente ou inacessível e
+**nunca** autoriza onboarding implícito. A consulta usa o documento do package,
+não um endpoint `/package/versão` nem um `E404` isolado de `npm view`.
 
 A identidade de autor Git sozinha não comprova geração automática. O único
 commit precisa ser o `head.sha` do PR, ter exatamente um parent igual ao SHA
@@ -74,7 +124,13 @@ O plano calculado por Changesets precisa corresponder exatamente ao registro
 aprovado ainda ausente no registry. Só esses packages são empacotados pelo CLI;
 metadata, exports e arquivos são inspecionados. O resultado inclui hashes
 SHA-256/SHA-512 e um `plan_digest` SHA-256 do envelope canônico contendo PR,
-SHA, registro e artifacts. Anote também o ID `audit_run`.
+repository, release PR, release_sha, execution_sha, protectedInputsDigest,
+registro, audit_run e artifacts. Anote também o ID `audit_run`.
+
+O envelope `authorization.json` usa `format: 2`; o release-plan continua em
+`format: 1`, sem modificar o record aprovado. Envelopes antigos são rejeitados e
+exigem novo audit. O protectedInputsDigest é SHA-256 da projeção canônica de
+inputs protegidos; não substitui os hashes dos tarballs.
 
 Audit e preflight compartilham a validação do caminho exato do tarball derivado
 de nome e versão, como `packages/t00ls-dev-access-0.1.1.tgz`; nomes arbitrários,
@@ -89,7 +145,7 @@ versão. Guarde esse resultado: audit não autoriza automaticamente um publish.
 Em uma execução separada, Release em `master` exige:
 
 - `mode=publish`;
-- mesmos `release_pr` e `expected_sha`;
+- mesmos `release_pr`, `release_sha` e `execution_sha` do audit;
 - `confirmation=PUBLISH_PRIVATE_FOUNDATION_PACKAGES`;
 - `plan_digest` exato revisado;
 - `audit_run`: ID do audit bem-sucedido que possui os artifacts.
@@ -99,6 +155,11 @@ proveniência da execução audit, digest, tarballs e registry. Não reempacota 
 artifacts autorizados. Um job separado com `packages: write` repete os gates
 imediatamente antes da tentativa. Autenticação usa exclusivamente
 `GITHUB_TOKEN`.
+
+O audit_run deve pertencer ao workflow Release, ter audit bem-sucedido em master
+e `head_sha == execution_sha`. PR, ambos os SHAs, fingerprint, record,
+audit_run, digest e artifacts devem coincidir integralmente. O publisher
+reconsulta master imediatamente antes e após a tentativa, além do registry.
 
 A publicação utiliza os artifacts preservados e o plano restante validado:
 
@@ -116,16 +177,26 @@ Após qualquer tentativa, inclusive falha parcial, consulte/revise
 `private-release-result`, `reconciliation.json` e o summary. Cada alvo é
 classificado como publicado, ausente ou divergente. Um alvo publicado só é
 aceito se a integridade e `latest` correspondem ao artifact autorizado e sua
-visibilidade/associação continuam corretas. Erro de consulta pós-publicação
+identidade corresponde ao nome autorizado. Erro de consulta pós-publicação
 produz estado não verificado/divergente, nunca sucesso silencioso.
 
 Não refaça a publicação cegamente e não crie uma versão artificial para
 recuperar uma release parcial. Após análise e nova autorização, use
-`mode=resume` com os mesmos PR/SHA/digest/audit_run e a mesma confirmação. O
-restante é o plano original menos as versões confirmadas no registry; nenhuma
-delas é sobrescrita. Se tudo já chegou, resume apenas reconcilia. Divergência de
-SHA, versões, integridade, provenance, visibility ou `latest` impede qualquer
-nova tentativa.
+`mode=resume` com os mesmos PR/release_sha/execution_sha/digest/audit_run e a
+mesma confirmação. O restante é o plano original menos as versões confirmadas no
+registry; nenhuma delas é sobrescrita. Se tudo já chegou, resume apenas
+reconcilia. Divergência de SHA, versões, integridade, identidade, provenance ou
+`latest` impede qualquer nova tentativa.
+
+Master deve permanecer no execution_sha auditado até concluir publish/resume. Se
+avançar após o audit, a autorização falha fechada mesmo que apenas a
+infraestrutura tenha mudado: não se reutiliza o digest antigo. Antes de uma
+primeira publicação, exige-se novo audit e nova autorização do executor atual.
+Após publicação parcial, um avanço de master exige recuperação e reautorização
+explícitas dos mesmos artifacts, revisadas separadamente; não reempacote, não
+crie versão artificial e não reescreva master. A consulta não é transação
+atômica: avanço durante a tentativa pode produzir estado publicado/parcial; o
+relatório registra falha de verificação e o workflow não faz retry.
 
 Artifacts expiram em 30 dias. Se expirarem após uma falha parcial, não
 reempacote e não relaxe o digest: pare para planejar recuperação explícita.
@@ -141,8 +212,32 @@ existentes e SemVer estável.
 - Publish/resume: contents/pull-requests/actions read e packages write; sem PAT,
   contents write, aprovação automática de PR, OIDC npmjs ou criação de Releases.
 
-`access: restricted` não define sozinho a visibilidade do GitHub Packages; o
-fluxo verifica `private` e associação a `t00ls-dev/foundation` pela API.
+### Invariantes administrativas de onboarding
+
+Para os nove packages existentes, devem permanecer estabelecidos no onboarding:
+
+- **visibility private** no GitHub Packages;
+- associação administrativa a **`t00ls-dev/foundation`**;
+- **Manage Actions access** ou herança aplicável concedendo ao Foundation acesso
+  de leitura e, para o publisher, escrita.
+
+Essas propriedades são verificadas e mantidas pelos administradores do package.
+Mudança de visibilidade, associação, acesso, exclusão ou recriação exige nova
+revisão administrativa antes de continuar releases. Novos packages continuam
+exigindo onboarding separado e revisado.
+
+O runtime não comprova essas propriedades pelo registry: `repository` no
+packument é metadata publicada; acesso autenticado e `access: restricted` não
+provam visibility private nem associação administrativa. A REST API de metadata
+de packages do usuário não suporta o token de instalação usado pelo workflow;
+essa dependência causou a falha do primeiro audit
+[36693989133](https://github.com/t00ls-dev/foundation/actions/runs/36693989133).
+Não se introduz PAT nem se fabricam campos de visibilidade/associação no
+inventário. **Risco residual:** deriva administrativa externa não é detectada
+necessariamente pelo workflow de release. Os gates de runtime continuam
+verificando identidade/namespace, versões, tags e integridade, com reconsulta
+antes da publicação e reconciliação posterior.
+
 Atualmente a conta pessoal Free/repositório privado não possui aprovação efetiva
 de Environment; `master` está sem branch protection. Não se apresenta um
 Environment sem regras como proteção. Quem pode alterar workflows ainda pode

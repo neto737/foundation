@@ -25,8 +25,19 @@ import {
   validateArtifactPath,
   validateReleaseCommit,
   validateRecordPlan,
+  validatePackument,
+  registryInventory,
+  infrastructurePaths,
+  protectedInputs,
+  validateProtectedInputs,
+  validateAncestry,
+  validateAuditRun,
 } from "./release-core.mjs";
-import { recordFromBase } from "./release-planning.mjs";
+import {
+  recordFromBase,
+  contentBinding,
+  treeAtCommit,
+} from "./release-planning.mjs";
 
 const sha = "a".repeat(40);
 const record = () => ({
@@ -52,7 +63,9 @@ const context = () => ({
   ref: "refs/heads/master",
   repository: "t00ls-dev/foundation",
   sha,
-  expectedSha: sha,
+  releaseSha: sha,
+  executionSha: sha,
+  protectedInputsDigest: "e".repeat(64),
   masterSha: sha,
   mode: "publish",
   releasePr: 25,
@@ -84,24 +97,690 @@ const artifacts = () => [
   },
 ];
 const packet = () => ({
-  format: 1,
+  format: 2,
   repository: "t00ls-dev/foundation",
   releasePr: 25,
-  sha,
+  releaseSha: sha,
+  executionSha: sha,
+  protectedInputsDigest: "e".repeat(64),
   record: record(),
   auditRun: 100,
   artifacts: artifacts(),
 });
 const registry = (versions = ["0.1.0"], latest = versions.at(-1)) => ({
   [names[0]]: {
-    visibility: "private",
-    repository: "t00ls-dev/foundation",
+    name: names[0],
     versions,
     latest,
     integrities: { "0.1.1": "sha512-YWJj" },
   },
 });
 const invalid = (name, fn) => test(name, () => assert.throws(fn));
+
+function inputTree() {
+  const paths = [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".changeset/release-plan.json",
+    "turbo.json",
+    ".npmrc",
+    "tests/distribution.mjs",
+    "tooling/typescript-config/base.json",
+    ...names.flatMap((name) => {
+      const dir = `packages/${name.split("/")[1]}`;
+      return [
+        `${dir}/package.json`,
+        `${dir}/CHANGELOG.md`,
+        `${dir}/src/index.ts`,
+        `${dir}/tsconfig.build.json`,
+        `${dir}/README.md`,
+      ];
+    }),
+    ...infrastructurePaths,
+  ];
+  return {
+    sha: "c".repeat(40),
+    truncated: false,
+    tree: paths.map((path) => ({
+      path,
+      mode: "100644",
+      type: "blob",
+      sha: hash(Buffer.from(path), "sha1"),
+    })),
+  };
+}
+const ancestry = (releaseSha = sha, executionSha = "d".repeat(40)) => ({
+  base_commit: { sha: releaseSha },
+  merge_base_commit: { sha: releaseSha },
+  behind_by: 0,
+  status: releaseSha === executionSha ? "identical" : "ahead",
+});
+test("equal release/execution SHA and protected tree are valid", () => {
+  assert.deepEqual(infrastructurePaths, [
+    ".github/workflows/release.yml",
+    ".github/scripts/release-core.mjs",
+    ".github/scripts/release.mjs",
+    ".github/scripts/release-planning.mjs",
+    ".github/scripts/release.test.mjs",
+    "docs/runbooks/packages.md",
+  ]);
+  validateContext(context(), true);
+  validateAncestry(ancestry(sha, sha), sha, sha);
+  const tree = inputTree();
+  assert.equal(
+    validateProtectedInputs(tree, tree),
+    digest(protectedInputs(tree)),
+  );
+});
+test("descendant executor may change exactly the six regular infrastructure files", () => {
+  const original = inputTree(),
+    execution = structuredClone(original);
+  execution.tree.push({
+    path: ".github",
+    type: "tree",
+    mode: "040000",
+    sha: "f".repeat(40),
+  });
+  for (const file of execution.tree)
+    if (infrastructurePaths.includes(file.path)) file.sha = "d".repeat(40);
+  execution.tree.reverse();
+  validateAncestry(ancestry(), sha, "d".repeat(40));
+  assert.equal(
+    validateProtectedInputs(original, execution),
+    digest(protectedInputs(original)),
+  );
+});
+test("all protected entries including manifests/source/build/lock/config reject byte changes", () => {
+  const original = inputTree();
+  for (const path of protectedInputs(original).map((entry) => entry.path)) {
+    const execution = structuredClone(original);
+    execution.tree.find((file) => file.path === path).sha = "f".repeat(40);
+    assert.throws(
+      () => validateProtectedInputs(original, execution),
+      undefined,
+      path,
+    );
+  }
+});
+for (const [label, mutate] of [
+  [
+    "addition",
+    (tree) =>
+      tree.tree.push({
+        path: "packages/access/src/new.ts",
+        type: "blob",
+        mode: "100644",
+        sha,
+      }),
+  ],
+  [
+    "removal",
+    (tree) => {
+      tree.tree = tree.tree.filter(
+        (file) => file.path !== "packages/access/src/index.ts",
+      );
+    },
+  ],
+  [
+    "rename",
+    (tree) => {
+      tree.tree.find(
+        (file) => file.path === "packages/access/src/index.ts",
+      ).path = "packages/access/src/renamed.ts";
+    },
+  ],
+  [
+    "mode",
+    (tree) => {
+      tree.tree.find(
+        (file) => file.path === "packages/access/src/index.ts",
+      ).mode = "100755";
+    },
+  ],
+  [
+    "symlink",
+    (tree) => {
+      tree.tree[0].mode = "120000";
+    },
+  ],
+  [
+    "gitlink",
+    (tree) => {
+      tree.tree[0].type = "commit";
+      tree.tree[0].mode = "160000";
+    },
+  ],
+  [
+    "infrastructure symlink",
+    (tree) => {
+      tree.tree.find((file) => file.path === infrastructurePaths[1]).mode =
+        "120000";
+    },
+  ],
+  [
+    "infrastructure directory",
+    (tree) => {
+      const file = tree.tree.find(
+        (file) => file.path === infrastructurePaths[1],
+      );
+      file.mode = "040000";
+      file.type = "tree";
+    },
+  ],
+  [
+    "directory exception expansion",
+    (tree) =>
+      tree.tree.push({
+        path: ".github/scripts/other.mjs",
+        type: "blob",
+        mode: "100644",
+        sha,
+      }),
+  ],
+  [
+    "workflow exception expansion",
+    (tree) =>
+      tree.tree.push({
+        path: ".github/workflows/other.yml",
+        type: "blob",
+        mode: "100644",
+        sha,
+      }),
+  ],
+  [
+    "truncated API tree",
+    (tree) => {
+      tree.truncated = true;
+    },
+  ],
+  [
+    "empty API tree",
+    (tree) => {
+      tree.tree = [];
+    },
+  ],
+  [
+    "missing object ID",
+    (tree) => {
+      delete tree.tree[0].sha;
+    },
+  ],
+  ["duplicate path", (tree) => tree.tree.push({ ...tree.tree[0] })],
+])
+  invalid(`protected-input projection rejects ${label}`, () => {
+    const tree = inputTree();
+    mutate(tree);
+    validateProtectedInputs(inputTree(), tree);
+  });
+for (const [label, mutate] of [
+  [
+    "wrong merge base",
+    (comparison) => {
+      comparison.merge_base_commit.sha = "b".repeat(40);
+    },
+  ],
+  [
+    "wrong requested base",
+    (comparison) => {
+      comparison.base_commit.sha = "b".repeat(40);
+    },
+  ],
+  [
+    "diverged",
+    (comparison) => {
+      comparison.status = "diverged";
+    },
+  ],
+  [
+    "behind",
+    (comparison) => {
+      comparison.behind_by = 1;
+    },
+  ],
+  [
+    "incomplete API",
+    (comparison) => {
+      delete comparison.merge_base_commit;
+    },
+  ],
+])
+  invalid(`release ancestry rejects ${label}`, () => {
+    const comparison = ancestry();
+    mutate(comparison);
+    validateAncestry(comparison, sha, "d".repeat(40));
+  });
+test("real binding loader uses immutable commit/tree API identities", async () => {
+  const executionSha = "d".repeat(40),
+    original = inputTree(),
+    execution = structuredClone(original);
+  execution.sha = "e".repeat(40);
+  execution.tree.find((file) => file.path === infrastructurePaths[1]).sha =
+    "f".repeat(40);
+  const routes = new Map([
+    [`/compare/${sha}...${executionSha}`, ancestry()],
+    [`/git/commits/${sha}`, { sha, tree: { sha: original.sha } }],
+    [
+      `/git/commits/${executionSha}`,
+      { sha: executionSha, tree: { sha: execution.sha } },
+    ],
+    [`/git/trees/${original.sha}?recursive=1`, original],
+    [`/git/trees/${execution.sha}?recursive=1`, execution],
+  ]);
+  const binding = await contentBinding(sha, executionSha, async (url) => {
+    const key = url.replace(
+      "https://api.github.com/repos/t00ls-dev/foundation",
+      "",
+    );
+    assert(routes.has(key), key);
+    return routes.get(key);
+  });
+  assert.equal(
+    binding.protectedInputsDigest,
+    digest(protectedInputs(original)),
+  );
+  await assert.rejects(
+    treeAtCommit(sha, async () => ({ sha: executionSha })),
+    /commit lookup mismatch/,
+  );
+  await assert.rejects(
+    treeAtCommit(sha, async (url) =>
+      url.includes("/commits/")
+        ? { sha, tree: { sha: original.sha } }
+        : { ...original, sha: execution.sha },
+    ),
+    /tree lookup mismatch/,
+  );
+  await assert.rejects(
+    contentBinding(sha, executionSha, async () => {
+      throw new Error("API unavailable");
+    }),
+  );
+});
+test("repository fixture equivalent to #25 content plus #27 permitted delta", () => {
+  const tree = {
+    sha: execFileSync("git", ["rev-parse", "HEAD^{tree}"], {
+      encoding: "utf8",
+    }).trim(),
+    truncated: false,
+    tree: execFileSync("git", ["ls-tree", "-r", "-z", "HEAD"], {
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter(Boolean)
+      .map((line) => {
+        const split = line.indexOf("\t");
+        const [mode, type, sha] = line.slice(0, split).split(" ");
+        return { path: line.slice(split + 1), mode, type, sha };
+      }),
+  };
+  const execution = structuredClone(tree);
+  for (const path of [
+    ".github/scripts/release-core.mjs",
+    ".github/scripts/release.mjs",
+    ".github/scripts/release.test.mjs",
+    "docs/runbooks/packages.md",
+  ])
+    execution.tree.find((file) => file.path === path).sha = "f".repeat(40);
+  assert.equal(
+    validateProtectedInputs(tree, execution),
+    digest(protectedInputs(tree)),
+  );
+});
+test("release PR binds content SHA while context binds current executor SHA", () => {
+  const c = {
+    ...context(),
+    executionSha: "d".repeat(40),
+    sha: "d".repeat(40),
+    masterSha: "d".repeat(40),
+  };
+  validateContext(c, true);
+  validatePr(pr(), c, record());
+  assert.throws(
+    () => validatePr(pr(), { ...c, releaseSha: "c".repeat(40) }, record()),
+    /release_sha/,
+  );
+  assert.throws(
+    () => validateContext({ ...c, masterSha: "f".repeat(40) }, true),
+    /master moved/,
+  );
+  assert.throws(() =>
+    validateContext({ ...c, ref: "refs/heads/feature" }, true),
+  );
+});
+for (const [label, values] of [
+  ["old internal field", { expectedSha: sha }],
+  ["old input", { expected_sha: sha }],
+  ["old env/event input", { legacyExpectedSha: sha }],
+])
+  invalid(`legacy expected_sha rejected clearly: ${label}`, () =>
+    validateContext({ ...context(), ...values }),
+  );
+test("resume binds both SHAs and original protected inputs/artifacts", () => {
+  const p = packet(),
+    c = {
+      ...context(),
+      mode: "resume",
+      executionSha: "d".repeat(40),
+      sha: "d".repeat(40),
+      masterSha: "d".repeat(40),
+    };
+  p.executionSha = c.executionSha;
+  c.planDigest = envelopeDigest(p);
+  validateContext(c, true);
+  validatePacket(p, c, record());
+  for (const mutate of [
+    (p) => {
+      p.releaseSha = "f".repeat(40);
+    },
+    (p) => {
+      p.executionSha = "f".repeat(40);
+    },
+    (p) => {
+      p.protectedInputsDigest = "f".repeat(64);
+    },
+    (p) => {
+      p.record.packages[0].version = "0.2.0";
+    },
+    (p) => {
+      p.artifacts[0].hash = "e".repeat(64);
+    },
+    (p) => {
+      p.artifacts[0].integrity = sri("changed");
+    },
+    (p) => {
+      p.auditRun++;
+    },
+  ]) {
+    const changed = structuredClone(p);
+    mutate(changed);
+    assert.throws(() => validatePacket(changed, c, record()));
+  }
+  const newExecutor = {
+    ...c,
+    executionSha: "f".repeat(40),
+    sha: "f".repeat(40),
+    masterSha: "f".repeat(40),
+  };
+  validateContext(newExecutor, true);
+  assert.throws(
+    () => validatePacket(p, newExecutor, record()),
+    /execution SHA/,
+  );
+  const changed = structuredClone(p);
+  changed.executionSha = newExecutor.executionSha;
+  assert.notEqual(envelopeDigest(changed), c.planDigest);
+  assert.throws(
+    () => validatePacket(changed, newExecutor, record()),
+    /digest mismatch/,
+  );
+  assert.throws(
+    () => validateContext({ ...c, masterSha: "f".repeat(40) }, true),
+    /master moved/,
+  );
+  assert.throws(
+    () => validatePacket({ ...p, format: 1 }, c, record()),
+    /Legacy/,
+  );
+});
+test("audit run provenance binds execution SHA, not historical release SHA", () => {
+  const c = { ...context(), executionSha: "d".repeat(40) };
+  const audit = {
+    id: c.auditRun,
+    event: "workflow_dispatch",
+    conclusion: "success",
+    head_branch: "master",
+    head_sha: c.executionSha,
+    workflow_id: 123,
+  };
+  const jobs = [{ name: "audit", conclusion: "success" }];
+  validateAuditRun(audit, jobs, 123, c);
+  assert.throws(() =>
+    validateAuditRun({ ...audit, head_sha: c.releaseSha }, jobs, 123, c),
+  );
+  assert.throws(() =>
+    validateAuditRun({ ...audit, id: c.auditRun + 1 }, jobs, 123, c),
+  );
+  assert.throws(() =>
+    validateAuditRun(audit, [{ name: "audit", conclusion: "failure" }], 123, c),
+  );
+});
+
+const sri = (value) => `sha512-${hash(Buffer.from(value), "sha512", "base64")}`;
+const packument = (
+  name = names[0],
+  versions = ["0.1.0"],
+  latest = versions.at(-1),
+) => ({
+  name,
+  "dist-tags": { latest },
+  "versions": Object.fromEntries(
+    versions.map((version) => [
+      version,
+      {
+        name,
+        version,
+        dist: {
+          integrity: sri(`${name}@${version}`),
+          tarball: `https://npm.pkg.github.com/download/${name}/${version}/fixture`,
+        },
+      },
+    ]),
+  ),
+});
+test("valid packument yields only observed registry facts, no administrative claims", () => {
+  const result = validatePackument(packument(), names[0]);
+  assert.deepEqual(result, {
+    name: names[0],
+    versions: ["0.1.0"],
+    latest: "0.1.0",
+    integrities: { "0.1.0": sri(`${names[0]}@0.1.0`) },
+  });
+  assert(
+    !("visibility" in result) &&
+      !("repositoryAssociation" in result) &&
+      !("repository" in result),
+  );
+});
+test("real inventory queries all nine npm packuments directly with authenticated full metadata", async () => {
+  const urls = [];
+  const result = await registryInventory(
+    "fixture-token",
+    async (url, options) => {
+      urls.push(url);
+      assert.equal(new URL(url).origin, "https://npm.pkg.github.com");
+      assert.equal(options.headers.Authorization, "Bearer fixture-token");
+      assert.equal(options.headers.Accept, "application/json");
+      assert.equal(options.redirect, "error");
+      assert(options.signal instanceof AbortSignal);
+      const name = decodeURIComponent(new URL(url).pathname.slice(1));
+      return { ok: true, status: 200, json: async () => packument(name) };
+    },
+  );
+  assert.deepEqual(
+    urls,
+    names.map(
+      (name) => `https://npm.pkg.github.com/${name.replace("/", "%2F")}`,
+    ),
+  );
+  assert.deepEqual(Object.keys(result), names);
+  assert.equal(reconcile(record(), result)[0].state, "absent");
+});
+for (const [label, mutate] of [
+  [
+    "wrong package",
+    (p) => {
+      p.name = names[1];
+    },
+  ],
+  [
+    "wrong namespace",
+    (p) => {
+      p.name = "@other/access";
+    },
+  ],
+  [
+    "missing versions",
+    (p) => {
+      delete p.versions;
+    },
+  ],
+  [
+    "empty versions",
+    (p) => {
+      p.versions = {};
+    },
+  ],
+  [
+    "missing dist-tags",
+    (p) => {
+      delete p["dist-tags"];
+    },
+  ],
+  [
+    "invalid latest",
+    (p) => {
+      p["dist-tags"].latest = "0.1.1";
+    },
+  ],
+  [
+    "wrong version package",
+    (p) => {
+      p.versions["0.1.0"].name = names[1];
+    },
+  ],
+  [
+    "wrong version identity",
+    (p) => {
+      p.versions["0.1.0"].version = "0.1.1";
+    },
+  ],
+  [
+    "missing dist",
+    (p) => {
+      delete p.versions["0.1.0"].dist;
+    },
+  ],
+  [
+    "missing integrity",
+    (p) => {
+      delete p.versions["0.1.0"].dist.integrity;
+    },
+  ],
+  [
+    "invalid integrity",
+    (p) => {
+      p.versions["0.1.0"].dist.integrity = "sha512-short";
+    },
+  ],
+  [
+    "missing tarball",
+    (p) => {
+      delete p.versions["0.1.0"].dist.tarball;
+    },
+  ],
+  [
+    "foreign tarball",
+    (p) => {
+      p.versions["0.1.0"].dist.tarball = "https://example.invalid/fixture.tgz";
+    },
+  ],
+  [
+    "wrong tarball package",
+    (p) => {
+      p.versions["0.1.0"].dist.tarball =
+        `https://npm.pkg.github.com/download/${names[1]}/0.1.0/fixture`;
+    },
+  ],
+  [
+    "prerelease drift",
+    (p) => {
+      p.versions["0.2.0-beta.1"] = {};
+    },
+  ],
+])
+  invalid(`packument rejects ${label}`, () => {
+    const p = packument();
+    mutate(p);
+    validatePackument(p, names[0]);
+  });
+for (const status of [401, 403, 404, 500, 503, 206])
+  test(`inventory fails closed on HTTP ${status}, never onboards on 404`, async () => {
+    await assert.rejects(
+      registryInventory("fixture-token", async () => ({
+        ok: status < 300,
+        status,
+        json: async () => packument(),
+      })),
+      /Authenticated request failed/,
+    );
+  });
+test("inventory rejects network failure, timeout and invalid JSON", async () => {
+  for (const failure of [
+    new Error("network"),
+    new DOMException("timeout", "TimeoutError"),
+  ])
+    await assert.rejects(
+      registryInventory("fixture-token", async () => {
+        throw failure;
+      }),
+    );
+  await assert.rejects(
+    registryInventory("fixture-token", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("invalid JSON");
+      },
+    })),
+  );
+});
+invalid(
+  "registry anchor oldVersion missing is never treated as a new package",
+  () =>
+    reconcile(record(), {
+      [names[0]]: validatePackument(packument(names[0], ["0.1.1"]), names[0]),
+    }),
+);
+for (const mode of ["audit", "publish"])
+  invalid(
+    `validated packument target already present blocks normal ${mode}`,
+    () => {
+      const inventory = {
+        [names[0]]: validatePackument(
+          packument(names[0], ["0.1.0", "0.1.1"]),
+          names[0],
+        ),
+      };
+      const artifact = [
+        { ...artifacts()[0], integrity: sri(`${names[0]}@0.1.1`) },
+      ];
+      remainingPlan(record(), reconcile(record(), inventory, artifact), mode);
+    },
+  );
+test("validated packument resume accepts only original artifact integrity", () => {
+  const inventory = {
+    [names[0]]: validatePackument(
+      packument(names[0], ["0.1.0", "0.1.1"]),
+      names[0],
+    ),
+  };
+  const artifact = [{ ...artifacts()[0], integrity: sri(`${names[0]}@0.1.1`) }];
+  assert.deepEqual(
+    remainingPlan(record(), reconcile(record(), inventory, artifact), "resume"),
+    [],
+  );
+  artifact[0].integrity = sri("different bytes");
+  assert.throws(
+    () =>
+      remainingPlan(
+        record(),
+        reconcile(record(), inventory, artifact),
+        "resume",
+      ),
+    /divergence/,
+  );
+});
 
 const commit = () => ({
   sha,
@@ -403,7 +1082,8 @@ for (const [field, value] of [
   ["ref", "refs/heads/feature"],
   ["sha", "c".repeat(40)],
   ["masterSha", "c".repeat(40)],
-  ["expectedSha", "short"],
+  ["releaseSha", "short"],
+  ["executionSha", "short"],
   ["confirmation", "wrong"],
   ["mode", "automatic"],
   ["auditRun", 0],
@@ -534,9 +1214,9 @@ test("HTTP/auth/network failures are never absence", async () => {
     }),
   );
 });
-invalid("package public", () => {
+invalid("registry package identity divergent", () => {
   const i = registry();
-  i[names[0]].visibility = "public";
+  i[names[0]].name = names[1];
   reconcile(record(), i);
 });
 invalid("downgrade", () =>
@@ -579,7 +1259,7 @@ test("partial release publishes only absent remainder", () => {
   r.packages.push({ ...r.packages[0], name: names[1] });
   const i = {
     ...registry(["0.1.0", "0.1.1"]),
-    [names[1]]: registry()[names[0]],
+    [names[1]]: { ...registry()[names[0]], name: names[1] },
   };
   const states = reconcile(r, i, artifacts());
   assert.deepEqual(
@@ -725,6 +1405,23 @@ test("workflow cannot publish on push or audit; only publisher has packages:writ
     "workflow_dispatch",
   ]);
   assert.equal(workflow.on.workflow_dispatch.inputs.mode.default, "audit");
+  assert(!("expected_sha" in workflow.on.workflow_dispatch.inputs));
+  assert.equal(workflow.on.workflow_dispatch.inputs.release_sha.required, true);
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.execution_sha.required,
+    true,
+  );
+  for (const name of ["audit", "preflight", "publish"]) {
+    assert.equal(
+      workflow.jobs[name].env.RELEASE_SHA,
+      "${{ inputs.release_sha }}",
+    );
+    assert.equal(
+      workflow.jobs[name].env.EXECUTION_SHA,
+      "${{ inputs.execution_sha }}",
+    );
+    assert(!("EXPECTED_SHA" in workflow.jobs[name].env));
+  }
   assert.equal(workflow.jobs.audit.permissions.packages, "read");
   assert.equal(workflow.jobs.preflight.permissions.packages, "read");
   assert.deepEqual(
@@ -755,7 +1452,12 @@ test("workflow cannot publish on push or audit; only publisher has packages:writ
   const expression = condition.slice(3, -2).trim();
   const valid = {
     github: { event_name: "workflow_dispatch", ref: "refs/heads/master", sha },
-    inputs: { mode: "publish", confirmation, expected_sha: sha },
+    inputs: {
+      mode: "publish",
+      confirmation,
+      execution_sha: sha,
+      release_sha: sha,
+    },
     needs: { preflight: { result: "success" } },
   };
   assert.equal(runInNewContext(expression, valid, { timeout: 1000 }), true);
@@ -764,7 +1466,7 @@ test("workflow cannot publish on push or audit; only publisher has packages:writ
     { ...valid, github: { ...valid.github, ref: "refs/heads/feature" } },
     { ...valid, inputs: { ...valid.inputs, mode: "audit" } },
     { ...valid, inputs: { ...valid.inputs, confirmation: "wrong" } },
-    { ...valid, inputs: { ...valid.inputs, expected_sha: "b".repeat(40) } },
+    { ...valid, inputs: { ...valid.inputs, execution_sha: "b".repeat(40) } },
     { ...valid, needs: { preflight: { result: "failure" } } },
     { ...valid, needs: { preflight: { result: "skipped" } } },
   ])

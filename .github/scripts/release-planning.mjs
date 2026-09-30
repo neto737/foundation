@@ -9,7 +9,45 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { recordFromStatus, shaPattern } from "./release-core.mjs";
+import {
+  recordFromStatus,
+  shaPattern,
+  repository,
+  validateAncestry,
+  validateProtectedInputs,
+} from "./release-core.mjs";
+
+export async function treeAtCommit(sha, request) {
+  assert(shaPattern.test(sha));
+  const root = `https://api.github.com/repos/${repository}`;
+  const commit = await request(`${root}/git/commits/${sha}`);
+  assert.equal(commit.sha, sha, "Git commit lookup mismatch");
+  assert(shaPattern.test(commit.tree?.sha), "Git commit tree missing");
+  const tree = await request(
+    `${root}/git/trees/${commit.tree.sha}?recursive=1`,
+  );
+  assert.equal(tree.sha, commit.tree.sha, "Git tree lookup mismatch");
+  return tree;
+}
+
+export async function contentBinding(releaseSha, executionSha, request) {
+  const root = `https://api.github.com/repos/${repository}`;
+  assert(shaPattern.test(releaseSha) && shaPattern.test(executionSha));
+  validateAncestry(
+    await request(`${root}/compare/${releaseSha}...${executionSha}`),
+    releaseSha,
+    executionSha,
+  );
+  const releaseTree = await treeAtCommit(releaseSha, request);
+  const executionTree =
+    executionSha === releaseSha
+      ? releaseTree
+      : await treeAtCommit(executionSha, request);
+  return {
+    releaseTree,
+    protectedInputsDigest: validateProtectedInputs(releaseTree, executionTree),
+  };
+}
 
 // Resolve planning libraries from the frozen CLI installation, not incidental
 // root dependencies. No install, version, pack, publish or Git commands here.
