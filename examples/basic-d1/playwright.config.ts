@@ -1,4 +1,7 @@
+import nodeProcess from "node:process";
 import { defineConfig, devices } from "@playwright/test";
+
+const process = nodeProcess as NodeJS.Process;
 
 export default defineConfig({
   testDir: "./e2e",

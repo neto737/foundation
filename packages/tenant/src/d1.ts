@@ -4,6 +4,7 @@ import type {
   TenantRepository,
   TenantSessionStore,
 } from "./index.js";
+import type { D1Database } from "@cloudflare/workers-types";
 
 interface MembershipRow {
   id: string;

@@ -28,7 +28,6 @@
     "hono": "^4.13.9"
   },
   "devDependencies": {
-    "@t00ls-dev/typescript-config": "workspace:*",
     "vitest": "^5.0.1"
   }
 }

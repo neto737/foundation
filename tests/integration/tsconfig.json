@@ -4,7 +4,7 @@
     "declaration": false,
     "declarationMap": false,
     "lib": ["DOM", "ES2023"],
-    "types": ["@cloudflare/workers-types", "vitest/globals"]
+    "types": ["@cloudflare/workers-types", "node", "vitest/globals"]
   },
   "include": ["**/*.ts"]
 }

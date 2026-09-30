@@ -37,12 +37,11 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cloudflare/workers-types": "^5.20260918.1",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260918.1",
-    "@t00ls-dev/typescript-config": "workspace:*",
     "@types/node": "^22.20.4",
     "vitest": "^5.0.1"
   }

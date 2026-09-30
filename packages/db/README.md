@@ -36,6 +36,38 @@ const rows = await db.select().from(users);
 await client.end();
 ```
 
+## Perfil TypeScript de D1
+
+`@t00ls-dev/db/d1` é específico de **Cloudflare Workers/D1**. A distribuição
+corretiva declara os tipos oficiais necessários e preserva sua referência global
+nesse entrypoint porque `drizzle-orm/d1` usa `D1Database`,
+`D1PreparedStatement`, `D1Result` e `D1Response` como globais. Nenhum import
+JavaScript de Workers Types é emitido.
+
+Um consumidor mínimo desse entrypoint usa libs ES e não carrega os globais de
+Node ou `lib.dom`, por exemplo:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "types": [],
+    "strict": true,
+    "skipLibCheck": false
+  }
+}
+```
+
+Misturar esse ambiente com DOM/Node não é um perfil suportado: a referência
+Workers introduz conflitos globais e pode tornar `process.env` do tipo `any`.
+Isso é um efeito da integração, não apenas um defeito independente de terceiros.
+As entradas raiz e `/postgres` não carregam esses globais. A biblioteca Drizzle
+ainda possui erros estritos de suas próprias declarações; os testes de
+distribuição distinguem esses erros dos novos diagnósticos Foundation.
+
 ## Limitações, segurança e migrações
 
 Postgres usa `prepare: false`; o consumidor gerencia ciclo de vida, schema e

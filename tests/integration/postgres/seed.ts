@@ -1,6 +1,8 @@
+import nodeProcess from "node:process";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 
+const process = nodeProcess as NodeJS.Process;
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
 
 const client = postgres(process.env.DATABASE_URL, { max: 1, prepare: false });

@@ -120,25 +120,19 @@ importers:
 
   packages/access:
     devDependencies:
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/audit:
     dependencies:
+      '@cloudflare/workers-types':
+        specifier: ^5.20260918.1
+        version: 5.20260922.1
       postgres:
         specifier: ^3.4.7
         version: 3.4.9
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^5.20260918.1
-        version: 5.20260922.1
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -149,9 +143,6 @@ importers:
         specifier: ^1.7.6
         version: 1.7.6(drizzle-kit@0.31.11)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260922.1)(better-sqlite3@12.11.1)(kysely@0.29.6)(postgres@3.4.9))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
     devDependencies:
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -162,15 +153,15 @@ importers:
         specifier: ^4.1.5
         version: 4.6.5
     devDependencies:
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/db:
     dependencies:
+      '@cloudflare/workers-types':
+        specifier: ^5.20260918.1
+        version: 5.20260922.1
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@5.20260922.1)(better-sqlite3@12.11.1)(kysely@0.29.6)(postgres@3.4.9)
@@ -178,12 +169,6 @@ importers:
         specifier: ^3.4.7
         version: 3.4.9
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^5.20260918.1
-        version: 5.20260922.1
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       '@types/node':
         specifier: ^22.20.4
         version: 22.20.4
@@ -193,18 +178,12 @@ importers:
 
   packages/email:
     devDependencies:
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/observability:
     devDependencies:
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -215,15 +194,15 @@ importers:
         specifier: ^4.13.9
         version: 4.13.9
     devDependencies:
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/tenant:
     dependencies:
+      '@cloudflare/workers-types':
+        specifier: ^5.20260918.1
+        version: 5.20260922.1
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@5.20260922.1)(better-sqlite3@12.11.1)(kysely@0.29.6)(postgres@3.4.9)
@@ -231,12 +210,6 @@ importers:
         specifier: ^3.4.7
         version: 3.4.9
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^5.20260918.1
-        version: 5.20260922.1
-      '@t00ls-dev/typescript-config':
-        specifier: workspace:*
-        version: link:../../tooling/typescript-config
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -266,7 +239,7 @@ importers:
         version: 12.1.0
       vitest:
         specifier: ^5.0.1
-        version: 5.0.1(@types/node@26.6.3)(vite@8.3.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.1(@types/node@22.20.4)(vite@8.3.0(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260918.1
@@ -274,6 +247,9 @@ importers:
       '@t00ls-dev/typescript-config':
         specifier: workspace:*
         version: link:../../tooling/typescript-config
+      '@types/node':
+        specifier: ^22.20.4
+        version: 22.20.4
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11

@@ -28,7 +28,6 @@
     "better-auth": "^1.7.6"
   },
   "devDependencies": {
-    "@t00ls-dev/typescript-config": "workspace:*",
     "vitest": "^5.0.1"
   }
 }

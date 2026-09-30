@@ -73,6 +73,8 @@ access** e use `GITHUB_TOKEN` com `packages: read` via `actions/setup-node`
 esse acesso, será necessário um PAT classic com `read:packages` fornecido pelo
 ambiente. Nunca registre tokens nos arquivos versionados.
 
-Os subpaths `/d1` expõem tipos do Cloudflare Workers: consumidores TypeScript
-dessas APIs precisam incluir `@cloudflare/workers-types` no seu ambiente de
-tipos. Desenvolvimento dentro deste monorepo continua usando `workspace:`.
+Os subpaths `/d1` expõem tipos oficiais do Cloudflare Workers. A correção de
+distribuição posterior a `0.1.0` declara essa dependência explicitamente e
+valida artifacts fora do workspace. Veja
+[validação da distribuição](package-distribution.md) para detalhes e limitações
+de declarações externas com `skipLibCheck: false`.

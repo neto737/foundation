@@ -33,11 +33,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cloudflare/workers-types": "^5.20260918.1",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260918.1",
-    "@t00ls-dev/typescript-config": "workspace:*",
     "vitest": "^5.0.1"
   }
 }

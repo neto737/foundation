@@ -1,6 +1,8 @@
+import nodeProcess from "node:process";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { getPostgresMigrationStatus } from "@t00ls-dev/db/postgres-migrations";
 
+const process = nodeProcess as NodeJS.Process;
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
 
 const { client } = createPostgresDatabase(process.env.DATABASE_URL);
