@@ -1,0 +1,95 @@
+{
+  "baseSha": "fc5bada28b1309d1a9b709df86df1f6525e6df41",
+  "changesets": [
+    {
+      "hash": "42bd700fe8e6c6fd17665888d745efdd388f36b4201aa098944c903ee136fef6",
+      "id": "fix-package-distribution"
+    }
+  ],
+  "cliVersion": "3.0.3",
+  "format": 1,
+  "packages": [
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/access",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/audit",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/auth",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/config",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/db",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/email",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/observability",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/security",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    },
+    {
+      "changesets": ["fix-package-distribution"],
+      "dependencies": [],
+      "name": "@t00ls-dev/tenant",
+      "oldVersion": "0.1.0",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.1"
+    }
+  ],
+  "repository": "t00ls-dev/foundation"
+}
