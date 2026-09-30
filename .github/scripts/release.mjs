@@ -29,8 +29,14 @@ import {
   validateArtifactPath,
   validateReleaseCommit,
   validateRecordPlan,
+  validateProtectedInputs,
+  validateAuditRun,
 } from "./release-core.mjs";
-import { recordFromBase } from "./release-planning.mjs";
+import {
+  recordFromBase,
+  contentBinding,
+  treeAtCommit,
+} from "./release-planning.mjs";
 
 const require = createRequire(import.meta.url);
 const recordPath = ".changeset/release-plan.json";
@@ -75,7 +81,13 @@ async function context() {
     ref: process.env.GITHUB_REF,
     repository: process.env.GITHUB_REPOSITORY,
     sha: process.env.GITHUB_SHA,
-    expectedSha: process.env.EXPECTED_SHA,
+    releaseSha: process.env.RELEASE_SHA,
+    executionSha: process.env.EXECUTION_SHA,
+    legacyExpectedSha:
+      process.env.EXPECTED_SHA ??
+      (process.env.GITHUB_EVENT_PATH
+        ? json(process.env.GITHUB_EVENT_PATH).inputs?.expected_sha
+        : undefined),
     masterSha: master.object.sha,
     mode: process.env.RELEASE_MODE,
     releasePr: Number(process.env.RELEASE_PR),
@@ -86,15 +98,20 @@ async function context() {
   validateContext(value, value.mode !== "audit");
   assert.equal(
     run("git", ["rev-parse", "HEAD"]).trim(),
-    value.expectedSha,
-    "Checkout must match authorized SHA",
+    value.executionSha,
+    "Checkout must match authorized execution SHA",
   );
   return value;
 }
 
 async function provenance(value) {
   assert(existsSync(recordPath), "Merged Version Packages record missing");
-  const record = json(recordPath);
+  const record = jsonFrom(await content(recordPath, value.releaseSha));
+  assert.deepEqual(
+    json(recordPath),
+    record,
+    "Checkout release record differs from release_sha",
+  );
   const pr = await request(`${gh}/pulls/${value.releasePr}`);
   validatePr(pr, value, record);
   assert.deepEqual(
@@ -137,6 +154,15 @@ async function provenance(value) {
   }
   const commits = await pages(`${gh}/pulls/${value.releasePr}/commits`);
   validateReleaseCommit(commits, pr, record);
+  const binding = await contentBinding(
+    value.releaseSha,
+    value.executionSha,
+    request,
+  );
+  validateProtectedInputs(
+    await treeAtCommit(pr.head.sha, request),
+    binding.releaseTree,
+  );
   const tree = await request(`${gh}/git/trees/${record.baseSha}?recursive=1`);
   validateRecordPlan(
     record,
@@ -161,7 +187,7 @@ async function provenance(value) {
       ),
     );
   }
-  return record;
+  return { record, protectedInputsDigest: binding.protectedInputsDigest };
 }
 const jsonFrom = (buffer) => JSON.parse(buffer.toString());
 
@@ -201,7 +227,7 @@ function sourceGates(record) {
     "Prereleases are not supported by this workflow",
   );
   assert.equal(
-    run("git", ["status", "--porcelain", "--untracked-files=no"]).trim(),
+    run("git", ["status", "--porcelain", "--untracked-files=normal"]).trim(),
     "",
     "Tracked workspace must be frozen",
   );
@@ -327,7 +353,9 @@ function changesetsPlan(directory, approved) {
 function summarize(value, packet, states) {
   const report = {
     releasePr: value.releasePr,
-    sha: value.expectedSha,
+    releaseSha: value.releaseSha,
+    executionSha: value.executionSha,
+    protectedInputsDigest: packet.protectedInputsDigest,
     mode: value.mode,
     planDigest: envelopeDigest(packet),
     auditRun: packet.auditRun,
@@ -352,8 +380,9 @@ function summarize(value, packet, states) {
 }
 
 async function prepare(directory) {
-  const value = await context(),
-    record = await provenance(value);
+  const value = await context();
+  const { record, protectedInputsDigest } = await provenance(value);
+  value.protectedInputsDigest = protectedInputsDigest;
   sourceGates(record);
   const current = await inventory();
   unchangedPackages(record, current);
@@ -399,10 +428,12 @@ async function prepare(directory) {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
     packet = {
-      format: 1,
+      format: 2,
       repository,
       releasePr: value.releasePr,
-      sha: value.expectedSha,
+      releaseSha: value.releaseSha,
+      executionSha: value.executionSha,
+      protectedInputsDigest,
       record,
       auditRun: Number(process.env.GITHUB_RUN_ID),
       artifacts,
@@ -412,21 +443,11 @@ async function prepare(directory) {
     packet = json(join(directory, "authorization.json"));
     const audit = await request(`${gh}/actions/runs/${value.auditRun}`);
     const workflow = await request(`${gh}/actions/workflows/release.yml`);
-    assert(
-      audit.event === "workflow_dispatch" &&
-        audit.conclusion === "success" &&
-        audit.head_sha === value.expectedSha &&
-        audit.workflow_id === workflow.id,
-      "Invalid audit run provenance",
-    );
     const jobs = await pages(
       `${gh}/actions/runs/${value.auditRun}/jobs?filter=latest`,
       "jobs",
     );
-    assert(
-      jobs.some((job) => job.name === "audit" && job.conclusion === "success"),
-      "Referenced run did not complete the read-only audit job",
-    );
+    validateAuditRun(audit, jobs, workflow.id, value);
     validatePacket(packet, value, record);
   }
   for (const item of packet.artifacts) inspect(join(directory, "packed"), item);
@@ -435,6 +456,7 @@ async function prepare(directory) {
   const states = reconcile(record, fresh, packet.artifacts);
   const remaining = remainingPlan(record, states, value.mode);
   const computed = changesetsPlan(directory, remaining).plan;
+  sourceGates(record);
   await context();
   summarize(value, packet, states);
   return { value, record, packet, states, computed };
@@ -465,6 +487,7 @@ async function publish(directory) {
     join(directory, "packed/publish-plan.json"),
     packPlan(computed, packet.artifacts),
   );
+  sourceGates(record);
   await context();
   let exitCode = 0;
   if (remaining.length)
@@ -485,12 +508,14 @@ async function publish(directory) {
   let final;
   try {
     final = reconcile(record, await inventory(), packet.artifacts);
+    await context();
   } catch (error) {
     final = record.packages.map((item) => ({
       name: item.name,
       version: item.version,
       state: "divergent",
-      reason: "Post-publication registry verification failed; state unverified",
+      reason:
+        "Post-publication registry/execution verification failed; state unverified",
     }));
     write(join(directory, "reconciliation.json"), {
       exitCode,

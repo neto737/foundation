@@ -17,6 +17,118 @@ export const names = [
 ].map((name) => `@t00ls-dev/${name}`);
 export const shaPattern = /^[0-9a-f]{40}$/;
 
+export const infrastructurePaths = [
+  ".github/workflows/release.yml",
+  ".github/scripts/release-core.mjs",
+  ".github/scripts/release.mjs",
+  ".github/scripts/release-planning.mjs",
+  ".github/scripts/release.test.mjs",
+  "docs/runbooks/packages.md",
+];
+
+export function protectedInputs(tree) {
+  assert.equal(tree.truncated, false, "Incomplete protected-input tree");
+  assert(shaPattern.test(tree.sha), "Invalid tree identity");
+  assert(Array.isArray(tree.tree), "Missing protected-input entries");
+  const seen = new Set();
+  const entries = [];
+  for (const file of tree.tree) {
+    assert(
+      typeof file.path === "string" &&
+        file.path.length > 0 &&
+        !file.path.startsWith("/") &&
+        file.path
+          .split("/")
+          .every((part) => part && part !== "." && part !== ".."),
+      "Unsafe Git input path",
+    );
+    assert(!seen.has(file.path), "Duplicate Git input path");
+    seen.add(file.path);
+    assert(shaPattern.test(file.sha), "Invalid Git object identity");
+    if (file.type === "tree") {
+      assert.equal(file.mode, "040000");
+      assert(
+        !infrastructurePaths.includes(file.path),
+        "Infrastructure exception must be a regular file",
+      );
+      continue; // Parent tree OIDs change when an allowed leaf changes.
+    }
+    assert(
+      file.type === "blob" && ["100644", "100755"].includes(file.mode),
+      "Symlinks/gitlinks are unsupported release inputs",
+    );
+    if (infrastructurePaths.includes(file.path)) continue;
+    entries.push({
+      path: file.path,
+      mode: file.mode,
+      type: file.type,
+      oid: file.sha,
+    });
+  }
+  for (const path of [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".changeset/release-plan.json",
+    ...names.map((name) => `packages/${name.split("/")[1]}/package.json`),
+  ])
+    assert(
+      entries.some((entry) => entry.path === path),
+      `Missing protected input: ${path}`,
+    );
+  return entries.sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  );
+}
+
+export function validateProtectedInputs(releaseTree, executionTree) {
+  const approved = protectedInputs(releaseTree);
+  assert.deepEqual(
+    protectedInputs(executionTree),
+    approved,
+    "Protected release inputs changed",
+  );
+  return digest(approved);
+}
+
+export function validateAncestry(comparison, releaseSha, executionSha) {
+  assert(shaPattern.test(releaseSha) && shaPattern.test(executionSha));
+  assert.equal(
+    comparison.base_commit?.sha,
+    releaseSha,
+    "Comparison base mismatch",
+  );
+  assert.equal(
+    comparison.merge_base_commit?.sha,
+    releaseSha,
+    "Release SHA is not an ancestor of execution SHA",
+  );
+  assert.equal(comparison.behind_by, 0, "Execution is behind release content");
+  assert.equal(
+    comparison.status,
+    releaseSha === executionSha ? "identical" : "ahead",
+    "Invalid release/execution ancestry",
+  );
+}
+
+export function validateAuditRun(audit, jobs, workflowId, context) {
+  assert.equal(audit.id, context.auditRun, "Different audit run");
+  assert.equal(audit.event, "workflow_dispatch");
+  assert.equal(audit.conclusion, "success");
+  assert.equal(audit.head_branch, "master");
+  assert.equal(
+    audit.head_sha,
+    context.executionSha,
+    "Audit used a different executor; new audit required",
+  );
+  assert.equal(audit.workflow_id, workflowId);
+  assert(
+    Array.isArray(jobs) &&
+      jobs.some((job) => job.name === "audit" && job.conclusion === "success"),
+    "Referenced run did not complete the audit job",
+  );
+}
+
 export function validateArtifactPath(item) {
   assert(names.includes(item.name), "Unexpected artifact package");
   compareVersions(item.version, item.version);
@@ -230,12 +342,27 @@ export function recordFromStatus(
 }
 
 export function validateContext(context, authorization = false) {
+  assert(
+    !Object.hasOwn(context, "expectedSha") &&
+      !Object.hasOwn(context, "expected_sha") &&
+      context.legacyExpectedSha === undefined,
+    "expected_sha is no longer supported; use release_sha and execution_sha",
+  );
   assert.equal(context.event, "workflow_dispatch", "Manual dispatch required");
   assert.equal(context.ref, "refs/heads/master", "master required");
   assert.equal(context.repository, repository, "Unexpected repository");
-  assert(shaPattern.test(context.expectedSha), "Full expected_sha required");
-  assert.equal(context.sha, context.expectedSha, "Workflow SHA mismatch");
-  assert.equal(context.masterSha, context.expectedSha, "master moved");
+  assert(shaPattern.test(context.releaseSha), "Full release_sha required");
+  assert(shaPattern.test(context.executionSha), "Full execution_sha required");
+  assert.equal(
+    context.sha,
+    context.executionSha,
+    "Workflow execution SHA mismatch",
+  );
+  assert.equal(
+    context.masterSha,
+    context.executionSha,
+    "master moved after executor authorization",
+  );
   assert(["audit", "publish", "resume"].includes(context.mode), "Invalid mode");
   assert(
     Number.isSafeInteger(context.releasePr) && context.releasePr > 0,
@@ -342,8 +469,8 @@ export function validatePr(pr, context, record) {
   );
   assert.equal(
     pr.merge_commit_sha,
-    context.expectedSha,
-    "Release merge commit differs from authorized SHA",
+    context.releaseSha,
+    "Release merge commit differs from release_sha",
   );
   assert(
     pr.user?.login === "github-actions[bot]",
@@ -448,7 +575,10 @@ export function envelopeDigest(packet) {
     format: packet.format,
     repository: packet.repository,
     releasePr: packet.releasePr,
-    sha: packet.sha,
+    releaseSha: packet.releaseSha,
+    executionSha: packet.executionSha,
+    protectedInputsDigest: packet.protectedInputsDigest,
+    auditRun: packet.auditRun,
     record: packet.record,
     artifacts: packet.artifacts,
   });
@@ -475,10 +605,28 @@ export function validatePublishPlan(plan, approved) {
 }
 
 export function validatePacket(packet, context, record) {
-  assert.equal(packet.format, 1);
+  assert.equal(
+    packet.format,
+    2,
+    "Legacy/unknown authorization envelope; new audit required",
+  );
   assert.equal(packet.repository, repository);
   assert.equal(packet.releasePr, context.releasePr);
-  assert.equal(packet.sha, context.expectedSha);
+  assert.equal(packet.releaseSha, context.releaseSha, "Different release SHA");
+  assert.equal(
+    packet.executionSha,
+    context.executionSha,
+    "Different execution SHA; new audit required",
+  );
+  assert(
+    /^[0-9a-f]{64}$/.test(context.protectedInputsDigest),
+    "Verified protected-input digest required",
+  );
+  assert.equal(
+    packet.protectedInputsDigest,
+    context.protectedInputsDigest,
+    "Protected-input digest mismatch",
+  );
   assert.equal(digest(packet.record), digest(record), "Audit plan changed");
   assert.equal(packet.auditRun, context.auditRun, "Different audit provenance");
   assert.equal(

@@ -18,9 +18,12 @@ on:
         description: Merged Version Packages PR number
         type: string
         required: true
-      expected_sha:
-        description:
-          Full current master SHA, equal to the Release PR merge commit
+      release_sha:
+        description: Immutable merge commit SHA of the Version Packages PR
+        type: string
+        required: true
+      execution_sha:
+        description: Full current master SHA containing the authorized executor
         type: string
         required: true
       confirmation:
@@ -81,7 +84,8 @@ jobs:
     env:
       RELEASE_MODE: ${{ inputs.mode }}
       RELEASE_PR: ${{ inputs.release_pr }}
-      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      EXECUTION_SHA: ${{ inputs.execution_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -132,7 +136,8 @@ jobs:
     env:
       RELEASE_MODE: ${{ inputs.mode }}
       RELEASE_PR: ${{ inputs.release_pr }}
-      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      EXECUTION_SHA: ${{ inputs.execution_sha }}
       RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
       PLAN_DIGEST: ${{ inputs.plan_digest }}
       AUDIT_RUN: ${{ inputs.audit_run }}
@@ -185,7 +190,7 @@ jobs:
       'refs/heads/master'
           && (inputs.mode == 'publish' || inputs.mode == 'resume')
           && inputs.confirmation == 'PUBLISH_PRIVATE_FOUNDATION_PACKAGES'
-          && inputs.expected_sha == github.sha && needs.preflight.result ==
+          && inputs.execution_sha == github.sha && needs.preflight.result ==
       'success' }}
     needs: preflight
     runs-on: ubuntu-24.04
@@ -197,7 +202,8 @@ jobs:
     env:
       RELEASE_MODE: ${{ inputs.mode }}
       RELEASE_PR: ${{ inputs.release_pr }}
-      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      EXECUTION_SHA: ${{ inputs.execution_sha }}
       RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
       PLAN_DIGEST: ${{ inputs.plan_digest }}
       AUDIT_RUN: ${{ inputs.audit_run }}
