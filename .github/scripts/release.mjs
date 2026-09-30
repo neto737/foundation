@@ -18,6 +18,7 @@ import {
   names,
   reconcile,
   registry,
+  registryInventory,
   remainingPlan,
   repository,
   validateContext,
@@ -207,35 +208,7 @@ function sourceGates(record) {
 }
 
 async function inventory() {
-  const listed = await pages(
-    `https://api.github.com/users/t00ls-dev/packages?package_type=npm`,
-  );
-  const result = {};
-  for (const name of names) {
-    const metadata = listed.find((pkg) => pkg.name === name.split("/")[1]);
-    assert(
-      metadata,
-      `Package missing/inaccessible: ${name}; new packages need a separate reviewed onboarding`,
-    );
-    const npm = await request(
-      `${registry}/@t00ls-dev%2F${name.split("/")[1]}`,
-      process.env.NODE_AUTH_TOKEN,
-    );
-    assert(npm.versions && npm["dist-tags"], `Invalid npm metadata: ${name}`);
-    result[name] = {
-      visibility: metadata.visibility,
-      repository: metadata.repository?.full_name,
-      versions: Object.keys(npm.versions),
-      latest: npm["dist-tags"].latest,
-      integrities: Object.fromEntries(
-        Object.entries(npm.versions).map(([version, pkg]) => [
-          version,
-          pkg.dist?.integrity,
-        ]),
-      ),
-    };
-  }
-  return result;
+  return registryInventory(process.env.NODE_AUTH_TOKEN);
 }
 
 function unchangedPackages(record, state) {
@@ -244,8 +217,7 @@ function unchangedPackages(record, state) {
   )) {
     if (record.packages.some((item) => item.name === pkg.name)) continue;
     assert(
-      state[pkg.name].visibility === "private" &&
-        state[pkg.name].repository === repository &&
+      state[pkg.name]?.name === pkg.name &&
         state[pkg.name].latest === pkg.version &&
         state[pkg.name].versions.includes(pkg.version),
       `Unplanned local/registry version: ${pkg.name}`,

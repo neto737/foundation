@@ -55,6 +55,17 @@ nove nomes, demais workspaces privados, UNLICENSED e registry. O registry é
 consultado autenticadamente; erros não são interpretados como versões ausentes.
 Versões inesperadas, downgrade, pacote inacessível ou alvo já publicado falham.
 
+O inventário consulta diretamente os packuments completos dos nove nomes em
+`npm.pkg.github.com` com `GITHUB_TOKEN` (`NODE_AUTH_TOKEN`), sem enumerar
+packages pela REST API de usuário. Exige HTTP 200, identidade exata, versões,
+`latest`, identidade de cada versão, `dist.integrity` SHA-512 e URLs de tarball
+do registry com nome/versão coerentes. A versão anterior aprovada deve existir.
+A ausência do alvo só é aceita dentro desse documento válido. HTTP 401/403/404,
+falha de rede/timeout, 5xx, JSON inválido ou campos obrigatórios ausentes
+interrompem o fluxo. Um 404 do package significa ausente ou inacessível e
+**nunca** autoriza onboarding implícito. A consulta usa o documento do package,
+não um endpoint `/package/versão` nem um `E404` isolado de `npm view`.
+
 A identidade de autor Git sozinha não comprova geração automática. O único
 commit precisa ser o `head.sha` do PR, ter exatamente um parent igual ao SHA
 base e possuir assinatura verificada (`verified: true`, `reason: valid`), autor
@@ -116,7 +127,7 @@ Após qualquer tentativa, inclusive falha parcial, consulte/revise
 `private-release-result`, `reconciliation.json` e o summary. Cada alvo é
 classificado como publicado, ausente ou divergente. Um alvo publicado só é
 aceito se a integridade e `latest` correspondem ao artifact autorizado e sua
-visibilidade/associação continuam corretas. Erro de consulta pós-publicação
+identidade corresponde ao nome autorizado. Erro de consulta pós-publicação
 produz estado não verificado/divergente, nunca sucesso silencioso.
 
 Não refaça a publicação cegamente e não crie uma versão artificial para
@@ -124,7 +135,7 @@ recuperar uma release parcial. Após análise e nova autorização, use
 `mode=resume` com os mesmos PR/SHA/digest/audit_run e a mesma confirmação. O
 restante é o plano original menos as versões confirmadas no registry; nenhuma
 delas é sobrescrita. Se tudo já chegou, resume apenas reconcilia. Divergência de
-SHA, versões, integridade, provenance, visibility ou `latest` impede qualquer
+SHA, versões, integridade, identidade, provenance ou `latest` impede qualquer
 nova tentativa.
 
 Artifacts expiram em 30 dias. Se expirarem após uma falha parcial, não
@@ -141,8 +152,32 @@ existentes e SemVer estável.
 - Publish/resume: contents/pull-requests/actions read e packages write; sem PAT,
   contents write, aprovação automática de PR, OIDC npmjs ou criação de Releases.
 
-`access: restricted` não define sozinho a visibilidade do GitHub Packages; o
-fluxo verifica `private` e associação a `t00ls-dev/foundation` pela API.
+### Invariantes administrativas de onboarding
+
+Para os nove packages existentes, devem permanecer estabelecidos no onboarding:
+
+- **visibility private** no GitHub Packages;
+- associação administrativa a **`t00ls-dev/foundation`**;
+- **Manage Actions access** ou herança aplicável concedendo ao Foundation acesso
+  de leitura e, para o publisher, escrita.
+
+Essas propriedades são verificadas e mantidas pelos administradores do package.
+Mudança de visibilidade, associação, acesso, exclusão ou recriação exige nova
+revisão administrativa antes de continuar releases. Novos packages continuam
+exigindo onboarding separado e revisado.
+
+O runtime não comprova essas propriedades pelo registry: `repository` no
+packument é metadata publicada; acesso autenticado e `access: restricted` não
+provam visibility private nem associação administrativa. A REST API de metadata
+de packages do usuário não suporta o token de instalação usado pelo workflow;
+essa dependência causou a falha do primeiro audit
+[36693989133](https://github.com/t00ls-dev/foundation/actions/runs/36693989133).
+Não se introduz PAT nem se fabricam campos de visibilidade/associação no
+inventário. **Risco residual:** deriva administrativa externa não é detectada
+necessariamente pelo workflow de release. Os gates de runtime continuam
+verificando identidade/namespace, versões, tags e integridade, com reconsulta
+antes da publicação e reconciliação posterior.
+
 Atualmente a conta pessoal Free/repositório privado não possui aprovação efetiva
 de Environment; `master` está sem branch protection. Não se apresenta um
 Environment sem regras como proteção. Quem pode alterar workflows ainda pode

@@ -79,22 +79,91 @@ export const digest = (value) =>
 export const hash = (bytes, algorithm = "sha256", encoding = "hex") =>
   createHash(algorithm).update(bytes).digest(encoding);
 
-export async function authenticatedJson(url, token, fetcher = fetch) {
+export async function authenticatedJson(
+  url,
+  token,
+  fetcher = fetch,
+  accept = "application/vnd.github+json",
+) {
   assert(token, "Authentication token required");
   const response = await fetcher(url, {
     headers: {
       "Authorization": `Bearer ${token}`,
-      "Accept": "application/vnd.github+json",
+      "Accept": accept,
       "User-Agent": "foundation-private-release",
     },
     signal: AbortSignal.timeout(30000),
     redirect: "error",
   });
   assert(
-    response.ok,
+    response.ok && response.status === 200,
     `Authenticated request failed: ${response.status} ${url}`,
   );
   return response.json();
+}
+
+export function validatePackument(packument, name) {
+  const object = (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  assert(names.includes(name), "Package outside registry allowlist");
+  assert(object(packument), "Invalid registry packument");
+  assert.equal(packument.name, name, "Registry package identity mismatch");
+  assert(object(packument.versions), "Missing registry versions");
+  const versions = Object.keys(packument.versions);
+  assert(versions.length > 0, "Empty registry versions; onboarding required");
+  assert(object(packument["dist-tags"]), "Missing registry dist-tags");
+  const latest = packument["dist-tags"].latest;
+  assert(
+    versions.includes(latest),
+    "Registry latest must identify an existing version",
+  );
+  const integrities = {};
+  for (const version of versions) {
+    compareVersions(version, version);
+    const pkg = packument.versions[version];
+    assert(object(pkg), "Malformed registry version");
+    assert.equal(pkg.name, name, "Registry version package identity mismatch");
+    assert.equal(pkg.version, version, "Registry version identity mismatch");
+    assert(object(pkg.dist), "Missing registry distribution metadata");
+    assert(
+      /^sha512-[a-zA-Z0-9+/]{86}==$/.test(pkg.dist.integrity ?? ""),
+      "Missing/invalid registry SHA-512 integrity",
+    );
+    const tarball = new URL(pkg.dist.tarball);
+    assert.equal(
+      tarball.origin,
+      registry,
+      "Unexpected registry tarball origin",
+    );
+    assert(
+      !tarball.username && !tarball.password && !tarball.hash,
+      "Unsafe registry tarball URL",
+    );
+    const prefix = `/download/${name}/${version}/`;
+    assert(
+      tarball.pathname.startsWith(prefix) &&
+        /^[a-zA-Z0-9_-]+$/.test(tarball.pathname.slice(prefix.length)),
+      "Registry tarball package/version mismatch",
+    );
+    integrities[version] = pkg.dist.integrity;
+  }
+  return { name, versions, latest, integrities };
+}
+
+export async function registryInventory(token, fetcher = fetch) {
+  const result = {};
+  for (const name of names) {
+    // Full packument: a successful read anchors existence/access. A package
+    // 404 is ambiguous and always fatal, never permission to first-publish.
+    const packument = await authenticatedJson(
+      `${registry}/${name.replace("/", "%2F")}`,
+      token,
+      fetcher,
+      "application/json",
+    );
+    result[name] = validatePackument(packument, name);
+  }
+  return result;
 }
 
 export function compareVersions(left, right) {
@@ -309,16 +378,16 @@ export function validateManifests(manifests, record) {
   }
 }
 
-// Inventory is authenticated; missing/inaccessible packages and malformed
-// responses are errors, never interpreted as permission to first-publish.
+// Inventory contains registry-observed facts. Privacy and administrative
+// repository association are onboarding invariants, not npm runtime facts.
 export function reconcile(record, inventory, artifacts = []) {
   validateRecord(record);
   const states = [];
   for (const item of record.packages) {
     const pkg = inventory[item.name];
     assert(
-      pkg && pkg.visibility === "private" && pkg.repository === repository,
-      `Registry inaccessible/privacy/link mismatch: ${item.name}`,
+      pkg && pkg.name === item.name,
+      `Registry inaccessible/identity mismatch: ${item.name}`,
     );
     assert(
       Array.isArray(pkg.versions) && pkg.versions.includes(item.oldVersion),

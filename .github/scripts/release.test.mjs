@@ -25,6 +25,8 @@ import {
   validateArtifactPath,
   validateReleaseCommit,
   validateRecordPlan,
+  validatePackument,
+  registryInventory,
 } from "./release-core.mjs";
 import { recordFromBase } from "./release-planning.mjs";
 
@@ -94,14 +96,249 @@ const packet = () => ({
 });
 const registry = (versions = ["0.1.0"], latest = versions.at(-1)) => ({
   [names[0]]: {
-    visibility: "private",
-    repository: "t00ls-dev/foundation",
+    name: names[0],
     versions,
     latest,
     integrities: { "0.1.1": "sha512-YWJj" },
   },
 });
 const invalid = (name, fn) => test(name, () => assert.throws(fn));
+
+const sri = (value) => `sha512-${hash(Buffer.from(value), "sha512", "base64")}`;
+const packument = (
+  name = names[0],
+  versions = ["0.1.0"],
+  latest = versions.at(-1),
+) => ({
+  name,
+  "dist-tags": { latest },
+  "versions": Object.fromEntries(
+    versions.map((version) => [
+      version,
+      {
+        name,
+        version,
+        dist: {
+          integrity: sri(`${name}@${version}`),
+          tarball: `https://npm.pkg.github.com/download/${name}/${version}/fixture`,
+        },
+      },
+    ]),
+  ),
+});
+test("valid packument yields only observed registry facts, no administrative claims", () => {
+  const result = validatePackument(packument(), names[0]);
+  assert.deepEqual(result, {
+    name: names[0],
+    versions: ["0.1.0"],
+    latest: "0.1.0",
+    integrities: { "0.1.0": sri(`${names[0]}@0.1.0`) },
+  });
+  assert(
+    !("visibility" in result) &&
+      !("repositoryAssociation" in result) &&
+      !("repository" in result),
+  );
+});
+test("real inventory queries all nine npm packuments directly with authenticated full metadata", async () => {
+  const urls = [];
+  const result = await registryInventory(
+    "fixture-token",
+    async (url, options) => {
+      urls.push(url);
+      assert.equal(new URL(url).origin, "https://npm.pkg.github.com");
+      assert.equal(options.headers.Authorization, "Bearer fixture-token");
+      assert.equal(options.headers.Accept, "application/json");
+      assert.equal(options.redirect, "error");
+      assert(options.signal instanceof AbortSignal);
+      const name = decodeURIComponent(new URL(url).pathname.slice(1));
+      return { ok: true, status: 200, json: async () => packument(name) };
+    },
+  );
+  assert.deepEqual(
+    urls,
+    names.map(
+      (name) => `https://npm.pkg.github.com/${name.replace("/", "%2F")}`,
+    ),
+  );
+  assert.deepEqual(Object.keys(result), names);
+  assert.equal(reconcile(record(), result)[0].state, "absent");
+});
+for (const [label, mutate] of [
+  [
+    "wrong package",
+    (p) => {
+      p.name = names[1];
+    },
+  ],
+  [
+    "wrong namespace",
+    (p) => {
+      p.name = "@other/access";
+    },
+  ],
+  [
+    "missing versions",
+    (p) => {
+      delete p.versions;
+    },
+  ],
+  [
+    "empty versions",
+    (p) => {
+      p.versions = {};
+    },
+  ],
+  [
+    "missing dist-tags",
+    (p) => {
+      delete p["dist-tags"];
+    },
+  ],
+  [
+    "invalid latest",
+    (p) => {
+      p["dist-tags"].latest = "0.1.1";
+    },
+  ],
+  [
+    "wrong version package",
+    (p) => {
+      p.versions["0.1.0"].name = names[1];
+    },
+  ],
+  [
+    "wrong version identity",
+    (p) => {
+      p.versions["0.1.0"].version = "0.1.1";
+    },
+  ],
+  [
+    "missing dist",
+    (p) => {
+      delete p.versions["0.1.0"].dist;
+    },
+  ],
+  [
+    "missing integrity",
+    (p) => {
+      delete p.versions["0.1.0"].dist.integrity;
+    },
+  ],
+  [
+    "invalid integrity",
+    (p) => {
+      p.versions["0.1.0"].dist.integrity = "sha512-short";
+    },
+  ],
+  [
+    "missing tarball",
+    (p) => {
+      delete p.versions["0.1.0"].dist.tarball;
+    },
+  ],
+  [
+    "foreign tarball",
+    (p) => {
+      p.versions["0.1.0"].dist.tarball = "https://example.invalid/fixture.tgz";
+    },
+  ],
+  [
+    "wrong tarball package",
+    (p) => {
+      p.versions["0.1.0"].dist.tarball =
+        `https://npm.pkg.github.com/download/${names[1]}/0.1.0/fixture`;
+    },
+  ],
+  [
+    "prerelease drift",
+    (p) => {
+      p.versions["0.2.0-beta.1"] = {};
+    },
+  ],
+])
+  invalid(`packument rejects ${label}`, () => {
+    const p = packument();
+    mutate(p);
+    validatePackument(p, names[0]);
+  });
+for (const status of [401, 403, 404, 500, 503, 206])
+  test(`inventory fails closed on HTTP ${status}, never onboards on 404`, async () => {
+    await assert.rejects(
+      registryInventory("fixture-token", async () => ({
+        ok: status < 300,
+        status,
+        json: async () => packument(),
+      })),
+      /Authenticated request failed/,
+    );
+  });
+test("inventory rejects network failure, timeout and invalid JSON", async () => {
+  for (const failure of [
+    new Error("network"),
+    new DOMException("timeout", "TimeoutError"),
+  ])
+    await assert.rejects(
+      registryInventory("fixture-token", async () => {
+        throw failure;
+      }),
+    );
+  await assert.rejects(
+    registryInventory("fixture-token", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("invalid JSON");
+      },
+    })),
+  );
+});
+invalid(
+  "registry anchor oldVersion missing is never treated as a new package",
+  () =>
+    reconcile(record(), {
+      [names[0]]: validatePackument(packument(names[0], ["0.1.1"]), names[0]),
+    }),
+);
+for (const mode of ["audit", "publish"])
+  invalid(
+    `validated packument target already present blocks normal ${mode}`,
+    () => {
+      const inventory = {
+        [names[0]]: validatePackument(
+          packument(names[0], ["0.1.0", "0.1.1"]),
+          names[0],
+        ),
+      };
+      const artifact = [
+        { ...artifacts()[0], integrity: sri(`${names[0]}@0.1.1`) },
+      ];
+      remainingPlan(record(), reconcile(record(), inventory, artifact), mode);
+    },
+  );
+test("validated packument resume accepts only original artifact integrity", () => {
+  const inventory = {
+    [names[0]]: validatePackument(
+      packument(names[0], ["0.1.0", "0.1.1"]),
+      names[0],
+    ),
+  };
+  const artifact = [{ ...artifacts()[0], integrity: sri(`${names[0]}@0.1.1`) }];
+  assert.deepEqual(
+    remainingPlan(record(), reconcile(record(), inventory, artifact), "resume"),
+    [],
+  );
+  artifact[0].integrity = sri("different bytes");
+  assert.throws(
+    () =>
+      remainingPlan(
+        record(),
+        reconcile(record(), inventory, artifact),
+        "resume",
+      ),
+    /divergence/,
+  );
+});
 
 const commit = () => ({
   sha,
@@ -534,9 +771,9 @@ test("HTTP/auth/network failures are never absence", async () => {
     }),
   );
 });
-invalid("package public", () => {
+invalid("registry package identity divergent", () => {
   const i = registry();
-  i[names[0]].visibility = "public";
+  i[names[0]].name = names[1];
   reconcile(record(), i);
 });
 invalid("downgrade", () =>
@@ -579,7 +816,7 @@ test("partial release publishes only absent remainder", () => {
   r.packages.push({ ...r.packages[0], name: names[1] });
   const i = {
     ...registry(["0.1.0", "0.1.1"]),
-    [names[1]]: registry()[names[0]],
+    [names[1]]: { ...registry()[names[0]], name: names[1] },
   };
   const states = reconcile(r, i, artifacts());
   assert.deepEqual(
