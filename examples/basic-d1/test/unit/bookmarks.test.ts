@@ -51,6 +51,7 @@ describe("bookmark contracts", () => {
       { ...valid, title: " " },
       { ...valid, tags: Array<string>(11).fill("tag") },
       { ...valid, description: "x".repeat(2001) },
+      { ...valid, tags: ["İ".repeat(40)] },
     ]) {
       expect(bookmarkInputSchema.safeParse(input).success).toBe(false);
     }

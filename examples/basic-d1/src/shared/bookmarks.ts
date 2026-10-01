@@ -15,9 +15,9 @@ const editableFields = {
     .nullable()
     .transform((value) => value || null),
   tags: z
-    .array(z.string().trim().min(1).max(40))
+    .array(z.string().trim().toLowerCase().min(1).max(40))
     .max(10)
-    .transform((tags) => [...new Set(tags.map((tag) => tag.toLowerCase()))]),
+    .transform((tags) => [...new Set(tags)]),
 };
 
 export const bookmarkInputSchema = z.strictObject({
@@ -36,12 +36,7 @@ export const bookmarkUpdateSchema = z
 
 export const bookmarkQuerySchema = z.strictObject({
   q: z.string().trim().max(200).default(""),
-  tag: z
-    .string()
-    .trim()
-    .max(40)
-    .transform((value) => value.toLowerCase())
-    .default(""),
+  tag: z.string().trim().toLowerCase().max(40).default(""),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
