@@ -113,6 +113,81 @@ describe("foundation auth HTTP flows", () => {
     expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
   });
 
+  it("rejects Google OAuth state as a Magic Link without issuing a session", async () => {
+    auth = createFoundationAuth({
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({
+        account: [],
+        session: [],
+        user: [],
+        verification: [],
+      }),
+      email: {
+        send(input) {
+          sent.push(input);
+          return Promise.resolve();
+        },
+      },
+      google: {
+        clientId: "test-google-client",
+        clientSecret: "test-google-secret",
+      },
+      secret: "test-secret-with-at-least-thirty-two-characters",
+    });
+    const email = "person@example.com";
+    const start = await post("/api/auth/sign-in/social", {
+      provider: "google",
+      callbackURL: "/",
+      additionalData: { email },
+    });
+    expect(start.status).toBe(200);
+    const authorization = (await start.json()) as { url: string };
+    const url = new URL(authorization.url);
+    expect(url.origin).toBe("https://accounts.google.com");
+    const state = url.searchParams.get("state");
+    expect(state).toBeTruthy();
+
+    const forged = await auth.handler(
+      new Request(
+        `http://localhost:3000/api/auth/magic-link/verify?token=${encodeURIComponent(state!)}&callbackURL=/`,
+      ),
+    );
+    expect(forged.status).toBe(302);
+    expect(
+      new URL(forged.headers.get("location")!).searchParams.get("error"),
+    ).toBe("INVALID_TOKEN");
+    expect(forged.headers.getSetCookie().join(";")).not.toContain(
+      "session_token",
+    );
+    expect(sent).toHaveLength(0);
+    expect((await auth.resolveSession(new Headers())).data).toBeNull();
+
+    // A newly issued email link still authenticates with Google enabled.
+    expect(
+      (await post("/api/auth/sign-in/magic-link", { email, callbackURL: "/" }))
+        .status,
+    ).toBe(200);
+    expect(sent).toHaveLength(1);
+    const verified = await auth.handler(new Request(sent[0]!.text));
+    expect(verified.status).toBe(302);
+    const cookie = verified.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    expect(cookie).toContain("session_token");
+    expect(
+      (await auth.resolveSession(new Headers({ Cookie: cookie }))).data?.user
+        .email,
+    ).toBe(email);
+    const replay = await auth.handler(new Request(sent[0]!.text));
+    expect(
+      new URL(replay.headers.get("location")!).searchParams.get("error"),
+    ).toBe("INVALID_TOKEN");
+    expect(replay.headers.getSetCookie().join(";")).not.toContain(
+      "session_token",
+    );
+  });
+
   it("does not log authentication links or tokens from provider failures", async () => {
     let link = "";
     const captured = [
@@ -189,7 +264,7 @@ describe("foundation auth HTTP flows", () => {
     expect(logs).not.toContain("https://example.com/auth");
   });
 
-  function post(path: string, body: Readonly<Record<string, string>>) {
+  function post(path: string, body: Readonly<Record<string, unknown>>) {
     return auth.handler(
       new Request(`http://localhost:3000${path}`, {
         body: JSON.stringify(body),

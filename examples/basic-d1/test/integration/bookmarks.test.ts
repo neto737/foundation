@@ -108,6 +108,108 @@ describe("Links API with Better Auth and real D1", () => {
     return bookmarkResponseSchema.parse(await response.json());
   }
 
+  it("isolates OAuth state from Magic Link and preserves email/password/reset on D1", async () => {
+    env.GOOGLE_CLIENT_ID = "test-google-client";
+    env.GOOGLE_CLIENT_SECRET = "test-google-secret";
+    const email = "security@example.com";
+    await register(email);
+    sent.splice(0);
+    const start = await request("/api/auth/sign-in/social", "POST", "", {
+      provider: "google",
+      callbackURL: "/",
+      additionalData: { email },
+    });
+    expect(start.status).toBe(200);
+    const authorization = await start.json<{ url: string }>();
+    const state = new URL(authorization.url).searchParams.get("state");
+    expect(state).toBeTruthy();
+    const forged = await request(
+      `/api/auth/magic-link/verify?token=${encodeURIComponent(state!)}&callbackURL=/`,
+    );
+    expect(forged.status).toBe(302);
+    expect(
+      new URL(forged.headers.get("location")!).searchParams.get("error"),
+    ).toBe("INVALID_TOKEN");
+    expect(forged.headers.getSetCookie().join(";")).not.toContain(
+      "session_token",
+    );
+    expect(sent).toHaveLength(0);
+    expect((await request("/api/bookmarks")).status).toBe(401);
+
+    expect(
+      (
+        await request("/api/auth/sign-in/magic-link", "POST", "", {
+          email,
+          callbackURL: "/",
+        })
+      ).status,
+    ).toBe(200);
+    const link = sent.find((message) => message.subject === "Sign in")!;
+    const verified = await app.request(link.text, undefined, env);
+    expect(verified.status).toBe(302);
+    const cookie = verified.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    expect(cookie).toContain("session_token");
+    expect((await request("/api/bookmarks", "GET", cookie)).status).toBe(200);
+    expect(
+      (await request("/api/auth/sign-out", "POST", cookie, {})).status,
+    ).toBe(200);
+    expect((await request("/api/bookmarks", "GET", cookie)).status).toBe(401);
+
+    expect(
+      (
+        await request("/api/auth/request-password-reset", "POST", "", {
+          email,
+          redirectTo: "/reset-password",
+        })
+      ).status,
+    ).toBe(200);
+    const reset = sent.find(
+      (message) => message.subject === "Reset your password",
+    )!;
+    const redirect = await app.request(reset.text, undefined, env);
+    expect(redirect.status).toBe(302);
+    const token = new URL(redirect.headers.get("location")!).searchParams.get(
+      "token",
+    );
+    expect(token).toBeTruthy();
+    const newPassword = "new-correct-horse-battery-staple";
+    expect(
+      (
+        await request("/api/auth/reset-password", "POST", "", {
+          token,
+          newPassword,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request("/api/auth/sign-in/email", "POST", "", {
+          email,
+          password: "correct-horse-battery-staple",
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await request("/api/auth/sign-in/email", "POST", "", {
+          email,
+          password: newPassword,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request("/api/auth/reset-password", "POST", "", {
+          token,
+          newPassword,
+        })
+      ).status,
+    ).toBe(400);
+  });
+
   it("persists CRUD, normalizes tags, filters literal search and paginates", async () => {
     const cookie = await register("a@example.com");
     const first = await create(cookie);

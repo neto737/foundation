@@ -45,6 +45,7 @@ describe("generateApp", () => {
       private: true,
     });
     expect(manifest.dependencies["@hookform/resolvers"]).toMatch(/^\^/);
+    expect(manifest.dependencies["better-auth"]).toBe("^1.7.7");
     expect(manifest.dependencies["react-hook-form"]).toMatch(/^\^/);
     expect(manifest.dependencies.zod).toMatch(/^\^/);
     expect(wrangler).toContain('"binding": "DB"');
