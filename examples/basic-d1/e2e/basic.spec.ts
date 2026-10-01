@@ -66,6 +66,192 @@ async function addBookmark(page: Page, title: string) {
   ).toBeVisible();
 }
 
+test("shows Google only on anonymous login/signup when server capability is enabled", async ({
+  page,
+}) => {
+  const google = page.getByRole("button", { name: "Continue with Google" });
+  for (const path of ["/login", "/signup"]) {
+    await Promise.all([page.waitForResponse("**/api/config"), page.goto(path)]);
+    await expect(page.getByText("Loading sign-in options...")).toHaveCount(0);
+    await expect(google).toHaveCount(0);
+  }
+  await page.route("**/api/config", (route) =>
+    route.fulfill({ json: { googleEnabled: true } }),
+  );
+  for (const path of ["/login", "/signup"]) {
+    await page.goto(path);
+    await expect(google).toBeVisible();
+    await expect(google).toHaveAttribute("type", "button");
+    await expect(google).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(google.locator("img")).toHaveAttribute("alt", "");
+  }
+  for (const path of [
+    "/magic-link",
+    "/forgot-password",
+    "/reset-password",
+    "/verify-email",
+  ]) {
+    await page.goto(path);
+    await expect(page.locator(".auth-page")).toBeVisible();
+    await expect(google).toHaveCount(0);
+  }
+  await signUp(page, email());
+  await expect(google).toHaveCount(0);
+});
+
+test("loads Google capability with explicit error/retry without blocking existing auth", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let attempts = 0;
+  let fail = true;
+  await page.route("**/api/config", async (route) => {
+    attempts++;
+    if (fail) {
+      await held;
+      await route
+        .fulfill({
+          status: 503,
+          json: { error: { message: "sensitive configuration details" } },
+        })
+        .catch(() => undefined); // StrictMode may have canceled the first mount.
+    } else await route.fulfill({ json: { googleEnabled: true } });
+  });
+  await page.goto("/login");
+  await expect(page.getByText("Loading sign-in options...")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Continue with Google" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeEnabled();
+  release();
+  await expect(page.getByText("Could not load sign-in options.")).toBeVisible();
+  await expect(page.getByText("sensitive configuration details")).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("link", { name: "Use a magic link" }),
+  ).toBeVisible();
+  const beforeRetry = attempts;
+  fail = false;
+  await page.getByRole("button", { name: "Retry sign-in options" }).click();
+  await expect(
+    page.getByRole("button", { name: "Continue with Google" }),
+  ).toBeEnabled();
+  expect(attempts).toBeGreaterThan(beforeRetry);
+});
+
+test("guards double Google clicks, sanitizes initiation errors and retries using the Better Auth redirect", async ({
+  page,
+}) => {
+  await page.route("**/api/config", (route) =>
+    route.fulfill({ json: { googleEnabled: true } }),
+  );
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requests: unknown[] = [];
+  await page.route("**/api/auth/sign-in/social", async (route) => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      await held;
+      await route.fulfill({
+        status: 500,
+        json: { message: "state=secret-token&error_description=unsafe" },
+      });
+    } else
+      await route.fulfill({
+        json: { redirect: true, url: "http://127.0.0.1:5174/__oauth-ui-test" },
+      });
+  });
+  await page.route("**/__oauth-ui-test", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<h1>OAuth navigation test only</h1>",
+    }),
+  );
+  await page.goto("/login");
+  const google = page.getByRole("button", { name: "Continue with Google" });
+  await expect(google).toBeEnabled();
+  await google.evaluate((element: HTMLButtonElement) => {
+    element.click();
+    element.click();
+  });
+  await expect(google).toBeDisabled();
+  await expect(page.getByText("Redirecting to Google...")).toBeVisible();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0]).toEqual({
+    provider: "google",
+    callbackURL: "/",
+    newUserCallbackURL: "/",
+    errorCallbackURL: "/login?oauth=failed",
+  });
+  release();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Could not sign in with Google. Please try again.",
+  );
+  await expect(
+    page.getByText("state=secret-token&error_description=unsafe"),
+  ).toHaveCount(0);
+  await expect(google).toBeEnabled();
+  await google.focus();
+  await expect(google).toBeFocused();
+  await google.press("Enter");
+  await expect(page).toHaveURL(/\/__oauth-ui-test$/);
+  expect(requests).toHaveLength(2);
+});
+
+test("handles sanitized Google cancellation and clears pending on a persisted Back event", async ({
+  page,
+}) => {
+  await page.route("**/api/config", (route) =>
+    route.fulfill({ json: { googleEnabled: true } }),
+  );
+  await page.goto(
+    "/login?oauth=failed&error=access_denied&error_description=unsafe-reflected-text&state=secret-state",
+  );
+  await expect(page.getByRole("alert")).toHaveText(
+    "Google sign-in was canceled.",
+  );
+  await expect(page.getByText("unsafe-reflected-text")).toHaveCount(0);
+  await page.goto(
+    "/login?oauth=failed&error=unknown&error_description=unsafe-reflected-text",
+  );
+  await expect(page.getByRole("alert")).toHaveText(
+    "Could not sign in with Google. Please try again.",
+  );
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/auth/sign-in/social", async (route) => {
+    await held;
+    await route
+      .fulfill({ status: 500, json: { message: "not rendered" } })
+      .catch(() => undefined);
+  });
+  const google = page.getByRole("button", { name: "Continue with Google" });
+  await expect(google).toBeEnabled();
+  await google.click();
+  await expect(google).toBeDisabled();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Exercise our lifecycle handling deterministically; browser BFCache eligibility varies.
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new PageTransitionEvent("pageshow", { persisted: true }),
+    ),
+  );
+  await expect(google).toBeEnabled();
+  release();
+  await expect(page.getByText("Redirecting to Google...")).toHaveCount(0);
+});
+
 test("verifies email, persists session and performs CRUD with filters", async ({
   page,
 }) => {

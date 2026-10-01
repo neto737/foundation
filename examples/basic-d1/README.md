@@ -46,6 +46,49 @@ podem expirar a nova identidade nem disparar navegação ou atualização de est
 - estados de sessão/listagem/envio, vazio, erro e retry;
 - UI responsiva com labels, erros associados e foco de campo inválido.
 
+### Google opcional
+
+Sign in e Create account mostram **Continue with Google** somente quando
+`GET /api/config` retorna `{ "googleEnabled": true }`. O contrato público contém
+somente esse booleano, usa `private, no-store` e não consulta D1. Não existe
+flag Vite nem configuração Google no browser.
+
+Um único resolver server-side decide a configuração do Better Auth e a
+capability:
+
+- ambas as credenciais ausentes/vazias/whitespace: Google desabilitado, `false`;
+- `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` presentes: Google habilitado,
+  `true`;
+- apenas uma presente: configuração inválida, auth/config retornam `503` com
+  `AUTH_CONFIGURATION_INVALID` e mensagem fixa, sem revelar a credencial.
+
+`/health` continua diagnosticando Worker/D1 independentemente de Google. O botão
+usa `authClient.signIn.social`, redirects e state do Better Auth 1.7.7, sem GIS
+SDK. O logo local e o estilo claro vêm do
+[configurador oficial Google](https://developers.google.com/identity/branding-guidelines);
+usa fallback Arial/Roboto local, sem download de fonte. O Client Secret
+permanece no servidor; o Client ID aparece apenas na URL pública de autorização
+Google.
+
+Registre no Google Console o callback exato
+`${BASE_URL}/api/auth/callback/google`; em DEV:
+`https://foundation.t00ls.dev/api/auth/callback/google`. Sucesso retorna para
+`/` e a sessão normal do Links. Cancelamento com state válido retorna para
+`/login?oauth=failed`; a UI mostra mensagens fixas e ignora `error_description`.
+State ausente/inválido preserva a página de erro padrão do Better Auth em
+`/api/auth/error`, sem interceptação própria. Clique duplo é bloqueado; erro
+permite retry e Back/bfcache libera pending e recarrega a capability.
+
+Os testes locais verificam configuração, D1, início/cancelamento e UI simulada;
+não equivalem a OAuth Google real. Após eventual merge/deploy automático,
+validar em DEV: botão em login/signup, consentimento Google e callback real,
+identidade e biblioteca, reload, cookies HTTPS e logout/revogação; repetir com
+conta Google existente e nova, cancelar e tentar novamente. Revalidar os fluxos
+email/password, verificação, Magic Link e reset já existentes. Nenhum smoke
+remoto é disparado pelos testes da UI.
+
+### Bookmarks
+
 | Método | Rota                                       | Resultado                    |
 | ------ | ------------------------------------------ | ---------------------------- |
 | GET    | `/api/bookmarks?q=&tag=&limit=20&offset=0` | `{ items, hasMore }`         |
