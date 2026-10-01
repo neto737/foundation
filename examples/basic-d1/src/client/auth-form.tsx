@@ -25,10 +25,21 @@ export function AsyncForm(props: {
   pendingLabel: string;
   submitLabel: string;
   title: string;
+  requiredFields: Array<keyof FormValues>;
 }) {
   const feedbackId = useId();
   const [feedback, setFeedback] = useState<Feedback>();
-  const form = useForm<FormValues>({ resolver: zodResolver(formSchema) });
+  const schema = formSchema.superRefine((values, context) => {
+    for (const name of props.requiredFields) {
+      if (!values[name])
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: `Enter your ${name}`,
+        });
+    }
+  });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema) });
   const pending = form.formState.isSubmitting;
 
   async function submit(data: FormValues) {
