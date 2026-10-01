@@ -317,6 +317,15 @@ describe("Links API with Better Auth and real D1", () => {
       .run();
     const expired = await request("/api/bookmarks", "GET", cookie);
     expect(expired.status).toBe(401);
+    const cleanupCookies = expired.headers.getSetCookie();
+    expect(cleanupCookies.length).toBeGreaterThanOrEqual(3);
+    for (const name of ["session_token", "session_data", "dont_remember"]) {
+      expect(
+        cleanupCookies.some(
+          (value) => value.includes(name) && value.includes("Max-Age=0"),
+        ),
+      ).toBe(true);
+    }
     expect(
       expired.headers
         .getSetCookie()

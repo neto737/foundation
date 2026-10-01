@@ -1,7 +1,5 @@
-import nodeProcess from "node:process";
+import process from "node:process";
 import { defineConfig, devices } from "@playwright/test";
-
-const process = nodeProcess as NodeJS.Process;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -9,7 +7,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:5174",
     trace: "on-first-retry",
   },
   projects: [
@@ -17,9 +15,9 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "pnpm db:migrate:local && pnpm exec vite --host 127.0.0.1",
-    reuseExistingServer: !process.env.CI,
+    command: "node --experimental-strip-types e2e/start.ts",
+    reuseExistingServer: false,
     timeout: 120_000,
-    url: "http://127.0.0.1:5173/health",
+    url: "http://127.0.0.1:5174/health",
   },
 });
