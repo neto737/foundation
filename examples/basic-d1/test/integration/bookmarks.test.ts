@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createApp } from "../../src/server/app.js";
 import type { Env } from "../../src/server/auth.js";
 import {
@@ -107,6 +108,123 @@ describe("Links API with Better Auth and real D1", () => {
     expect(response.status).toBe(201);
     return bookmarkResponseSchema.parse(await response.json());
   }
+
+  it("exposes only the server Google capability and does not consult D1", async () => {
+    const prepare = vi.spyOn(env.DB, "prepare");
+    const disabled = await request("/api/config");
+    expect(disabled.status).toBe(200);
+    expect(await disabled.json()).toEqual({ googleEnabled: false });
+    expect(disabled.headers.get("cache-control")).toBe("private, no-store");
+    env.GOOGLE_CLIENT_ID = "capability-client-id";
+    env.GOOGLE_CLIENT_SECRET = "capability-client-secret";
+    const enabled = await request("/api/config");
+    expect(enabled.status).toBe(200);
+    expect(await enabled.json()).toEqual({ googleEnabled: true });
+    expect(enabled.headers.get("cache-control")).toBe("private, no-store");
+    expect(prepare).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
+  });
+
+  it.each(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] as const)(
+    "fails explicitly without leaking an incomplete Google configuration (%s)",
+    async (key) => {
+      env[key] = "sensitive-credential-value";
+      const captured = [
+        vi.spyOn(console, "error"),
+        vi.spyOn(console, "warn"),
+        vi.spyOn(console, "info"),
+        vi.spyOn(console, "log"),
+      ];
+      for (const capture of captured)
+        capture.mockImplementation(() => undefined);
+      for (const response of [
+        await request("/api/config"),
+        await request("/api/auth/sign-in/social", "POST", "", {
+          provider: "google",
+          callbackURL: "/",
+        }),
+      ]) {
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({
+          error: {
+            code: "AUTH_CONFIGURATION_INVALID",
+            message: "Authentication is temporarily unavailable.",
+          },
+        });
+        expect(response.headers.get("cache-control")).toBe("private, no-store");
+        expect(response.headers.getSetCookie()).toEqual([]);
+      }
+      expect(
+        JSON.stringify(captured.flatMap((capture) => capture.mock.calls)),
+      ).not.toMatch(
+        /sensitive-credential-value|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET/,
+      );
+      expect((await request("/health")).status).toBe(200);
+    },
+  );
+
+  it("does not configure Google when absent and preserves the Better Auth error endpoint", async () => {
+    const start = await request("/api/auth/sign-in/social", "POST", "", {
+      provider: "google",
+      callbackURL: "/",
+    });
+    expect(start.status).toBe(404);
+    expect(start.headers.getSetCookie()).toEqual([]);
+    const errorPage = await request("/api/auth/error?error=state_mismatch");
+    expect(errorPage.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("starts Google through Better Auth and returns cancellation to the fixed login URL", async () => {
+    env.GOOGLE_CLIENT_ID = "oauth-client-id";
+    env.GOOGLE_CLIENT_SECRET = "secret-must-stay-server-only";
+    const start = await request("/api/auth/sign-in/social", "POST", "", {
+      provider: "google",
+      callbackURL: "/",
+      newUserCallbackURL: "/",
+      errorCallbackURL: "/login?oauth=failed",
+    });
+    expect(start.status).toBe(200);
+    const body = await start.text();
+    expect(body).not.toContain(env.GOOGLE_CLIENT_SECRET);
+    const { url } = z.object({ url: z.string() }).parse(JSON.parse(body));
+    const authorization = new URL(url);
+    expect(authorization.origin).toBe("https://accounts.google.com");
+    expect(authorization.searchParams.get("client_id")).toBe(
+      env.GOOGLE_CLIENT_ID,
+    );
+    expect(authorization.searchParams.get("redirect_uri")).toBe(
+      `${origin}/api/auth/callback/google`,
+    );
+    expect(authorization.searchParams.get("code_challenge")).toBeTruthy();
+    const state = authorization.searchParams.get("state");
+    expect(state).toBeTruthy();
+    const cookie = start.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    const canceled = await request(
+      `/api/auth/callback/google?state=${encodeURIComponent(state!)}&error=access_denied`,
+      "GET",
+      cookie,
+    );
+    expect(canceled.status).toBe(302);
+    const target = new URL(canceled.headers.get("location")!, origin);
+    expect(target.origin).toBe(origin);
+    expect(target.pathname).toBe("/login");
+    expect(target.searchParams.get("oauth")).toBe("failed");
+    expect(target.searchParams.get("error")).toBe("access_denied");
+    expect(target.searchParams.has("state")).toBe(false);
+    expect(canceled.headers.getSetCookie().join(";")).not.toContain(
+      "session_token",
+    );
+    expect((await request("/api/bookmarks")).status).toBe(401);
+    const untrusted = await request("/api/auth/sign-in/social", "POST", "", {
+      provider: "google",
+      callbackURL: "https://attacker.example",
+      errorCallbackURL: "https://attacker.example",
+    });
+    expect(untrusted.status).toBe(403);
+  });
 
   it("isolates OAuth state from Magic Link and preserves email/password/reset on D1", async () => {
     env.GOOGLE_CLIENT_ID = "test-google-client";
