@@ -245,7 +245,7 @@ try {
         devDependencies: { "typescript": ts.version, "@types/node": "22.20.4" },
         overrides: {
           "drizzle-orm": "0.45.2",
-          "better-auth": "1.7.6",
+          "better-auth": "1.7.7",
           "@cloudflare/workers-types": "5.20260922.1",
         },
       }),
@@ -262,6 +262,10 @@ try {
       consumer,
     );
     const require = createRequire(join(consumer, "package.json"));
+    assert.equal(
+      json(join(consumer, "node_modules/better-auth/package.json")).version,
+      "1.7.7",
+    );
     for (const entry of entrypoints)
       assert(
         realpathSync(require.resolve(entry)).startsWith(consumer + "/"),
