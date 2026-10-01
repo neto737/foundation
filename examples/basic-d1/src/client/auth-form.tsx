@@ -21,6 +21,7 @@ export type Feedback = {
 
 export function AsyncForm(props: {
   action: (data: FormValues) => Promise<Feedback>;
+  alternativeAction?: ReactNode;
   children: ReactNode;
   pendingLabel: string;
   submitLabel: string;
@@ -79,6 +80,7 @@ export function AsyncForm(props: {
         >
           {feedback?.message}
         </p>
+        {props.alternativeAction}
       </form>
     </FormProvider>
   );

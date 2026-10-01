@@ -66,9 +66,9 @@ export function AuthPage({
     <section className="auth-page" aria-label="Authentication">
       <h1>{title === "Sign in" ? "Your links, in one place." : title}</h1>
       <p>Save useful bookmarks in your own private library.</p>
-      {hasPassword ? <GoogleSignIn key={mode} /> : null}
       <AsyncForm
         key={mode}
+        alternativeAction={hasPassword ? <GoogleSignIn /> : undefined}
         title={title}
         submitLabel={
           hasPassword ? title : mode === "magic" ? "Send link" : "Request reset"

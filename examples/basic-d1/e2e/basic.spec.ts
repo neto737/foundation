@@ -74,6 +74,7 @@ test("shows Google only on anonymous login/signup when server capability is enab
     await Promise.all([page.waitForResponse("**/api/config"), page.goto(path)]);
     await expect(page.getByText("Loading sign-in options...")).toHaveCount(0);
     await expect(google).toHaveCount(0);
+    await expect(page.getByRole("separator", { name: "or" })).toHaveCount(0);
   }
   await page.route("**/api/config", (route) =>
     route.fulfill({ json: { googleEnabled: true } }),
@@ -97,6 +98,50 @@ test("shows Google only on anonymous login/signup when server capability is enab
   }
   await signUp(page, email());
   await expect(google).toHaveCount(0);
+});
+
+test("keeps exactly one Google button across repeated SPA auth mode switches", async ({
+  page,
+}) => {
+  await page.route("**/api/config", (route) =>
+    route.fulfill({ json: { googleEnabled: true } }),
+  );
+  await page.goto("/login");
+  const google = page.getByRole("button", { name: "Continue with Google" });
+  async function expectSingleGoogle(submitLabel: string) {
+    const form = page.locator(".auth-page form");
+    await expect(form).toHaveCount(1);
+    await expect(
+      form.getByRole("button", { name: "Continue with Google" }),
+    ).toBeEnabled();
+    await expect(google).toHaveCount(1);
+    await expect(form.getByRole("separator", { name: "or" })).toHaveCount(1);
+    // Prove containment and DOM order, not just matching colors or screen coordinates.
+    await expect(
+      form.locator(
+        'button[type="submit"], [role="separator"], button[type="button"]',
+      ),
+    ).toHaveText([submitLabel, "or", "Continue with Google"]);
+  }
+  await expectSingleGoogle("Sign in");
+  for (let round = 0; round < 12; round++) {
+    await page
+      .getByRole("link", { name: "Create account", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/signup$/);
+    await expectSingleGoogle("Create account");
+    await page.getByRole("link", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expectSingleGoogle("Sign in");
+  }
+  for (const name of ["Use a magic link", "Forgot password?"]) {
+    await page.getByRole("link", { name, exact: true }).click();
+    await expect(page.locator(".auth-page form")).toBeVisible();
+    await expect(google).toHaveCount(0);
+    await expect(page.getByRole("separator", { name: "or" })).toHaveCount(0);
+    await page.getByRole("link", { name: "Sign in", exact: true }).click();
+    await expectSingleGoogle("Sign in");
+  }
 });
 
 test("loads Google capability with explicit error/retry without blocking existing auth", async ({
