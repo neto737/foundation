@@ -470,6 +470,21 @@ describe("Links API with Better Auth and real D1", () => {
     expect(minimal.status).toBe(201);
     const minimalItem = bookmarkResponseSchema.parse(await minimal.json());
     expect(minimalItem).toMatchObject({ description: null, tags: [] });
+    expect(
+      (
+        await request("/api/bookmarks", "POST", cookie, {
+          ...input,
+          tags: ["one,two"],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`/api/bookmarks/${minimalItem.id}`, "PATCH", cookie, {
+          tags: ["one,two"],
+        })
+      ).status,
+    ).toBe(400);
     const partial = await request(
       `/api/bookmarks/${minimalItem.id}`,
       "PATCH",

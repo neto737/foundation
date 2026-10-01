@@ -62,7 +62,8 @@ Payload de criação:
 Descrição e tags podem ser omitidas na criação, com defaults `null` e `[]`.
 PATCH aceita qualquer subconjunto não vazio e preserva os campos omitidos.
 Limites: título 200, URL 2.048, descrição 2.000 caracteres; até 10 tags de 40
-caracteres. Tags são normalizadas com trim/minúsculas e deduplicadas. Não há
+caracteres. Tags são normalizadas com trim/minúsculas e deduplicadas. Vírgulas
+em cada tag são rejeitadas porque a UI usa vírgula como separador. Não há
 catálogo global de tags: são um array JSON do bookmark. URLs duplicadas são
 permitidas.
 

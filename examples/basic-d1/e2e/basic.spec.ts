@@ -83,6 +83,18 @@ test("verifies email, persists session and performs CRUD with filters", async ({
   await expect(article).toBeVisible();
   await article.getByRole("link", { name: "Edit", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Updated reference");
+  await page.getByRole("button", { name: "Save bookmark" }).click();
+  const titleOnly = page.getByRole("article", {
+    name: "Updated reference",
+    exact: true,
+  });
+  await expect(titleOnly.getByRole("list", { name: "Tags" })).toContainText(
+    "docs",
+  );
+  await expect(titleOnly.getByRole("list", { name: "Tags" })).toContainText(
+    "work",
+  );
+  await titleOnly.getByRole("link", { name: "Edit", exact: true }).click();
   await page.getByLabel("Description (optional)").fill("Updated description");
   await page.getByLabel("Tags (comma-separated)").fill("Personal");
   await page.getByRole("button", { name: "Save bookmark" }).click();

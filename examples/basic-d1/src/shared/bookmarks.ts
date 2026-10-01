@@ -15,7 +15,15 @@ const editableFields = {
     .nullable()
     .transform((value) => value || null),
   tags: z
-    .array(z.string().trim().toLowerCase().min(1).max(40))
+    .array(
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .min(1)
+        .max(40)
+        .refine((tag) => !tag.includes(","), "Tags cannot contain commas"),
+    )
     .max(10)
     .transform((tags) => [...new Set(tags)]),
 };

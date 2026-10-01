@@ -13,6 +13,17 @@ const valid = {
 };
 
 describe("bookmark contracts", () => {
+  it("rejects comma-containing tags in creation and updates", () => {
+    expect(
+      bookmarkInputSchema.safeParse({ ...valid, tags: ["one,two"] }).success,
+    ).toBe(false);
+    expect(bookmarkUpdateSchema.safeParse({ tags: ["one,two"] }).success).toBe(
+      false,
+    );
+    expect(bookmarkUpdateSchema.parse({ title: "Changed" })).not.toHaveProperty(
+      "tags",
+    );
+  });
   it("defaults optional creation fields without resetting omitted PATCH fields", () => {
     expect(
       bookmarkInputSchema.parse({ title: "Minimal", url: valid.url }),
