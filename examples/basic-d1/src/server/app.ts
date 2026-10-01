@@ -6,7 +6,9 @@ import {
 import { Hono, type MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import {
+  AuthConfigurationError,
   createRequestAuth,
+  resolveGoogleConfig,
   resendEmail,
   type AppEnvironment,
   type EmailFactory,
@@ -23,8 +25,20 @@ export function createApp(emailFactory: EmailFactory = resendEmail) {
       c.header(name, value),
     );
   });
-  app.onError((_error, c) =>
-    c.json(
+  app.onError((error, c) => {
+    if (error instanceof AuthConfigurationError) {
+      c.header("Cache-Control", "private, no-store");
+      return c.json(
+        {
+          error: {
+            code: "AUTH_CONFIGURATION_INVALID",
+            message: "Authentication is temporarily unavailable.",
+          },
+        },
+        503,
+      );
+    }
+    return c.json(
       {
         error: {
           code: "INTERNAL",
@@ -32,7 +46,11 @@ export function createApp(emailFactory: EmailFactory = resendEmail) {
         },
       },
       500,
-    ),
+    );
+  });
+
+  app.get("/api/config", (c) =>
+    c.json({ googleEnabled: Boolean(resolveGoogleConfig(c.env)) }),
   );
 
   app.get("/health", async (c) => {

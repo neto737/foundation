@@ -22,15 +22,26 @@ export const resendEmail: EmailFactory = (env) =>
     defaultFrom: env.EMAIL_FROM,
   });
 
+export class AuthConfigurationError extends Error {
+  constructor() {
+    super("Authentication is temporarily unavailable.");
+  }
+}
+
+// Server-only: both auth and its public capability use this same decision.
+export function resolveGoogleConfig(
+  env: Pick<Env, "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET">,
+) {
+  const clientId = env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
+  if (Boolean(clientId) !== Boolean(clientSecret))
+    throw new AuthConfigurationError();
+  return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+}
+
 export function createRequestAuth(env: Env, emailFactory: EmailFactory) {
+  const google = resolveGoogleConfig(env);
   const database = createD1Database(env.DB);
-  const google =
-    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
-      ? {
-          clientId: env.GOOGLE_CLIENT_ID,
-          clientSecret: env.GOOGLE_CLIENT_SECRET,
-        }
-      : undefined;
   const auth = createFoundationAuth({
     baseURL: env.BASE_URL,
     database: drizzleAdapter(database, { provider: "sqlite", schema }),
