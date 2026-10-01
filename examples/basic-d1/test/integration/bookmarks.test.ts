@@ -337,17 +337,13 @@ describe("Links API with Better Auth and real D1", () => {
         .spyOn(console, name as "error" | "warn" | "info" | "log")
         .mockImplementation(() => undefined),
     );
-    let executionFailures = 0;
-    env.DB = faultD1Queries(database.binding, (sql) => {
-      if (!/^select.*from\s+"session"/i.test(sql)) return false;
-      executionFailures++;
-      return true;
-    });
+    // This database is disposable. Force a native D1 execution error so Drizzle
+    // wraps the real token-bearing lookup SQL/params, not a mocked prepare error.
+    await database.binding.prepare("DROP TABLE session").run();
     const failure = await request("/api/bookmarks", "GET", cookie);
     expect(failure.status).toBe(500);
     const authFailure = await request("/api/auth/get-session", "GET", cookie);
     expect(authFailure.status).toBe(500);
-    expect(executionFailures).toBeGreaterThanOrEqual(2);
     const calls = captures.flatMap((capture) => capture.mock.calls);
     expect(calls.length).toBeGreaterThan(0);
     const serialized = JSON.stringify(calls);
