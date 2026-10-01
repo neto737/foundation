@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server/app.js";
 import type { Env } from "../../src/server/auth.js";
 import {
@@ -40,7 +40,10 @@ describe("Links API with Better Auth and real D1", () => {
     };
     app = createApp(emailFactory);
   });
-  afterEach(async () => database.miniflare.dispose());
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await database.miniflare.dispose();
+  });
 
   function request(
     path: string,
@@ -321,6 +324,56 @@ describe("Links API with Better Auth and real D1", () => {
     expect(
       (await request("/api/auth/sign-out", "POST", cookie, {})).status,
     ).toBe(200);
+  });
+
+  it("sanitizes logs from failures during Drizzle query execution", async () => {
+    const cookie = await register("a@example.com");
+    const stored = await database.binding
+      .prepare("SELECT token FROM session")
+      .first<{ token: string }>();
+    expect(stored).not.toBeNull();
+    const captures = ["error", "warn", "info", "log"].map((name) =>
+      vi
+        .spyOn(console, name as "error" | "warn" | "info" | "log")
+        .mockImplementation(() => undefined),
+    );
+    let executionFailures = 0;
+    env.DB = faultD1Queries(database.binding, (sql) => {
+      if (!/^select.*from\s+"session"/i.test(sql)) return false;
+      executionFailures++;
+      return true;
+    });
+    const failure = await request("/api/bookmarks", "GET", cookie);
+    expect(failure.status).toBe(500);
+    const authFailure = await request("/api/auth/get-session", "GET", cookie);
+    expect(authFailure.status).toBe(500);
+    expect(executionFailures).toBeGreaterThanOrEqual(2);
+    const calls = captures.flatMap((capture) => capture.mock.calls);
+    expect(calls.length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(calls);
+    expect(serialized).toContain("auth.internal_error");
+    for (const sensitive of [
+      stored!.token,
+      cookie,
+      env.AUTH_SECRET,
+      "a@example.com",
+      "params:",
+      "select ",
+      "simulated D1 execution failure",
+      ...sent.map((message) => message.text),
+      ...sent
+        .map((message) => new URL(message.text).searchParams.get("token")!)
+        .filter(Boolean),
+    ]) {
+      expect(serialized).not.toContain(sensitive);
+    }
+    for (const call of calls) {
+      expect(call).toHaveLength(1);
+      expect(JSON.parse(String(call[0]))).toMatchObject({
+        component: "foundation.auth",
+        level: "error",
+      });
+    }
   });
 
   it("rejects cross-origin and missing-origin mutations without changing data", async () => {

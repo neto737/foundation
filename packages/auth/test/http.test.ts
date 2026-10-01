@@ -1,10 +1,11 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFoundationAuth, type FoundationAuth } from "../src/index.js";
 
 describe("foundation auth HTTP flows", () => {
   const sent: Array<{ subject: string; text: string; to: string }> = [];
   let auth: FoundationAuth;
+  afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
     sent.splice(0);
@@ -110,6 +111,46 @@ describe("foundation auth HTTP flows", () => {
     expect(logout.ok).toBe(true);
     expect((await auth.resolveSession(headers)).data).toBeNull();
     expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+  });
+
+  it("does not log authentication links or tokens from provider failures", async () => {
+    let link = "";
+    const captured = [
+      vi.spyOn(console, "error"),
+      vi.spyOn(console, "warn"),
+      vi.spyOn(console, "info"),
+      vi.spyOn(console, "log"),
+    ];
+    for (const capture of captured) capture.mockImplementation(() => undefined);
+    auth = createFoundationAuth({
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({
+        account: [],
+        session: [],
+        user: [],
+        verification: [],
+      }),
+      email: {
+        send(input) {
+          link = input.text;
+          throw new Error(`Email delivery failed: ${input.text}`);
+        },
+      },
+      secret: "test-secret-with-at-least-thirty-two-characters",
+    });
+    const response = await post("/api/auth/sign-in/magic-link", {
+      email: "person@example.com",
+      callbackURL: "/",
+    });
+    expect(response.status).toBe(500);
+    expect(link).toContain("token=");
+    const logs = captured.flatMap((capture) => capture.mock.calls);
+    expect(logs.length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(logs);
+    expect(serialized).toContain("auth.endpoint_failed");
+    expect(serialized).not.toContain(link);
+    expect(serialized).not.toContain(new URL(link).searchParams.get("token"));
+    expect(serialized).not.toContain("person@example.com");
   });
 
   function post(path: string, body: Readonly<Record<string, string>>) {

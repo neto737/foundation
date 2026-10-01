@@ -36,6 +36,12 @@ confirmada, retorna `503` sanitizado, sem encaminhar os cookies de limpeza da
 resposta de sucesso; isso preserva a credencial para uma nova tentativa. Logout
 confirmado preserva todos os `Set-Cookie` originais do Better Auth.
 
+Logging usa registros JSON com componente, nível e eventos estáticos (por
+exemplo, `auth.internal_error` e `auth.session_revocation_failed`). Mensagens,
+erros e argumentos recebidos do Better Auth/Drizzle não são serializados; isso
+evita incluir SQL, parâmetros, tokens e links nos logs, inclusive no fallback de
+erro HTTP.
+
 ## Exemplo
 
 ```ts

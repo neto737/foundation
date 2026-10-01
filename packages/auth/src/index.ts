@@ -27,6 +27,13 @@ export interface FoundationAuth {
 
 export type FoundationSession = Auth["$Infer"]["Session"];
 
+const authLogEvents = new Map([
+  ["INTERNAL_SERVER_ERROR", "auth.internal_error"],
+  ["Failed to read session from database", "auth.session_read_failed"],
+  ["Failed to delete session from database", "auth.session_revocation_failed"],
+  ["AUTH_ENDPOINT_FAILED", "auth.endpoint_failed"],
+]);
+
 export function createFoundationAuth(
   options: FoundationAuthOptions,
 ): FoundationAuth {
@@ -39,6 +46,26 @@ export function createFoundationAuth(
     // Better Auth otherwise skips origin checks automatically under NODE_ENV=test.
     // Keep the same protection in tests and deployed applications.
     advanced: { disableOriginCheck: false },
+    logger: {
+      log(level, message) {
+        // Messages and extra arguments may contain SQL, credentials or URLs.
+        // Only emit allowlisted event names, never upstream text/error objects.
+        const record = JSON.stringify({
+          component: "foundation.auth",
+          level,
+          event: authLogEvents.get(message) ?? "auth.event",
+        });
+        if (level === "error") console.error(record);
+        else if (level === "warn") console.warn(record);
+        else console.info(record);
+      },
+    },
+    // Avoid Better Auth's fallback logger outside an endpoint context as well.
+    onAPIError: {
+      onError(_error, context) {
+        context.logger.error("AUTH_ENDPOINT_FAILED");
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
