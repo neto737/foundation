@@ -97,4 +97,28 @@ describe("private request session generation", () => {
     ).rejects.toMatchObject({ status: 401 });
     expect(unauthorized).toHaveBeenCalledOnce();
   });
+
+  it("aborts pending transport before an old response can change browser cookies", async () => {
+    let signal!: AbortSignal;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_path: string, options: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            signal = options.signal!;
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+      ),
+    );
+    const pending = apiRequest("/api/bookmarks/old", z.unknown(), {
+      method: "PATCH",
+    });
+    invalidateSessionGeneration();
+    expect(signal.aborted).toBe(true);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
 });

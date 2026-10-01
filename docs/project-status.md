@@ -82,7 +82,7 @@ diretório e o package mantêm o nome técnico `basic-d1`. Demonstra:
   `@t00ls-dev/auth`, com propagação de cookies e verificação de e-mail
   obrigatória;
 - headers privados e CSRF nas mutações autenticadas por cookie;
-- 14 testes unitários e 11 testes D1 reais do exemplo, incluindo falhas de
+- 15 testes unitários e 11 testes D1 reais do exemplo, incluindo falhas de
   revogação/confirmação, logs sanitizados e gerações de sessão;
 - nove cenários Playwright em desktop e mobile (18 execuções), incluindo
   cadastro/verificação/login/logout, persistência, isolamento e respostas

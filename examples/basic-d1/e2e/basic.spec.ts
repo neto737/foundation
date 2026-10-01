@@ -420,15 +420,26 @@ test("keeps B authenticated when A's pending mutation returns 401", async ({
     }
     started();
     await pending;
-    await route.fulfill({
-      status: 401,
-      contentType: "application/json",
-      body: JSON.stringify({ error: { message: "Expired A" } }),
-    });
+    await route
+      .fulfill({
+        status: 401,
+        contentType: "application/json",
+        headers: {
+          "Set-Cookie":
+            "better-auth.session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+        },
+        body: JSON.stringify({ error: { message: "Expired A" } }),
+      })
+      .catch(() => undefined); // Logout already aborted this obsolete transport.
   });
   await page.getByRole("button", { name: "Save bookmark" }).click();
   await ready;
+  const abortedA = page.waitForEvent(
+    "requestfailed",
+    (request) => request.method() === "PATCH",
+  );
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await abortedA;
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
@@ -440,12 +451,7 @@ test("keeps B authenticated when A's pending mutation returns 401", async ({
     page.getByRole("heading", { name: "Your bookmarks" }),
   ).toBeVisible();
   await expect(page.getByText("User B", { exact: true })).toBeVisible();
-  const oldResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "PATCH" && response.status() === 401,
-  );
   release();
-  await oldResponse;
   await page.unrouteAll({ behavior: "wait" });
   // A fresh B request confirms the session and screen remain usable after the old response.
   await page.getByRole("button", { name: "Search", exact: true }).click();
