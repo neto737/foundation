@@ -302,7 +302,24 @@ try {
           "@t00ls-dev/tenant/d1",
         ].includes(entry),
     );
-    save(consumer, "non-d1.ts", imports(nonD1Entrypoints) + envProbe);
+    save(
+      consumer,
+      "non-d1.ts",
+      imports(nonD1Entrypoints) +
+        envProbe +
+        `
+import type { FoundationAuth, FoundationSession } from "@t00ls-dev/auth";
+export async function resolveAuth(auth: FoundationAuth, headers: Headers) {
+  const result = await auth.resolveSession(headers);
+  const data: FoundationSession | null = result.data;
+  const responseHeaders: Headers = result.headers;
+  const userId: string | undefined = data?.user.id;
+  // @ts-expect-error Better Auth internals are not part of FoundationAuth.
+  auth.api;
+  return { userId, responseHeaders };
+}
+`,
+    );
     const nonD1 = diagnostics(consumer, "non-d1.ts");
     assertNoAdditionalDiagnostics(nonD1, nonD1Control);
     assert.equal(nonD1.processEnvType, "ProcessEnv");

@@ -54,8 +54,9 @@ remoto via Hyperdrive é opcional e separado da suíte determinística principal
 
 Better Auth OSS/self-hosted é a implementação padrão. Usuários, contas e sessões
 permanecem sob controle da aplicação. O pacote de integração configura os fluxos
-aprovados sem esconder a API do Better Auth. Cloudflare Access continua sendo
-alternativa para apps internos simples.
+aprovados e oferece resolução tipada de sessão e headers no servidor, sem expor
+indiscriminadamente a API interna do Better Auth. Cloudflare Access continua
+sendo alternativa para apps internos simples.
 
 Autenticação responde quem é o usuário. Autorização responde o que ele pode
 fazer no contexto atual. Multi-tenancy é uma capability opcional, mas, quando

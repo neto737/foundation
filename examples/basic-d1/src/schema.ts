@@ -1,4 +1,11 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import {
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+} from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
@@ -67,3 +74,33 @@ export const verification = sqliteTable(
 );
 
 export const schema = { account, session, user, verification };
+
+export const bookmark = sqliteTable(
+  "bookmark",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    description: text("description"),
+    tags: text("tags", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("bookmark_user_created_id_idx").on(
+      table.userId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "bookmark_tags_array",
+      sql`json_valid(${table.tags}) AND json_type(${table.tags}) = 'array'`,
+    ),
+  ],
+);

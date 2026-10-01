@@ -8,9 +8,13 @@
   "include": [
     "e2e",
     "src",
+    "test",
+    "vitest.config.ts",
+    "vitest.integration.config.ts",
     "drizzle.config.ts",
     "playwright.config.ts",
     "t00ls.config.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "vite.e2e.config.ts"
   ]
 }

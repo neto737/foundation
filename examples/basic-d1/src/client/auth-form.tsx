@@ -25,10 +25,21 @@ export function AsyncForm(props: {
   pendingLabel: string;
   submitLabel: string;
   title: string;
+  requiredFields: Array<keyof FormValues>;
 }) {
   const feedbackId = useId();
   const [feedback, setFeedback] = useState<Feedback>();
-  const form = useForm<FormValues>({ resolver: zodResolver(formSchema) });
+  const schema = formSchema.superRefine((values, context) => {
+    for (const name of props.requiredFields) {
+      if (!values[name])
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: `Enter your ${name}`,
+        });
+    }
+  });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema) });
   const pending = form.formState.isSubmitting;
 
   async function submit(data: FormValues) {
@@ -89,23 +100,25 @@ export function FormField(props: {
   const error = errors[props.name];
 
   return (
-    <label htmlFor={inputId}>
-      {props.label}
-      <input
-        {...register(props.name)}
-        id={inputId}
-        required
-        minLength={props.minLength}
-        type={props.type}
-        autoComplete={props.autoComplete}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-      />
+    <>
+      <label htmlFor={inputId}>
+        {props.label}
+        <input
+          {...register(props.name)}
+          id={inputId}
+          required
+          minLength={props.minLength}
+          type={props.type}
+          autoComplete={props.autoComplete}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        />
+      </label>
       {error ? (
         <span className="field-error" id={errorId} role="alert">
           {error.message}
         </span>
       ) : null}
-    </label>
+    </>
   );
 }

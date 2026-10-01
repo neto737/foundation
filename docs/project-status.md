@@ -5,7 +5,7 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: 29 de setembro de 2026.
+Última revisão: 1 de outubro de 2026.
 
 ## Objetivo e escopo
 
@@ -60,7 +60,8 @@ bloqueada.
 
 ### Aplicação de referência
 
-`examples/basic-d1` demonstra:
+`examples/basic-d1` apresenta **Links**, uma biblioteca privada de bookmarks. O
+diretório e o package mantêm o nome técnico `basic-d1`. Demonstra:
 
 - React, React Router, React Hook Form, Zod e Tailwind CSS;
 - Hono no mesmo Worker que serve os assets da SPA;
@@ -74,7 +75,19 @@ bloqueada.
 - migration inicial e journal Drizzle do schema de autenticação;
 - comandos padronizados de geração, migration, seed e status;
 - formulários com labels, erros associados, foco inválido e estados de envio;
-- cinco cenários Playwright executados em desktop e mobile.
+- CRUD de bookmarks, tags JSON, busca simples, filtro exato e paginação
+  limit/offset;
+- isolamento por usuário em todas as queries e mutações, sem tenancy/RBAC;
+- sessão tipada no servidor pela API mínima `resolveSession` de
+  `@t00ls-dev/auth`, com propagação de cookies e verificação de e-mail
+  obrigatória;
+- headers privados e CSRF nas mutações autenticadas por cookie;
+- 15 testes unitários e 11 testes D1 reais do exemplo, incluindo falhas de
+  revogação/confirmação, logs sanitizados e gerações de sessão;
+- nove cenários Playwright em desktop e mobile (18 execuções), incluindo
+  cadastro/verificação/login/logout, persistência, isolamento e respostas
+  atrasadas;
+- harness E2E com banco temporário e e-mails capturados, sem providers externos.
 
 O ambiente local usa `.dev.vars.example` como contrato de nomes de secrets, sem
 versionar valores reais.
@@ -119,7 +132,9 @@ O comando `pnpm check` executa, nesta ordem:
 4. testes unitários;
 5. testes de integração;
 6. builds;
-7. testes E2E.
+7. testes E2E;
+8. testes de distribuição dos packages;
+9. testes de release.
 
 A cobertura atual inclui:
 
@@ -129,9 +144,9 @@ A cobertura atual inclui:
   convites;
 - D1 real local por Miniflare;
 - PostgreSQL 17 real por Testcontainers;
-- 14 testes no gate de integração completo, incluindo migration e seed
-  PostgreSQL pelo histórico Drizzle;
-- cinco cenários Playwright em desktop e mobile, totalizando dez execuções;
+- 14 testes de integração Foundation mais 11 de Links, incluindo migration e
+  seed PostgreSQL pelo histórico Drizzle e isolamento por usuário em D1;
+- nove cenários Playwright em desktop e mobile, totalizando 18 execuções;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
 Pacotes sem testes próprios não executam Vitest vazio. A CI usa o reporter
@@ -177,9 +192,11 @@ Ainda faltam para a operação completa:
 
 ### Fechamento operacional
 
-O código necessário para a v0.1 está implementado. O fechamento depende agora da
-validação manual dos fluxos de autenticação restantes em DEV. O PROD de
-aplicações consumidoras não pertence ao Foundation.
+Links possui cobertura determinística local de autenticação e bookmarks. Após
+publicação, registrar a validação manual dos fluxos restantes em DEV e do CRUD
+com duas contas, conforme `examples/basic-d1/README.md`. A validação local não
+substitui entrega de e-mail e inspeção de cache/cookies no domínio real. O PROD
+de aplicações consumidoras não pertence ao Foundation.
 
 Os runbooks vigentes cobrem [ambientes](runbooks/environments.md),
 [deploy](runbooks/deployment.md), [segurança](runbooks/security.md),

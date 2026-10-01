@@ -1,0 +1,28 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "links-e2e-only",
+  "main": "worker.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/health", "/__test/*"],
+  },
+  "vars": {
+    "AUTH_SECRET": "e2e-only-secret-not-for-deployment-32-characters",
+    "BASE_URL": "http://127.0.0.1:5174",
+    "EMAIL_FROM": "test@example.com",
+    "RESEND_API_KEY": "never-used-by-the-test-provider",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "links-e2e-only",
+      "database_id": "links-e2e-only",
+      "migrations_dir": "../migrations",
+    },
+  ],
+}

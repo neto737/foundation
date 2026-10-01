@@ -30,6 +30,8 @@ incluir nomes apenas parecidos, como `/apiary`.
 - `/health` envia `Cache-Control: no-store` e verifica a conectividade D1.
 - `/api/auth/**` envia `Cache-Control: private, no-store`.
 - novos endpoints privados devem definir uma política de resposta equivalente.
+- Links inclui `/api/bookmarks` e seus descendentes no bypass existente de
+  `/api/*`; todas as respostas, inclusive `401`, `403` e `404`, são privadas.
 - APIs públicas só podem habilitar cache por decisão explícita e com testes.
 
 Os headers são uma defesa em profundidade. Eles não substituem o bypass na borda

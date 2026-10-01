@@ -1,10 +1,11 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFoundationAuth, type FoundationAuth } from "../src/index.js";
 
 describe("foundation auth HTTP flows", () => {
   const sent: Array<{ subject: string; text: string; to: string }> = [];
   let auth: FoundationAuth;
+  afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
     sent.splice(0);
@@ -59,6 +60,133 @@ describe("foundation auth HTTP flows", () => {
       "Sign in",
       "Reset your password",
     ]);
+  });
+
+  it("requires verification and resolves and revokes a persistent session", async () => {
+    const credentials = {
+      email: "person@example.com",
+      password: "correct-horse-battery-staple",
+    };
+    await post("/api/auth/sign-up/email", { ...credentials, name: "Person" });
+    expect((await post("/api/auth/sign-in/email", credentials)).status).toBe(
+      403,
+    );
+    const verification = sent.find(
+      (message) => message.subject === "Verify your email",
+    );
+    expect(verification).toBeDefined();
+    const verified = await auth.handler(new Request(verification!.text));
+    expect([200, 302]).toContain(verified.status);
+    const login = await post("/api/auth/sign-in/email", credentials);
+    expect(login.ok).toBe(true);
+    const cookie = login.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    expect(cookie).toContain("session_token");
+    const headers = new Headers({ Cookie: cookie });
+    const resolved = await auth.resolveSession(headers);
+    expect(resolved.data?.user.email).toBe(credentials.email);
+    expect(resolved.data?.session.expiresAt).toBeInstanceOf(Date);
+    expect(resolved.headers).toBeInstanceOf(Headers);
+    expect(await auth.resolveSession(new Headers())).toMatchObject({
+      data: null,
+    });
+    expect(
+      await auth.resolveSession(
+        new Headers({ Cookie: "better-auth.session_token=invalid" }),
+      ),
+    ).toMatchObject({ data: null });
+    const logout = await auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-out", {
+        method: "POST",
+        headers: {
+          "Cookie": cookie,
+          "Origin": "http://localhost:3000",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(logout.ok).toBe(true);
+    expect((await auth.resolveSession(headers)).data).toBeNull();
+    expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+  });
+
+  it("does not log authentication links or tokens from provider failures", async () => {
+    let link = "";
+    const captured = [
+      vi.spyOn(console, "error"),
+      vi.spyOn(console, "warn"),
+      vi.spyOn(console, "info"),
+      vi.spyOn(console, "log"),
+    ];
+    for (const capture of captured) capture.mockImplementation(() => undefined);
+    auth = createFoundationAuth({
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({
+        account: [],
+        session: [],
+        user: [],
+        verification: [],
+      }),
+      email: {
+        send(input) {
+          link = input.text;
+          throw new Error(`Email delivery failed: ${input.text}`);
+        },
+      },
+      secret: "test-secret-with-at-least-thirty-two-characters",
+    });
+    const response = await post("/api/auth/sign-in/magic-link", {
+      email: "person@example.com",
+      callbackURL: "/",
+    });
+    expect(response.status).toBe(500);
+    expect(link).toContain("token=");
+    const logs = captured.flatMap((capture) => capture.mock.calls);
+    expect(logs.length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(logs);
+    expect(serialized).toContain("auth.endpoint_failed");
+    expect(serialized).not.toContain(link);
+    expect(serialized).not.toContain(new URL(link).searchParams.get("token"));
+    expect(serialized).not.toContain("person@example.com");
+  });
+
+  it("sanitizes unexpected adapter failures instead of using router fallback logs", async () => {
+    const secret = "sensitive-token-in-unexpected-query-error";
+    const captured = [
+      vi.spyOn(console, "error"),
+      vi.spyOn(console, "warn"),
+      vi.spyOn(console, "info"),
+      vi.spyOn(console, "log"),
+    ];
+    for (const capture of captured) capture.mockImplementation(() => undefined);
+    auth = createFoundationAuth({
+      baseURL: "http://localhost:3000",
+      database: () => {
+        throw new Error(
+          `SQL params: ${secret}; https://example.com/auth?token=${secret}`,
+        );
+      },
+      email: { send: () => Promise.resolve() },
+      secret: "test-secret-with-at-least-thirty-two-characters",
+    });
+    const response = await auth.handler(
+      new Request("http://localhost:3000/api/auth/get-session"),
+    );
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      code: "AUTH_FAILURE",
+      message: "Authentication request failed. Please try again.",
+    });
+    const logs = JSON.stringify(
+      captured.flatMap((capture) => capture.mock.calls),
+    );
+    expect(logs).toContain("auth.endpoint_failed");
+    expect(logs).not.toContain(secret);
+    expect(logs).not.toContain("SQL params");
+    expect(logs).not.toContain("https://example.com/auth");
   });
 
   function post(path: string, body: Readonly<Record<string, string>>) {
