@@ -34,6 +34,19 @@ const authLogEvents = new Map([
   ["AUTH_ENDPOINT_FAILED", "auth.endpoint_failed"],
 ]);
 
+function logAuth(level: "debug" | "info" | "warn" | "error", message: string) {
+  // Messages and extra arguments may contain SQL, credentials or URLs.
+  // Only emit allowlisted event names, never upstream text/error objects.
+  const record = JSON.stringify({
+    component: "foundation.auth",
+    level,
+    event: authLogEvents.get(message) ?? "auth.event",
+  });
+  if (level === "error") console.error(record);
+  else if (level === "warn") console.warn(record);
+  else console.info(record);
+}
+
 export function createFoundationAuth(
   options: FoundationAuthOptions,
 ): FoundationAuth {
@@ -46,26 +59,10 @@ export function createFoundationAuth(
     // Better Auth otherwise skips origin checks automatically under NODE_ENV=test.
     // Keep the same protection in tests and deployed applications.
     advanced: { disableOriginCheck: false },
-    logger: {
-      log(level, message) {
-        // Messages and extra arguments may contain SQL, credentials or URLs.
-        // Only emit allowlisted event names, never upstream text/error objects.
-        const record = JSON.stringify({
-          component: "foundation.auth",
-          level,
-          event: authLogEvents.get(message) ?? "auth.event",
-        });
-        if (level === "error") console.error(record);
-        else if (level === "warn") console.warn(record);
-        else console.info(record);
-      },
-    },
-    // Avoid Better Auth's fallback logger outside an endpoint context as well.
-    onAPIError: {
-      onError(_error, context) {
-        context.logger.error("AUTH_ENDPOINT_FAILED");
-      },
-    },
+    logger: { log: logAuth },
+    // Let the Foundation handler sanitize unexpected errors instead of the
+    // HTTP router's direct-console fallback (which ignores the custom logger).
+    onAPIError: { throw: true },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
@@ -101,7 +98,20 @@ export function createFoundationAuth(
   });
   return {
     async handler(request) {
-      const response = await auth.handler(request);
+      let response: Response;
+      try {
+        response = await auth.handler(request);
+      } catch {
+        logAuth("error", "AUTH_ENDPOINT_FAILED");
+        return Response.json(
+          {
+            code: "AUTH_FAILURE",
+            message: "Authentication request failed. Please try again.",
+          },
+          { status: 500, headers: { "Cache-Control": "private, no-store" } },
+        );
+      }
+      if (response.status >= 500) logAuth("error", "AUTH_ENDPOINT_FAILED");
       if (request.method !== "POST" || !response.ok) return response;
       const basePath = new URL((await auth.$context).baseURL).pathname.replace(
         /\/+$/,
