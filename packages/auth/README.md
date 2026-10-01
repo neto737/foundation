@@ -30,6 +30,12 @@ pnpm --filter <app> add '@t00ls-dev/auth@workspace:*'
 - `FoundationEmail`: contrato mínimo de envio usado pelos fluxos de
   autenticação.
 
+O handler só confirma `POST /api/auth/sign-out` após uma leitura autoritativa
+sem renovação nem cache de cookie. Se a exclusão falhar ou não puder ser
+confirmada, retorna `503` sanitizado, sem encaminhar os cookies de limpeza da
+resposta de sucesso; isso preserva a credencial para uma nova tentativa. Logout
+confirmado preserva todos os `Set-Cookie` originais do Better Auth.
+
 ## Exemplo
 
 ```ts

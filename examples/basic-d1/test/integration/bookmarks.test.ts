@@ -5,7 +5,7 @@ import {
   bookmarkListSchema,
   bookmarkResponseSchema,
 } from "../../src/shared/bookmarks.js";
-import { applyMigrations, createTestDatabase } from "../d1.js";
+import { applyMigrations, createTestDatabase, faultD1Queries } from "../d1.js";
 
 describe("Links API with Better Auth and real D1", () => {
   let database: Awaited<ReturnType<typeof createTestDatabase>>;
@@ -257,6 +257,70 @@ describe("Links API with Better Auth and real D1", () => {
     ).toBe(200);
     for (const [path, method, body] of operations)
       expect((await request(path, method, fresh, body)).status).toBe(401);
+  });
+
+  it("does not confirm failed revocation, does not renew, and allows a real retry", async () => {
+    const cookie = await register("a@example.com");
+    const expiresAt = Math.floor(Date.now() / 1000) + 5 * 86400;
+    await database.binding
+      .prepare("UPDATE session SET expires_at = ?")
+      .bind(expiresAt)
+      .run();
+    let failDelete = true;
+    let updates = 0;
+    env.DB = faultD1Queries(database.binding, (sql) => {
+      if (/^update\s+"session"/i.test(sql)) updates++;
+      return failDelete && /^delete\s+from\s+"session"/i.test(sql);
+    });
+    const failed = await request("/api/auth/sign-out", "POST", cookie, {});
+    expect(failed.status).toBe(503);
+    expect(await failed.json()).toEqual({
+      code: "LOGOUT_UNCONFIRMED",
+      message: "Could not confirm sign out. Please try again.",
+    });
+    expect(failed.headers.getSetCookie()).toEqual([]);
+    expect(failed.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(updates).toBe(0);
+    expect(
+      await database.binding.prepare("SELECT expires_at FROM session").first(),
+    ).toEqual({ expires_at: expiresAt });
+
+    failDelete = false;
+    // A failed logout is not revocation: recovery still accepts the old cookie.
+    expect((await request("/api/bookmarks", "GET", cookie)).status).toBe(200);
+    const retried = await request("/api/auth/sign-out", "POST", cookie, {});
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toMatchObject({ success: true });
+    const cookies = retried.headers.getSetCookie();
+    for (const name of ["session_token", "session_data", "dont_remember"]) {
+      expect(
+        cookies.some(
+          (value) => value.includes(name) && value.includes("Max-Age=0"),
+        ),
+      ).toBe(true);
+    }
+    expect(
+      await database.binding.prepare("SELECT id FROM session").first(),
+    ).toBeNull();
+    expect((await request("/api/bookmarks", "GET", cookie)).status).toBe(401);
+  });
+
+  it("fails closed when the post-logout authoritative read is unavailable", async () => {
+    const cookie = await register("a@example.com");
+    let deleted = false;
+    env.DB = faultD1Queries(database.binding, (sql) => {
+      if (/^delete\s+from\s+"session"/i.test(sql)) deleted = true;
+      return deleted && /^select.*from\s+"session"/i.test(sql);
+    });
+    const response = await request("/api/auth/sign-out", "POST", cookie, {});
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "LOGOUT_UNCONFIRMED" });
+    expect(response.headers.getSetCookie()).toEqual([]);
+    env.DB = database.binding;
+    expect((await request("/api/bookmarks", "GET", cookie)).status).toBe(401);
+    expect(
+      (await request("/api/auth/sign-out", "POST", cookie, {})).status,
+    ).toBe(200);
   });
 
   it("rejects cross-origin and missing-origin mutations without changing data", async () => {

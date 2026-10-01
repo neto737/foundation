@@ -73,7 +73,40 @@ export function createFoundationAuth(
     ...(options.google ? { socialProviders: { google: options.google } } : {}),
   });
   return {
-    handler: auth.handler,
+    async handler(request) {
+      const response = await auth.handler(request);
+      if (request.method !== "POST" || !response.ok) return response;
+      const basePath = new URL((await auth.$context).baseURL).pathname.replace(
+        /\/+$/,
+        "",
+      );
+      if (
+        new URL(request.url).pathname.replace(/\/+$/, "") !==
+        `${basePath}/sign-out`
+      )
+        return response;
+
+      try {
+        // Check the original credential against durable storage. Do not renew it
+        // or trust a cookie cache after Better Auth's best-effort deletion.
+        const remaining = await auth.api.getSession({
+          headers: request.headers,
+          query: { disableRefresh: true, disableCookieCache: true },
+        });
+        if (!remaining) return response;
+      } catch {
+        // An unavailable authoritative store cannot confirm revocation.
+      }
+      // Do not forward success/clearing cookies on failure: retain the original
+      // credential in the browser so a retry can actually revoke it.
+      return Response.json(
+        {
+          code: "LOGOUT_UNCONFIRMED",
+          message: "Could not confirm sign out. Please try again.",
+        },
+        { status: 503, headers: { "Cache-Control": "private, no-store" } },
+      );
+    },
     async resolveSession(headers) {
       const result = await auth.api.getSession({
         headers,

@@ -1,6 +1,57 @@
 import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 
+// Preserve real D1 execution while injecting failures at execution, not prepare.
+export function faultD1Queries(
+  binding: D1Database,
+  fails: (sql: string) => boolean,
+): D1Database {
+  function statement(
+    query: D1PreparedStatement,
+    sql: string,
+  ): D1PreparedStatement {
+    return new Proxy(query, {
+      get(target, property, receiver) {
+        if (property === "bind")
+          return (...values: unknown[]) =>
+            statement(target.bind(...values), sql);
+        if (property === "run")
+          return () => {
+            if (fails(sql))
+              return Promise.reject(
+                new Error("simulated D1 execution failure"),
+              );
+            return target.run();
+          };
+        if (property === "raw")
+          return (...args: Parameters<D1PreparedStatement["raw"]>) => {
+            if (fails(sql))
+              return Promise.reject(
+                new Error("simulated D1 execution failure"),
+              );
+            return target.raw(...args);
+          };
+        if (property === "all")
+          return () => {
+            if (fails(sql))
+              return Promise.reject(
+                new Error("simulated D1 execution failure"),
+              );
+            return target.all();
+          };
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+  }
+  return new Proxy(binding, {
+    get(target, property, receiver) {
+      if (property === "prepare")
+        return (sql: string) => statement(target.prepare(sql), sql);
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  });
+}
+
 export async function createTestDatabase() {
   const miniflare = new Miniflare({
     d1Databases: ["DB"],
