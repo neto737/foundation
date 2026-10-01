@@ -36,6 +36,9 @@ export function createFoundationAuth(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     database: options.database,
     secret: options.secret,
+    // Better Auth otherwise skips origin checks automatically under NODE_ENV=test.
+    // Keep the same protection in tests and deployed applications.
+    advanced: { disableOriginCheck: false },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
