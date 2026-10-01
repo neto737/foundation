@@ -348,3 +348,27 @@ test("shows session loading and recoverable session errors", async ({
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
 });
+
+test("paginates a private library with limit and offset", async ({ page }) => {
+  await signUp(page, email());
+  for (let index = 0; index < 21; index++) {
+    const response = await page.request.post("/api/bookmarks", {
+      data: { title: `Bookmark ${index}`, url: `https://example.com/${index}` },
+      headers: { Origin: "http://127.0.0.1:5174" },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.reload();
+  await expect(page.getByRole("article")).toHaveCount(20);
+  await expect(
+    page.getByRole("button", { name: "Previous", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Next", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(page.getByRole("article")).toHaveCount(20);
+});

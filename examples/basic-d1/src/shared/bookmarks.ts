@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const bookmarkInputSchema = z.strictObject({
+const editableFields = {
   title: z.string().trim().min(1, "Enter a title").max(200),
   url: z
     .string()
@@ -18,9 +18,16 @@ export const bookmarkInputSchema = z.strictObject({
     .array(z.string().trim().min(1).max(40))
     .max(10)
     .transform((tags) => [...new Set(tags.map((tag) => tag.toLowerCase()))]),
+};
+
+export const bookmarkInputSchema = z.strictObject({
+  ...editableFields,
+  description: editableFields.description.default(null),
+  tags: editableFields.tags.default([]),
 });
 
-export const bookmarkUpdateSchema = bookmarkInputSchema
+export const bookmarkUpdateSchema = z
+  .strictObject(editableFields)
   .partial()
   .refine(
     (value) => Object.keys(value).length > 0,

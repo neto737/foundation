@@ -109,6 +109,16 @@ describe("Links API with Better Auth and real D1", () => {
     const cookie = await register("a@example.com");
     const first = await create(cookie);
     expect(first.tags).toEqual(["docs", "work"]);
+    const titleOnly = await request(
+      `/api/bookmarks/${first.id}`,
+      "PATCH",
+      cookie,
+      { title: first.title },
+    );
+    expect(bookmarkResponseSchema.parse(await titleOnly.json())).toMatchObject({
+      description: input.description,
+      tags: ["docs", "work"],
+    });
     await create(cookie, { ...input, title: "Other", tags: ["personal"] });
     const list = bookmarkListSchema.parse(
       await (await request("/api/bookmarks?limit=1", "GET", cookie)).json(),
@@ -336,6 +346,24 @@ describe("Links API with Better Auth and real D1", () => {
 
   it("validates payloads and preserves health and API fallback contracts", async () => {
     const cookie = await register("a@example.com");
+    const minimal = await request("/api/bookmarks", "POST", cookie, {
+      title: "Minimal",
+      url: input.url,
+    });
+    expect(minimal.status).toBe(201);
+    const minimalItem = bookmarkResponseSchema.parse(await minimal.json());
+    expect(minimalItem).toMatchObject({ description: null, tags: [] });
+    const partial = await request(
+      `/api/bookmarks/${minimalItem.id}`,
+      "PATCH",
+      cookie,
+      { title: "Changed" },
+    );
+    expect(bookmarkResponseSchema.parse(await partial.json())).toMatchObject({
+      title: "Changed",
+      description: null,
+      tags: [],
+    });
     expect(
       (
         await request("/api/bookmarks", "POST", cookie, {

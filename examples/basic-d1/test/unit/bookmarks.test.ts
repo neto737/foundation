@@ -13,6 +13,19 @@ const valid = {
 };
 
 describe("bookmark contracts", () => {
+  it("defaults optional creation fields without resetting omitted PATCH fields", () => {
+    expect(
+      bookmarkInputSchema.parse({ title: "Minimal", url: valid.url }),
+    ).toEqual({
+      title: "Minimal",
+      url: valid.url,
+      description: null,
+      tags: [],
+    });
+    expect(bookmarkUpdateSchema.parse({ title: "Changed" })).toEqual({
+      title: "Changed",
+    });
+  });
   it("normalizes optional text and tags", () => {
     expect(bookmarkInputSchema.parse(valid)).toEqual({
       ...valid,
