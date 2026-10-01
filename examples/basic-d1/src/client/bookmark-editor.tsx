@@ -9,6 +9,7 @@ import {
   type Bookmark,
 } from "../shared/bookmarks.js";
 import { ApiError, apiRequest } from "./api.js";
+import { currentSessionGeneration } from "./session-generation.js";
 
 const editorSchema = z.object({
   title: bookmarkInputSchema.shape.title,
@@ -75,6 +76,7 @@ export function BookmarkEditor() {
     return () => controller.abort();
   }, [id, reset, revision]);
   async function save(values: EditorValues) {
+    const generation = currentSessionGeneration();
     setError("");
     const input = bookmarkInputSchema.parse({
       title: values.title,
@@ -91,8 +93,9 @@ export function BookmarkEditor() {
         bookmarkResponseSchema,
         { method: id ? "PATCH" : "POST", body: JSON.stringify(input) },
       );
-      await navigate("/");
+      if (generation === currentSessionGeneration()) await navigate("/");
     } catch (failure) {
+      if (generation !== currentSessionGeneration()) return;
       setError(
         failure instanceof Error
           ? failure.message

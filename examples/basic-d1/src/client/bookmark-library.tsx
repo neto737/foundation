@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { z } from "zod";
 import { bookmarkListSchema, type BookmarkList } from "../shared/bookmarks.js";
 import { apiRequest } from "./api.js";
+import { currentSessionGeneration } from "./session-generation.js";
 
 export function BookmarkLibrary() {
   const [filters, setFilters] = useState({ q: "", tag: "", offset: 0 });
@@ -42,17 +43,20 @@ export function BookmarkLibrary() {
 
   async function remove(id: string) {
     if (!window.confirm("Delete this bookmark?")) return;
+    const generation = currentSessionGeneration();
     setDeleting(id);
     setMutationError("");
     try {
       await apiRequest(`/api/bookmarks/${id}`, z.undefined(), {
         method: "DELETE",
       });
-      setFilters((current) => ({ ...current, offset: 0 }));
+      if (generation === currentSessionGeneration())
+        setFilters((current) => ({ ...current, offset: 0 }));
     } catch {
-      setMutationError("Could not delete the bookmark. Please try again.");
+      if (generation === currentSessionGeneration())
+        setMutationError("Could not delete the bookmark. Please try again.");
     } finally {
-      setDeleting("");
+      if (generation === currentSessionGeneration()) setDeleting("");
     }
   }
   function search(event: FormEvent<HTMLFormElement>) {

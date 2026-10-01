@@ -12,7 +12,7 @@ export function AuthPage({
   onSignedIn,
 }: {
   mode: "login" | "signup" | "magic" | "recover";
-  onSignedIn: () => void;
+  onSignedIn: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const title = {
@@ -40,7 +40,7 @@ export function AuthPage({
         password: field(data, "password"),
       });
       if (!result.error) {
-        onSignedIn();
+        await onSignedIn();
         await navigate("/");
       }
       return feedback(result.error, "Signed in");

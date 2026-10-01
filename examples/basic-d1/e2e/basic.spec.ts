@@ -372,3 +372,77 @@ test("paginates a private library with limit and offset", async ({ page }) => {
   await page.getByRole("button", { name: "Previous", exact: true }).click();
   await expect(page.getByRole("article")).toHaveCount(20);
 });
+
+test("keeps B authenticated when A's pending mutation returns 401", async ({
+  page,
+  request,
+}) => {
+  const b = email();
+  expect(
+    (
+      await request.post("/api/auth/sign-up/email", {
+        data: { email: b, password, name: "User B" },
+        headers: { Origin: "http://127.0.0.1:5174" },
+      })
+    ).ok(),
+  ).toBe(true);
+  expect((await request.get(await verify(request, b))).ok()).toBe(true);
+  await signUp(page, email());
+  await addBookmark(page, "Only A");
+  await page
+    .getByRole("article", { name: "Only A" })
+    .getByRole("link", { name: "Edit", exact: true })
+    .click();
+  let release!: () => void;
+  let started!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/bookmarks/*", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.continue();
+      return;
+    }
+    started();
+    await pending;
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { message: "Expired A" } }),
+    });
+  });
+  await page.getByRole("button", { name: "Save bookmark" }).click();
+  await ready;
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  // SPA navigation only: a page reload would cancel A's pending fetch and mask the race.
+  await page.getByLabel("Email", { exact: true }).fill(b);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your bookmarks" }),
+  ).toBeVisible();
+  await expect(page.getByText("User B", { exact: true })).toBeVisible();
+  const oldResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" && response.status() === 401,
+  );
+  release();
+  await oldResponse;
+  await page.unrouteAll({ behavior: "wait" });
+  // A fresh B request confirms the session and screen remain usable after the old response.
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "No bookmarks yet" }),
+  ).toBeVisible();
+  await expect(page.getByText("User B", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toHaveCount(0);
+  expect((await page.request.get("/api/bookmarks")).status()).toBe(200);
+});

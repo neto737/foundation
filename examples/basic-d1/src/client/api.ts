@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { currentSessionGeneration } from "./session-generation.js";
 
 export class ApiError extends Error {
   constructor(
@@ -14,15 +15,26 @@ export async function apiRequest<T>(
   schema: z.ZodType<T>,
   options: RequestInit = {},
 ): Promise<T> {
+  const generation = currentSessionGeneration();
+  function assertCurrent() {
+    if (generation !== currentSessionGeneration() || options.signal?.aborted) {
+      throw new DOMException(
+        "Request belongs to an inactive session",
+        "AbortError",
+      );
+    }
+  }
   const response = await fetch(path, {
     ...options,
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", ...options.headers },
   });
+  assertCurrent();
   if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    assertCurrent();
     if (response.status === 401)
       window.dispatchEvent(new Event("links:unauthorized"));
-    const body: unknown = await response.json().catch(() => null);
     const parsed = z
       .object({ error: z.object({ message: z.string() }) })
       .safeParse(body);
@@ -33,7 +45,8 @@ export async function apiRequest<T>(
         : "Request failed. Please try again.",
     );
   }
-  return schema.parse(
-    response.status === 204 ? undefined : await response.json(),
-  );
+  const body: unknown =
+    response.status === 204 ? undefined : await response.json();
+  assertCurrent();
+  return schema.parse(body);
 }

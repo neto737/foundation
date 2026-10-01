@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Link, Navigate, Route, Routes } from "react-router";
 import { authClient } from "./auth-client.js";
 import { AuthPage, ResetPassword, Verification } from "./auth-pages.js";
 import { BookmarkEditor } from "./bookmark-editor.js";
 import { BookmarkLibrary } from "./bookmark-library.js";
+import {
+  invalidateSessionGeneration,
+  setSessionIdentity,
+} from "./session-generation.js";
 
 export function App() {
   const session = authClient.useSession();
@@ -12,6 +16,7 @@ export function App() {
   const [logoutError, setLogoutError] = useState("");
   useEffect(() => {
     function unauthorized() {
+      invalidateSessionGeneration();
       setExpired(true);
       void session.refetch();
     }
@@ -19,7 +24,19 @@ export function App() {
     return () => window.removeEventListener("links:unauthorized", unauthorized);
   }, [session.refetch]);
   const user = !expired ? session.data?.user : undefined;
+  const identity =
+    user && session.data ? `${user.id}:${session.data.session.id}` : undefined;
+  // Runs before private pages start passive-effect requests for this identity.
+  useLayoutEffect(() => {
+    setSessionIdentity(identity);
+  }, [identity]);
+  async function signedIn() {
+    invalidateSessionGeneration();
+    await session.refetch();
+    setExpired(false);
+  }
   async function signOut() {
+    invalidateSessionGeneration();
     setSigningOut(true);
     setLogoutError("");
     try {
@@ -69,7 +86,7 @@ export function App() {
               user ? (
                 <Navigate to="/" replace />
               ) : (
-                <AuthPage mode="login" onSignedIn={() => setExpired(false)} />
+                <AuthPage mode="login" onSignedIn={signedIn} />
               )
             }
           />
@@ -79,21 +96,17 @@ export function App() {
               user ? (
                 <Navigate to="/" replace />
               ) : (
-                <AuthPage mode="signup" onSignedIn={() => setExpired(false)} />
+                <AuthPage mode="signup" onSignedIn={signedIn} />
               )
             }
           />
           <Route
             path="/magic-link"
-            element={
-              <AuthPage mode="magic" onSignedIn={() => setExpired(false)} />
-            }
+            element={<AuthPage mode="magic" onSignedIn={signedIn} />}
           />
           <Route
             path="/forgot-password"
-            element={
-              <AuthPage mode="recover" onSignedIn={() => setExpired(false)} />
-            }
+            element={<AuthPage mode="recover" onSignedIn={signedIn} />}
           />
           <Route path="/verify-email" element={<Verification />} />
           <Route path="/reset-password" element={<ResetPassword />} />
