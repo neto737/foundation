@@ -31,6 +31,12 @@ nenhum token é armazenado em `localStorage`. Os defaults atuais são sete dias 
 validade e renovação após um dia. O servidor encaminha todos os `Set-Cookie` de
 `@t00ls-dev/auth.resolveSession`, inclusive limpeza de sessão expirada.
 
+Logout só é confirmado após verificar a revogação em D1, sem renovar a sessão.
+Falha ou confirmação indisponível retorna `503` e preserva o cookie para retry.
+Logs auth contêm apenas eventos estáticos sanitizados. No cliente, cada operação
+privada pertence a uma geração de sessão; respostas de gerações anteriores não
+podem expirar a nova identidade nem disparar navegação ou atualização de estado.
+
 ## Funcionalidades e API
 
 - criação, leitura, edição e exclusão de bookmarks;
@@ -118,13 +124,16 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-- Unitários: validação, protocolos de URL, normalização e limites.
+- Unitários: validação, protocolos de URL, normalização, limites e respostas de
+  gerações de sessão obsoletas.
 - Integração: Miniflare/D1 real local, migrations reais, auth, CRUD, dois
   usuários, filtros/paginação, CSRF, expiração/revogação, cookies e headers
-  privados.
-- E2E: oito cenários em Chromium desktop e mobile, totalizando 16 execuções;
+  privados, falhas de revogação/confirmação e sanitização de logs de execução.
+- E2E: nove cenários em Chromium desktop e mobile, totalizando 18 execuções;
   cadastro/verificação/login/logout, CRUD, reload, isolamento, erros/loading,
-  sessão expirada e respostas privadas atrasadas após troca de usuário.
+  sessão expirada e respostas privadas atrasadas após troca de usuário,
+  incluindo um `401` de mutação de A liberado somente depois do login de B pela
+  SPA.
 
 Nenhum teste envia e-mails reais. Integração injeta um provider capturador. E2E
 usa `e2e/worker.ts` com caixa de e-mail no D1 **temporário**, configuração

@@ -44,8 +44,12 @@ pnpm --filter @t00ls-dev/example-basic-d1 test:e2e
 
 Integração aplica as migrations reais em D1 Miniflare descartável e cobre auth,
 CRUD, filtros, isolamento A/B, CSRF, expiração/revogação e múltiplos Set-Cookie.
+Também injeta falhas na execução de queries para verificar confirmação de logout
+sem renovação, retry após recuperação e ausência de tokens/parâmetros nos logs.
 E2E usa um Worker/configuração próprios, captura e-mail em banco temporário e
-valida oito cenários em desktop e mobile. Nenhum teste envia e-mail real. A
-caixa `/__test/mail` pertence apenas a `e2e/worker.ts`, fora do bundle DEV. O
-harness não reutiliza servidor ou estado de desenvolvimento e executa migration
-duas vezes para conferir reaplicação idempotente pelo journal Wrangler.
+valida nove cenários em desktop e mobile, incluindo `401` de mutação antiga após
+login de outra identidade sem recarregar a página. Nenhum teste envia e-mail
+real. A caixa `/__test/mail` pertence apenas a `e2e/worker.ts`, fora do bundle
+DEV. O harness não reutiliza servidor ou estado de desenvolvimento e executa
+migration duas vezes para conferir reaplicação idempotente pelo journal
+Wrangler.

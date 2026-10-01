@@ -82,8 +82,9 @@ diretório e o package mantêm o nome técnico `basic-d1`. Demonstra:
   `@t00ls-dev/auth`, com propagação de cookies e verificação de e-mail
   obrigatória;
 - headers privados e CSRF nas mutações autenticadas por cookie;
-- nove testes unitários de contratos e oito testes D1 reais do exemplo;
-- oito cenários Playwright em desktop e mobile (16 execuções), incluindo
+- 14 testes unitários e 11 testes D1 reais do exemplo, incluindo falhas de
+  revogação/confirmação, logs sanitizados e gerações de sessão;
+- nove cenários Playwright em desktop e mobile (18 execuções), incluindo
   cadastro/verificação/login/logout, persistência, isolamento e respostas
   atrasadas;
 - harness E2E com banco temporário e e-mails capturados, sem providers externos.
@@ -143,9 +144,9 @@ A cobertura atual inclui:
   convites;
 - D1 real local por Miniflare;
 - PostgreSQL 17 real por Testcontainers;
-- 14 testes de integração Foundation mais oito de Links, incluindo migration e
+- 14 testes de integração Foundation mais 11 de Links, incluindo migration e
   seed PostgreSQL pelo histórico Drizzle e isolamento por usuário em D1;
-- oito cenários Playwright em desktop e mobile, totalizando 16 execuções;
+- nove cenários Playwright em desktop e mobile, totalizando 18 execuções;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
 Pacotes sem testes próprios não executam Vitest vazio. A CI usa o reporter
