@@ -108,17 +108,22 @@ export function GoogleSignIn() {
           </button>
         </>
       ) : capability.status === "ready" && capability.googleEnabled ? (
-        <button
-          type="button"
-          className="google-button"
-          disabled={pending}
-          aria-busy={pending}
-          aria-describedby={feedbackId}
-          onClick={() => void signIn()}
-        >
-          <img src={googleLogo} width="20" height="20" alt="" />
-          Continue with Google
-        </button>
+        <>
+          <div className="auth-divider" role="separator" aria-label="or">
+            <span aria-hidden="true">or</span>
+          </div>
+          <button
+            type="button"
+            className="google-button"
+            disabled={pending}
+            aria-busy={pending}
+            aria-describedby={feedbackId}
+            onClick={() => void signIn()}
+          >
+            <img src={googleLogo} width="20" height="20" alt="" />
+            Continue with Google
+          </button>
+        </>
       ) : null}
       <p id={feedbackId} role={error || callbackError ? "alert" : "status"}>
         {error || callbackError || (pending ? "Redirecting to Google..." : "")}
