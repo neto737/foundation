@@ -18,11 +18,13 @@ import {
   validateSql,
 } from "./migration-core.mjs";
 import {
+  MissingDevSecretsError,
   migrationPlan,
   operationsSchema,
   queryRows,
   validateContext,
   withMigrationFile,
+  validateDevBindings,
 } from "./migrations.mjs";
 
 const sha = "a".repeat(40);
@@ -676,6 +678,77 @@ test("actual Wrangler applies only the selected phase file and journal retry is 
 
 const workflow = (name) =>
   parse(readFileSync(`.github/workflows/${name}.yml`, "utf8"));
+test("unresolved DEV bindings fail before mutation without leaking values or requiring unused post-deploy secrets", () => {
+  const plan = fixture();
+  for (const phase of ["expand", "verify", "recover", "backfill", "contract"]) {
+    const expectedToken =
+      phase === "verify"
+        ? "CLOUDFLARE_D1_READ_TOKEN"
+        : "CLOUDFLARE_D1_MIGRATION_TOKEN";
+    assert.throws(
+      () => validateDevBindings(phase, plan, {}),
+      (error) => {
+        assert(error instanceof MissingDevSecretsError);
+        assert.deepEqual(error.missing.slice(0, 2), [
+          "CLOUDFLARE_ACCOUNT_ID",
+          expectedToken,
+        ]);
+        return true;
+      },
+    );
+    const env = {
+      CLOUDFLARE_ACCOUNT_ID: "fixture-account",
+      CLOUDFLARE_API_TOKEN: "fixture-value-must-not-appear-in-errors",
+    };
+    if (["backfill", "contract"].includes(phase)) {
+      assert.throws(
+        () => validateDevBindings(phase, plan, env, []),
+        (error) => {
+          assert.deepEqual(error.missing, [
+            "CLOUDFLARE_WORKER_READ_TOKEN",
+            "DEV_HEALTH_URL",
+          ]);
+          assert(!JSON.stringify(error).includes(env.CLOUDFLARE_API_TOKEN));
+          assert(!error.message.includes(env.CLOUDFLARE_API_TOKEN));
+          return true;
+        },
+      );
+      validateDevBindings(phase, { operations: [] }, env, []);
+      validateDevBindings(
+        phase,
+        plan,
+        env,
+        plan.operations.map((op) => op.file),
+      );
+      env.CLOUDFLARE_WORKER_READ_TOKEN = "fixture-worker-read";
+      env.DEV_HEALTH_URL = "https://foundation.t00ls.dev";
+    }
+    validateDevBindings(phase, plan, env);
+    validateDevBindings(phase, plan, env, []);
+    assert.throws(() =>
+      validateDevBindings(phase, plan, { ...env, CLOUDFLARE_API_TOKEN: "   " }),
+    );
+  }
+  assert.throws(
+    () =>
+      validateDevBindings("expand", plan, {
+        CLOUDFLARE_ACCOUNT_ID: "fixture",
+        CLOUDFLARE_D1_MIGRATION_TOKEN: "fixture",
+      }),
+    /not resolved/,
+  );
+  const source = readFileSync(".github/scripts/migrations.mjs", "utf8");
+  assert(
+    source.indexOf("validateDevBindings(phase, plan);") <
+      source.indexOf("const driver = d1Driver(plan);"),
+  );
+  assert(
+    source.indexOf(
+      "validateDevBindings(phase, plan, process.env, state.applied);",
+    ) < source.indexOf("await driver.initialize();"),
+  );
+});
+
 test("DEV coordination serializes independent phases; deploy never applies; CI has no persistent credentials", () => {
   const deploy = workflow("deploy-dev");
   const migration = workflow("migrate-dev");

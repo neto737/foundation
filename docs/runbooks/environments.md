@@ -72,6 +72,20 @@ Environment do job chamado resolve o valor correspondente. Não há
 Edit, e backfill/contract acrescentam Workers Read/health. `required: true`
 exige repasse no contrato, não garante valor provisionado.
 
+Um valor vazio no contexto do caller não exige duplicar o secret no repositório:
+o repasse pelo mesmo nome permite resolver o valor no Environment do job
+chamado. Remover `secrets`/as declarações ou repassar por alias quebraria esse
+contrato. Os seis nomes são consumidos pelos jobs que precisam deles, não todos
+pela migration: D1 Read e o token de deploy pertencem ao job `deploy`.
+
+O executor valida account ID/token D1 não vazios após autorizar o SHA e antes de
+consultar o banco. A pré-condição usa D1 Read; fases/recovery usam D1 Edit.
+Depois de ler o journal, e antes de inicializar/mutar o banco, exige Workers
+Read e health somente quando há backfill/contract pendente; sem pendência, o
+no-op continua válido. Falha de resolução produz `missingSecrets` no resultado
+sanitizado, com **nomes somente**, sem valores. Isso detecta ausência, não
+atesta origem/escopo real de um token nem substitui o cadastro administrativo.
+
 Referência:
 [Environments em reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
 

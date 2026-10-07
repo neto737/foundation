@@ -98,6 +98,46 @@ export function queryRows(output) {
   return output.result.flatMap((r) => r.results);
 }
 
+export class MissingDevSecretsError extends Error {
+  constructor(missing) {
+    super("Required DEV secret bindings were not resolved");
+    this.missing = missing;
+  }
+}
+
+export function validateDevBindings(phase, plan, env = process.env, applied) {
+  assert(
+    ["expand", "backfill", "contract", "verify", "recover"].includes(phase),
+  );
+  const required = [
+    ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID"],
+    [
+      phase === "verify"
+        ? "CLOUDFLARE_D1_READ_TOKEN"
+        : "CLOUDFLARE_D1_MIGRATION_TOKEN",
+      "CLOUDFLARE_API_TOKEN",
+    ],
+  ];
+  if (
+    applied &&
+    ["backfill", "contract"].includes(phase) &&
+    plan.operations.some(
+      (op) => op.phase === phase && !applied.includes(op.file),
+    )
+  ) {
+    required.push(
+      ["CLOUDFLARE_WORKER_READ_TOKEN", "CLOUDFLARE_WORKER_READ_TOKEN"],
+      ["DEV_HEALTH_URL", "DEV_HEALTH_URL"],
+    );
+  }
+  const missing = required
+    .filter(
+      ([, binding]) => typeof env[binding] !== "string" || !env[binding].trim(),
+    )
+    .map(([name]) => name);
+  if (missing.length) throw new MissingDevSecretsError(missing);
+}
+
 async function cloudflare(path, token, body) {
   assert(
     token && process.env.CLOUDFLARE_ACCOUNT_ID,
@@ -402,6 +442,7 @@ async function main(phase) {
       return;
     }
     await authorizedContext(phase);
+    validateDevBindings(phase, plan);
     const driver = d1Driver(plan);
     if (phase === "verify") {
       const state = await driver.state();
@@ -410,9 +451,10 @@ async function main(phase) {
         await verifyCurrentSchema(driver, plan, state, op);
       }
     } else {
-      inspectState(plan, await driver.state(), {
+      const state = inspectState(plan, await driver.state(), {
         allowDirty: phase === "recover",
       });
+      validateDevBindings(phase, plan, process.env, state.applied);
       await driver.initialize();
       const options = {
         plan,
@@ -446,6 +488,10 @@ async function main(phase) {
         });
     }
     report.result = "succeeded";
+  } catch (error) {
+    if (error instanceof MissingDevSecretsError)
+      report.missingSecrets = error.missing;
+    throw error;
   } finally {
     report.finishedAt = new Date().toISOString();
     if (phase !== "plan") {
