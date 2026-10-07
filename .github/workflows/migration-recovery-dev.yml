@@ -32,6 +32,7 @@ jobs:
       'refs/heads/master' && inputs.execution_sha == github.sha &&
       inputs.confirmation == 'RECONCILE_DEV_D1'
     runs-on: ubuntu-24.04
+    environment: dev
     steps:
       - uses: actions/checkout@v7
         with:

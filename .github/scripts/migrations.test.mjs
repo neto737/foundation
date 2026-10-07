@@ -746,6 +746,117 @@ test("DEV coordination serializes independent phases; deploy never applies; CI h
   }
 });
 
+test("DEV credentials resolve in the actual environment jobs with explicit same-name reusable contracts", () => {
+  const deploy = workflow("deploy-dev");
+  const migration = workflow("migrate-dev");
+  const recovery = workflow("migration-recovery-dev");
+  const ci = workflow("ci");
+  assert.equal(deploy.jobs.deploy.environment, "dev");
+  assert.equal(migration.jobs.migration.environment, "dev");
+  assert.equal(recovery.jobs.recover.environment, "dev");
+  assert.equal(deploy.jobs.validate.environment, undefined);
+  assert(!JSON.stringify(deploy.jobs.validate).includes("secrets."));
+  for (const job of Object.values(ci.jobs)) {
+    assert.equal(job.environment, undefined);
+    assert(!JSON.stringify(job).includes("CLOUDFLARE_"));
+    assert(!JSON.stringify(job).includes("DEV_HEALTH_URL"));
+    assert(!job.uses?.includes("migrate-dev"));
+  }
+  const base = ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_D1_MIGRATION_TOKEN"];
+  const post = [...base, "CLOUDFLARE_WORKER_READ_TOKEN", "DEV_HEALTH_URL"];
+  assert.deepEqual(Object.keys(migration.on.workflow_call.secrets), post);
+  for (const name of post)
+    assert.equal(
+      migration.on.workflow_call.secrets[name].required,
+      base.includes(name),
+    );
+  for (const phase of ["expand", "backfill", "contract"]) {
+    const caller = deploy.jobs[phase];
+    assert.equal(
+      caller.environment,
+      undefined,
+      "Reusable caller cannot own the environment",
+    );
+    assert.deepEqual(
+      Object.keys(caller.secrets),
+      phase === "expand" ? base : post,
+    );
+    for (const name of Object.keys(caller.secrets))
+      assert.equal(caller.secrets[name], `\${{ secrets.${name} }}`);
+  }
+  const execution = migration.jobs.migration.steps.find(
+    (step) => step.env?.MIGRATION_PHASE,
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(execution.env).filter(
+        ([name]) => name.startsWith("CLOUDFLARE_") || name === "DEV_HEALTH_URL",
+      ),
+    ),
+    {
+      CLOUDFLARE_ACCOUNT_ID: "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+      CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}",
+      CLOUDFLARE_WORKER_READ_TOKEN:
+        "${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}",
+      DEV_HEALTH_URL: "${{ secrets.DEV_HEALTH_URL }}",
+    },
+  );
+  const recover = recovery.jobs.recover.steps.find(
+    (step) => step.run === "node .github/scripts/migrations.mjs recover",
+  );
+  assert.equal(
+    recover.env.CLOUDFLARE_API_TOKEN,
+    "${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}",
+  );
+  const prerequisite = deploy.jobs.deploy.steps.find(
+    (step) => step.run === "node .github/scripts/migrations.mjs verify",
+  );
+  assert.equal(
+    prerequisite.env.CLOUDFLARE_API_TOKEN,
+    "${{ secrets.CLOUDFLARE_D1_READ_TOKEN }}",
+  );
+  const publish = deploy.jobs.deploy.steps.find(
+    (step) => step.run === "pnpm deploy:dev",
+  );
+  assert.equal(
+    publish.env.CLOUDFLARE_API_TOKEN,
+    "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+  );
+  // Environment selection changes no trigger/authorization: PRs/forks still
+  // cannot reach operational jobs through contribution CI or a public dispatch.
+  assert.deepEqual(Object.keys(migration.on), ["workflow_call"]);
+  assert.deepEqual(Object.keys(recovery.on), ["workflow_dispatch"]);
+  assert(!deploy.on.pull_request && !deploy.on.pull_request_target);
+  assert(
+    deploy.jobs.validate.if.includes(
+      "github.event.workflow_run.event == 'push'",
+    ),
+  );
+  assert(
+    deploy.jobs.validate.if.includes(
+      "github.event.workflow_run.head_repository.full_name",
+    ),
+  );
+  assert(
+    deploy.jobs.validate.if.includes("inputs.execution_sha == github.sha"),
+  );
+  assert(
+    migration.jobs.migration.if.includes(
+      "github.repository == 't00ls-dev/foundation'",
+    ),
+  );
+  assert(
+    migration.jobs.migration.if.includes(
+      "github.event_name == 'workflow_dispatch'",
+    ),
+  );
+  assert(
+    recovery.jobs.recover.if.includes("github.ref == 'refs/heads/master'"),
+  );
+  for (const w of [deploy, migration, recovery])
+    assert(!JSON.stringify(w).includes("inherit"));
+});
+
 function validateScripts(scripts) {
   const resolve = (name, seen = new Set()) => {
     if (seen.has(name)) return "";

@@ -55,8 +55,9 @@ jobs:
       phase: expand
       execution_sha: ${{ needs.validate.outputs.sha }}
     secrets:
-      account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      migration_token: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_MIGRATION_TOKEN:
+        ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
 
   deploy:
     needs: [validate, expand]
@@ -71,6 +72,7 @@ jobs:
       && github.event.workflow_run.head_repository.full_name ==
       't00ls-dev/foundation'))
     runs-on: ubuntu-24.04
+    environment: dev
     steps:
       - name: Check out trusted workflow validator
         uses: actions/checkout@v7
@@ -131,10 +133,11 @@ jobs:
       phase: backfill
       execution_sha: ${{ needs.validate.outputs.sha }}
     secrets:
-      account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      migration_token: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
-      worker_read_token: ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
-      health_url: ${{ secrets.DEV_HEALTH_URL }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_MIGRATION_TOKEN:
+        ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+      CLOUDFLARE_WORKER_READ_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
+      DEV_HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
 
   contract:
     needs: [validate, deploy, backfill]
@@ -143,7 +146,8 @@ jobs:
       phase: contract
       execution_sha: ${{ needs.validate.outputs.sha }}
     secrets:
-      account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      migration_token: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
-      worker_read_token: ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
-      health_url: ${{ secrets.DEV_HEALTH_URL }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_MIGRATION_TOKEN:
+        ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+      CLOUDFLARE_WORKER_READ_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
+      DEV_HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}

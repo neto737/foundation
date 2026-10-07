@@ -10,13 +10,13 @@ on:
         type: string
         required: true
     secrets:
-      account_id:
+      CLOUDFLARE_ACCOUNT_ID:
         required: true
-      migration_token:
+      CLOUDFLARE_D1_MIGRATION_TOKEN:
         required: true
-      worker_read_token:
+      CLOUDFLARE_WORKER_READ_TOKEN:
         required: false
-      health_url:
+      DEV_HEALTH_URL:
         required: false
 
 permissions:
@@ -31,6 +31,8 @@ jobs:
       github.repository == 't00ls-dev/foundation' && (github.event_name ==
       'workflow_run' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
+    # Environment secrets resolve here, not on the caller's reusable-job entry.
+    environment: dev
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,10 +50,11 @@ jobs:
           MIGRATION_PHASE: ${{ inputs.phase }}
           EXPECTED_SHA: ${{ inputs.execution_sha }}
           GITHUB_TOKEN: ${{ github.token }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.account_id }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.migration_token }}
-          CLOUDFLARE_WORKER_READ_TOKEN: ${{ secrets.worker_read_token }}
-          DEV_HEALTH_URL: ${{ secrets.health_url }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+          CLOUDFLARE_WORKER_READ_TOKEN:
+            ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
+          DEV_HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
       - name: Preserve sanitized operation evidence
         if: always()
         uses: actions/upload-artifact@v7.0.1

@@ -56,7 +56,11 @@ Em uma falha:
 Workflows recebem apenas nomes de secrets documentados. Valores nunca devem ser
 impressos, gravados em summaries ou passados como inputs comuns de workflow.
 
-Antes da ativação, provisione os tokens segregados de
-[Ambientes](environments.md). Não há fallback para token de deploy em migration.
-O Environment `production` vazio existente no GitHub não é aprovação nem
-ambiente PROD do Foundation.
+Antes do merge/ativação, provisione as credenciais operacionais no **GitHub
+Environment `dev`**, conforme [Ambientes](environments.md). Deploy, migration
+reutilizável e recovery referenciam esse Environment; validate/CI não. O job do
+workflow chamado resolve seus Environment Secrets, com repasse explícito de
+nomes canônicos pelo caller. Não há aprovação manual nova para DEV nem
+configuração automática dos secrets. Não há fallback para token de deploy em
+migration. O Environment `production` vazio existente no GitHub não é aprovação
+nem ambiente PROD do Foundation.
