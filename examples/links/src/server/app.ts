@@ -70,6 +70,8 @@ export function createApp(emailFactory: EmailFactory = resendEmail) {
 
   app.get("/health", async (c) => {
     c.header("Cache-Control", "no-store");
+    if (c.env.FOUNDATION_SHA)
+      c.header("X-Foundation-SHA", c.env.FOUNDATION_SHA);
     try {
       await c.env.DB.prepare("SELECT 1").first();
       return c.json({ status: "ok", checks: { worker: "ok", database: "ok" } });

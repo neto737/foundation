@@ -1,6 +1,13 @@
 name: Deploy DEV
 
 on:
+  workflow_dispatch:
+    inputs:
+      execution_sha:
+        description:
+          Full current master SHA for explicit retry after reconciliation
+        type: string
+        required: true
   workflow_run:
     workflows:
       - CI
@@ -14,19 +21,55 @@ permissions:
   actions: read
 
 concurrency:
-  group: deploy-dev
-  cancel-in-progress: true
+  group: foundation-dev-d1
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  validate:
     if: >-
-      github.repository == 't00ls-dev/foundation' &&
-      github.event.workflow_run.conclusion == 'success' &&
+      github.repository == 't00ls-dev/foundation' && ((github.event_name ==
+      'workflow_dispatch' && github.ref == 'refs/heads/master' &&
+      inputs.execution_sha == github.sha) || (github.event_name ==
+      'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.head_repository.full_name ==
+      't00ls-dev/foundation'))
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.ci.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: ci
+        run: node .github/scripts/ci-evidence.mjs deploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  expand:
+    needs: validate
+    uses: ./.github/workflows/migrate-dev.yml
+    with:
+      phase: expand
+      execution_sha: ${{ needs.validate.outputs.sha }}
+    secrets:
+      account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      migration_token: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+
+  deploy:
+    needs: [validate, expand]
+    if: >-
+      needs.expand.result == 'success' && github.repository ==
+      't00ls-dev/foundation' && ((github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' && inputs.execution_sha == github.sha)
+      || (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master' &&
       github.event.workflow_run.repository.full_name == 't00ls-dev/foundation'
       && github.event.workflow_run.head_repository.full_name ==
-      't00ls-dev/foundation'
+      't00ls-dev/foundation'))
     runs-on: ubuntu-24.04
     steps:
       - name: Check out trusted workflow validator
@@ -59,24 +102,48 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Apply DEV D1 migrations
-        working-directory: examples/links
-        run: pnpm db:migrate:dev
+      - name: Require the DEV schema before deploy (read-only)
+        run: node .github/scripts/migrations.mjs verify
         env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_READ_TOKEN }}
 
       - name: Deploy DEV
         working-directory: examples/links
         run: pnpm deploy:dev
         env:
+          FOUNDATION_DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Smoke test
         env:
           HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
-        run:
-          if [ -n "$HEALTH_URL" ]; then curl --fail --silent --show-error
-          --retry 5 --retry-delay 5 --retry-all-errors "${HEALTH_URL%/}/health";
-          fi
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+        run: node .github/scripts/migration-health.mjs
+
+  backfill:
+    needs: [validate, deploy]
+    uses: ./.github/workflows/migrate-dev.yml
+    with:
+      phase: backfill
+      execution_sha: ${{ needs.validate.outputs.sha }}
+    secrets:
+      account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      migration_token: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+      worker_read_token: ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
+      health_url: ${{ secrets.DEV_HEALTH_URL }}
+
+  contract:
+    needs: [validate, deploy, backfill]
+    uses: ./.github/workflows/migrate-dev.yml
+    with:
+      phase: contract
+      execution_sha: ${{ needs.validate.outputs.sha }}
+    secrets:
+      account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      migration_token: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+      worker_read_token: ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
+      health_url: ${{ secrets.DEV_HEALTH_URL }}

@@ -893,6 +893,16 @@ describe("Links API with Better Auth and real D1", () => {
     expect((await request("/health")).headers.get("Cache-Control")).toBe(
       "no-store",
     );
+    expect(
+      (await request("/health")).headers.get("X-Foundation-SHA"),
+    ).toBeNull();
+    const deployedSha = "a".repeat(40);
+    const versionedHealth = await app.request(`${origin}/health`, undefined, {
+      ...env,
+      FOUNDATION_SHA: deployedSha,
+    });
+    expect(versionedHealth.status).toBe(200);
+    expect(versionedHealth.headers.get("X-Foundation-SHA")).toBe(deployedSha);
     const broken = {
       ...env,
       DB: {

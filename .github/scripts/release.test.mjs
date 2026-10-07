@@ -1754,5 +1754,10 @@ test("deploy validates trusted workflow code before exact-SHA checkout and limit
     !steps.some((step) => step.uses?.startsWith("actions/download-artifact@")),
   );
   for (const step of steps.filter((step) => step.env?.CLOUDFLARE_API_TOKEN))
-    assert(["Apply DEV D1 migrations", "Deploy DEV"].includes(step.name));
+    assert(
+      [
+        "Require the DEV schema before deploy (read-only)",
+        "Deploy DEV",
+      ].includes(step.name),
+    );
 });

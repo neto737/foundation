@@ -10,6 +10,11 @@ Ele verifica a formatação e executa lint, typecheck, testes unitários,
 integrações, builds e Playwright. O Docker deve estar disponível para PostgreSQL
 por Testcontainers. O Playwright requer Chromium instalado.
 
+Inclui `pnpm test:migrations`: fases/metadata, SQL conservador, guards
+CI/deploy, dirty/retry/recuperação e evidências de contract, com ciclo em D1
+Miniflare descartável. Não usa credenciais remotas. CI obtém histórico Git
+completo para conferir imutabilidade dos SQL versionados.
+
 Em Actions, o gate completo e a instalação Chromium ficam no job `checks` da CI,
 tanto em PR como no push de master. Version Packages depende desse job; Release
 manual valida pela API a CI aprovada do `execution_sha` exato, sem repetir a

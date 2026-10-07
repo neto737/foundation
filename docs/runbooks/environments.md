@@ -24,7 +24,10 @@ Worker, D1 e secrets próprios e usa `foundation.t00ls.dev` como Custom Domain. 
 endereço `*.workers.dev` e as Preview URLs estão desabilitados. A configuração
 mínima é:
 
-- GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` e `DEV_HEALTH_URL`;
+- GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (deploy),
+  `CLOUDFLARE_D1_MIGRATION_TOKEN` (D1 Edit), `CLOUDFLARE_D1_READ_TOKEN` (D1
+  Read), `CLOUDFLARE_WORKER_READ_TOKEN` (Workers Scripts Read) e
+  `DEV_HEALTH_URL`;
 - Worker: `AUTH_SECRET`, `BASE_URL`, `EMAIL_FROM` e `RESEND_API_KEY`;
 - opcionais: `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`.
 
@@ -37,6 +40,19 @@ consumidoras.
 Para publicar o Custom Domain, a zona `t00ls.dev` deve estar ativa na conta
 Cloudflare e o hostname não pode ter um CNAME conflitante. Configure uma Cache
 Rule para bypass de `/health` e das rotas dinâmicas conforme [Cache](cache.md).
+
+Os três tokens novos precisam de provisionamento administrativo antes da
+ativação do ciclo DEV. Restrinja recursos/conta e quem pode acessar credenciais
+conforme suporte Cloudflare; D1 pode exigir escopo de conta, não presumir
+restrição por banco que o provider não ofereça. Token de deploy publica Worker e
+consulta bindings, não aplica SQL. Não há fallback entre credenciais.
+
+CI de PR/fork não recebe esses secrets. Migration/recuperação recebe D1 Edit
+somente no step autorizado; deploy usa D1 Read na pré-condição. Pós-deploy usa
+Workers Read para provar deployment/versão. O `production` atual sem regras não
+é gate: Environment só protege jobs que o referenciam com regras efetivas.
+Origem/SHA/serialização são verificados pelo código; revisão e controle de
+escrita continuam necessários.
 
 ## Aplicações consumidoras
 

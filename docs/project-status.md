@@ -158,7 +158,8 @@ O comando `pnpm check` executa, nesta ordem:
 6. builds;
 7. testes E2E;
 8. testes de distribuição dos packages;
-9. testes de release.
+9. testes de release;
+10. contratos de migrations e execução D1 descartável.
 
 A cobertura atual inclui:
 
@@ -187,12 +188,17 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
   aprovada do SHA exato, preservando autorização, provenance e checks de
   registry.
 - `Deploy DEV`: inicia após uma CI verde em `master`, faz checkout do SHA
-  validado, aplica migrations D1, implanta e consulta `/health` quando uma URL
-  foi configurada. Verifica evento push/master, repositório de origem,
-  identidade do workflow e job aprovado na mesma tentativa. Não repete a suíte
-  de testes.
+  validado e coordena expand/deploy/backfill/contract em jobs independentes.
+  Migration DEV é workflow reutilizável; deploy não aplica SQL e verifica
+  `/health` com SHA/D1 obrigatórios. Verifica evento push/master, repositório de
+  origem, identidade do workflow e job aprovado na mesma tentativa. Não repete a
+  suíte de testes.
 - O Foundation não possui ambiente ou workflow PROD. Aplicações consumidoras
   definem seus próprios ambientes e processos de deploy.
+- Operações D1/recuperação compartilham serialização sem cancelar mutation
+  iniciada. Dirty persiste no banco e bloqueia avanço; Recovery DEV exige
+  diagnóstico versionado e confirmação humana. Ativação exige tokens segregados
+  descritos em [Ambientes](runbooks/environments.md).
 - `Smoke Hyperdrive`: execução manual contra um endpoint configurado. É apenas
   um smoke remoto; não implementa um binding Hyperdrive dentro deste
   repositório.

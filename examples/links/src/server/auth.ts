@@ -10,6 +10,7 @@ import {
 } from "../shared/auth-config.js";
 
 export interface Env {
+  FOUNDATION_SHA?: string;
   ASSETS: { fetch(request: Request): Promise<Response> };
   AUTH_SECRET: string;
   BASE_URL: string;
