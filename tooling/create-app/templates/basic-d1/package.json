@@ -12,7 +12,6 @@
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "pnpm db:migrate:local",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:seed": "wrangler d1 execute DB --local --file seeds/local.sql",
     "db:status": "pnpm db:status:local",
     "db:status:local": "wrangler d1 migrations list DB --local",

@@ -119,11 +119,28 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   assert.equal(process.argv[2], "deploy");
-  assert.equal(process.env.GITHUB_EVENT_NAME, "workflow_run");
   assert.equal(process.env.GITHUB_REPOSITORY, repository);
-  const origin = validateDeployEvent(
-    JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")),
+  const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+  let sha;
+  if (process.env.GITHUB_EVENT_NAME === "workflow_run") {
+    const origin = validateDeployEvent(event);
+    await approvedCi(origin.head_sha, { origin });
+    sha = origin.head_sha;
+  } else {
+    assert.equal(process.env.GITHUB_EVENT_NAME, "workflow_dispatch");
+    assert.equal(process.env.GITHUB_REF, "refs/heads/master");
+    assert.equal(event.inputs?.execution_sha, process.env.GITHUB_SHA);
+    sha = event.inputs.execution_sha;
+  }
+  const evidence = await approvedCi(sha);
+  const master = await authenticatedJson(
+    `${api}/git/ref/heads/master`,
+    process.env.GITHUB_TOKEN,
   );
-  const evidence = await approvedCi(origin.head_sha, { origin });
+  assert.equal(
+    master.object.sha,
+    sha,
+    "Obsolete DEV operation: master advanced",
+  );
   appendFileSync(process.env.GITHUB_OUTPUT, `sha=${evidence.sha}\n`);
 }

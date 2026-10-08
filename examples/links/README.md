@@ -5,59 +5,57 @@ bookmarks com React SPA, Hono, Better Auth, Drizzle e Cloudflare D1 no mesmo
 Worker. O exemplo está em `examples/links`, com package
 `@t00ls-dev/example-links`. O preset autônomo `basic-d1` permanece independente.
 
-## Shared visual foundation
+## Fundação visual compartilhada
 
-`packages/ui/src/styles.css` defines semantic color, spacing, typography and
-focus tokens. `src/client/styles.css` owns Links compositions: a light canvas,
-deep green identity, restrained surfaces and a single-column library. The shell
-uses the private UI workspace; authentication protocols remain intact.
+`packages/ui/src/styles.css` define tokens semânticos de cor, espaçamento,
+tipografia e foco. `src/client/styles.css` compõe Links: fundo claro, identidade
+verde profunda, superfícies discretas e biblioteca de coluna única. O shell usa
+o workspace UI privado; protocolos de autenticação permanecem intactos.
 
-- Layout: `.container`, `.container--narrow`, `.stack` and `.cluster`; flex/grid
-  children can shrink and long content wraps instead of being clipped.
-- Buttons use Foundation Button/PendingButton variants and native `disabled`.
-  Google keeps its provider-specific branding and shares the minimum 44px touch
-  target.
-- Surfaces are intentional: forms/articles do not automatically become cards.
-- Feedback uses InlineFeedback for contextual errors and indeterminate outcomes,
-  with field errors associated with inputs. Confirmed mutations use one scoped
-  Sonner; email-link results remain persistent. Loading indicators retain busy
-  semantics and accessible announcements without duplicate visual narration.
-- Controls use 16px text at the default font size, visible invalid borders and a
-  shared keyboard focus ring. High-contrast mode preserves control borders and
-  focus. No animation is required to communicate a state.
+- Layout: `.container`, `.container--narrow`, `.stack` e `.cluster`; filhos de
+  flex/grid podem encolher e conteúdo longo quebra linhas sem corte.
+- Botões usam Button/PendingButton Foundation e `disabled` nativo. Google
+  preserva marca do provider e alvo mínimo de toque de 44px.
+- Superfícies são intencionais: formulários/artigos não viram cards
+  automaticamente.
+- InlineFeedback trata erros contextuais e resultados indeterminados, com erros
+  associados aos campos. Mutations confirmadas usam Sonner por escopo;
+  resultados de links de e-mail persistem. Loading mantém busy e anúncios
+  acessíveis sem narração visual duplicada.
+- Controles usam texto de 16px no tamanho padrão, bordas inválidas visíveis e
+  anel de foco compartilhado. Alto contraste preserva bordas/foco; não se exige
+  animação para comunicar estado.
 
-The foundation is mobile-first. Reflow tests cover 320px through desktop,
-reduced CSS viewport widths for zoom, 200% CSS scale/text enlargement and long
-content. These checks do not emulate a browser's toolbar zoom UI.
+A fundação é mobile-first. Reflow cobre 320px até desktop, viewport CSS reduzido
+para zoom, escala/texto CSS de 200% e conteúdo longo. Esses checks não emulam a
+interface de zoom da barra do navegador.
 
-## Cross-page form and action spacing
+## Espaçamento de formulários e ações entre páginas
 
-Home/Auth/Account/Reset reuse the existing spacing and action groups. Field
-labels, hints and errors stay grouped separately from submit; Verification and
-invalid-reset backlinks share the 44px navigation targets. Intro/action gaps are
-explicit, Account's stack owns its title gap and Verification success uses the
-existing success variant. Profile directly edits Name, with selectable readonly
-Email and a stable Save changes action, disabled until an effective change.
-Password uses a Dialog that blocks dismiss throughout mutation/reconciliation;
-Authenticator uses a Dialog with automatic close only after final confirmation.
-Drafts and security boundaries retain their existing lifecycle semantics.
+Home/Auth/Account/Reset reutilizam espaçamento e grupos de ações. Labels, dicas
+e erros ficam separados do submit; retornos de Verification/reset inválido usam
+alvos de 44px. Espaços de introdução/ação são explícitos; stack de Account
+controla seu título e Verification usa a variante de sucesso. Profile edita
+Name, com Email readonly selecionável e Save changes estável, desabilitado até
+mudança efetiva. Password bloqueia fechar Dialog durante mutation/reconciliação;
+Authenticator fecha só após confirmação final. Rascunhos e segurança mantêm
+ciclos.
 
-## Bookmarks and compact navigation
+## Bookmarks e navegação compacta
 
-Links is the Home link. Desktop/tablet shows Bookmarks, Account and quiet global
-Sign out as navigation, without tab indicators. Mobile uses an accessible menu
-with those destinations and a divider before Sign out; the user name lives in
-Profile. Controls preserve 44px targets, keyboard focus and active-route
-semantics.
+Links é o link da Home. Desktop/tablet mostra Bookmarks, Account e Sign out
+global discreto, sem indicadores de tabs. Mobile usa menu acessível e divisor
+antes de Sign out; nome do usuário fica em Profile. Controles preservam alvos de
+44px, foco de teclado e semântica da rota ativa.
 
-**Add bookmark** is aligned with the page heading: icon-only on narrow screens,
-with its accessible name intact. Search is explicit; Tag is disclosed and Clear
-appears when pertinent. Rows show compact URLs/descriptions, discreet tags and
-quiet Edit/Delete actions. Full text remains in the DOM/accessibility tree and
-in the dedicated editor; delete identifies the complete URL. Pagination appears
-only with a previous/next page. Editors put URL before Title in one column,
-disclose optional details and provide one Back to bookmarks return. CRUD,
-validation, applied filters, isolation and response-lost handling remain intact.
+**Add bookmark** se alinha ao título: apenas ícone em telas estreitas,
+preservando nome acessível. Search é explícito; Tag pode ser expandida e Clear
+aparece quando pertinente. Linhas mostram URLs/descrições compactas, tags
+discretas e Edit/Delete. Texto integral permanece no DOM/árvore acessível e
+editor; delete identifica URL completa. Paginação só aparece com página
+anterior/seguinte. Editores colocam URL antes de Title em uma coluna, expandem
+detalhes opcionais e oferecem um Back to bookmarks. CRUD, validação, filtros,
+isolamento e resposta perdida permanecem intactos.
 
 ## Desenvolvimento local
 
@@ -93,27 +91,25 @@ podem expirar a nova identidade nem disparar navegação ou atualização de est
 
 ## Funcionalidades e API
 
-### Home and navigation
+### Home e navegação
 
-`/` is the public Foundation/Links Home for signed-in and signed-out visitors;
-it does not load bookmarks and remains available while session resolution is
-pending or unavailable. **Open Links** leads to the private `/bookmarks`
-library. Links links to Home; the header offers Sign in/Create account to
-visitors and Bookmarks/Account/Sign out to the current user, through a menu on
+`/` é a Home pública para visitantes autenticados ou não; não carrega bookmarks
+e permanece disponível com sessão pendente/indisponível. **Open Links** leva à
+biblioteca privada `/bookmarks`. Links retorna à Home; header oferece Sign in/
+Create account a visitantes e Bookmarks/Account/Sign out ao usuário, em menu
 mobile.
 
-`/bookmarks`, `/bookmarks/new`, `/bookmarks/:id/edit` and `/account` remain
-protected. Sign-in defaults to `/bookmarks`; private deep links retain a
-validated `next` destination across password sign-in, signup/verification, Magic
-Link and Google callbacks. Only known local private routes are accepted;
-external or unsupported targets fall back to `/bookmarks`. Saving/canceling an
-editor and returning from Security also lead to `/bookmarks`.
+`/bookmarks`, `/bookmarks/new`, `/bookmarks/:id/edit` e `/account` são
+protegidos. Login usa `/bookmarks`; deep links preservam `next` validado em
+senha, cadastro/ verificação, Magic Link e callback Google. Somente rotas
+privadas locais conhecidas são aceitas; destinos externos/não suportados
+retornam a `/bookmarks`. Salvar/ cancelar editor e voltar de Security também
+levam a `/bookmarks`.
 
-Session expiry removes private content and directs visitors to sign-in with a
-generic explanation. Voluntary logout from a private page goes to sign-in;
-logout on public pages retains the current page. Unknown routes go to Home for
-visitors and Bookmarks for signed-in users. Password-management session
-semantics remain unchanged.
+Expiração remove conteúdo privado e encaminha ao login com explicação genérica.
+Logout em página privada leva ao login; em pública mantém a página. Rotas
+desconhecidas levam visitantes à Home e autenticados a Bookmarks. A semântica de
+sessão no gerenciamento de senha permanece intacta.
 
 - criação, leitura, edição e exclusão de bookmarks;
 - título, URL HTTP/HTTPS, descrição opcional e tags;
@@ -156,14 +152,12 @@ página de erro padrão do Better Auth em `/api/auth/error`, sem interceptação
 própria. Clique duplo é bloqueado; erro permite retry e Back/bfcache libera
 pending e recarrega a capability.
 
-The shared `OAuthButton` receives provider presentation (label, icon and
-branding class) separately from initiation/capability logic. Google is the only
-provider. While initiating sign-in, the button is disabled, replaces its
-decorative icon with a same-size spinner and keeps **Continue with Google**
-unchanged. There is no redirect success/status message below the button. A
-pre-navigation failure restores the icon and enabled state and shows the
-existing sanitized error. The button exposes `aria-busy`; reduced-motion
-preferences disable rotation.
+`OAuthButton` recebe apresentação do provider (label, ícone, marca) separada do
+início/capability. Google é o único provider. No início do login o botão
+desabilita, troca ícone decorativo por spinner do mesmo tamanho e mantém
+**Continue with Google**. Não há mensagem de sucesso/status de redirect abaixo.
+Falha antes da navegação restaura ícone/estado e mostra erro sanitizado. Expõe
+`aria-busy`; reduced-motion desabilita rotação.
 
 Os testes locais verificam configuração, D1, início/cancelamento e UI simulada;
 não equivalem a OAuth Google real. Após eventual merge/deploy automático,
@@ -173,60 +167,53 @@ conta Google existente e nova, cancelar e tentar novamente. Revalidar os fluxos
 email/password, verificação, Magic Link e reset já existentes. Nenhum smoke
 remoto é disparado pelos testes da UI.
 
-### Account Settings
+### Configurações da conta
 
-Account also provides the password-only authenticator flow: password → local
-QR/setup key → six-digit confirmation, with password-based disable. Password
-sign-in with `twoFactorRedirect` moves to `/two-factor` before any
-completed-login navigation. Magic Link and Google remain alternatives without a
-Links TOTP challenge; this is not account-wide MFA. See
-[TOTP flows and recovery](../../docs/runbooks/links-totp.md).
+Account oferece autenticador para senha: senha → QR/key local → confirmação de
+seis dígitos, com desativação por senha. Login com `twoFactorRedirect` leva a
+`/two-factor` antes da navegação concluída. Magic Link e Google são alternativas
+sem desafio TOTP do Links; não é MFA para toda a conta. Veja
+[TOTP e recuperação](../../docs/runbooks/links-totp.md).
 
-`/account` is the canonical authenticated page. The legacy `/account/security`
-URL redirects to it, preserving query/fragment and authentication return paths.
-Profile provides **Edit name** followed by explicit **Save name**; Email is
-informational text, never a disabled input. Security presents independent
-Password and Authenticator rows, with only one task open at a time. Normal
-authenticator status offers Off → Set up / On → Turn off; unknown never becomes
-Off. A single responsive Dialog handles password, QR/code and authoritatively
-confirmed completion. The setup key is absent from textual DOM until **Can't
-scan? Use setup key** is opened. Copy writes the original secret and reports
-success locally only after the Clipboard API succeeds; failure permits manual
-selection. Recovery appears only after an observed exceptional state, not just
-because the flag is On. Names are trimmed, required, limited to 200 characters
-and cannot contain control characters. International names and punctuation are
-allowed. Shared validation also guards the example's official
-`/api/auth/update-user` request before delegating to Better Auth.
+`/account` é canônica. `/account/security` redireciona preservando
+query/fragment e retorno da autenticação. Profile oferece **Edit name** e **Save
+name** explícito; Email é informativo, nunca input desabilitado. Security mostra
+Password e Authenticator independentes, uma tarefa aberta por vez. Autenticador
+normal oferece Off → Set up / On → Turn off; desconhecido nunca vira Off. Um
+Dialog responsivo trata senha, QR/código e confirmação autoritativa. Key fica
+fora do DOM textual até abrir **Can't scan? Use setup key**. Copy escreve secret
+original e confirma localmente só após sucesso da Clipboard API; falha permite
+seleção manual. Recuperação aparece após exceção observada, não apenas estado
+On. Nomes passam por trim, são obrigatórios, limitados a 200 caracteres e sem
+caracteres de controle; nomes internacionais/pontuação são aceitos. Validação
+compartilhada protege `/api/auth/update-user` antes de delegar ao Better Auth.
 
-Name updates use public `authClient.updateUser({ name })` in Better Auth 1.7.7,
-which updates the current user/cookie without rotating or revoking sessions and
-notifies session listeners. The UI confirms the user/name/email through public
-`getSession` with cookie cache disabled, then refetches the displayed session.
-Unexpected failure is indeterminate, with no automatic retry. Requests are
-aborted on logout/unmount and obsolete feedback cannot affect another account.
+Nome usa `authClient.updateUser({ name })` do Better Auth 1.7.7, que atualiza
+usuário/cookie sem rotacionar/revogar sessões e notifica listeners. UI confirma
+usuário/nome/e-mail por `getSession` sem cookie cache e refaz a sessão exibida.
+Falha inesperada é indeterminada, sem retry automático. Requests abortam em
+logout/unmount; feedback obsoleto não afeta outra conta.
 
-### Password reset UX
+### UX de recuperação de senha
 
-Before showing password fields, ResetPassword checks the public Better Auth GET
-`/api/auth/reset-password/:token` with a fixed `/reset-password` callback. Fetch
-follows redirects in same-origin/no-store mode with an AbortSignal; the final
-response must be a redirected 200 on this origin and exact callback path, with
-only the matching token or `error=INVALID_TOKEN`. Unexpected responses or
-network failures offer verification retry, never imply token invalidity.
+Antes dos campos, ResetPassword consulta GET público Better Auth
+`/api/auth/reset-password/:token` com callback `/reset-password` fixo. Fetch
+segue redirects em same-origin/no-store com AbortSignal; exige 200 redirecionado
+nesta origem/path exatos, só token correspondente ou `error=INVALID_TOKEN`.
+Respostas inesperadas/falha de rede oferecem retry de verificação, sem afirmar
+token inválido.
 
-The real Worker/Assets harness verifies that this fetch neither navigates nor
-executes the SPA and does not consume the token. The official `resetPassword`
-POST remains authoritative. Late INVALID_TOKEN removes password fields and
-offers a new link. Indeterminate mutation errors clear fields without automatic
-retry or raw upstream messages. Tokens are not logged or stored outside the
-existing URL/in-memory flow. Requests are aborted on unmount/token changes.
+O harness Worker/Assets verifica que esse fetch não navega/executa SPA nem
+consome token. POST `resetPassword` continua autoritativo. INVALID_TOKEN tardio
+remove campos e oferece novo link. Erro indeterminado limpa campos, sem retry
+automático ou mensagens brutas upstream. Tokens não são logados ou armazenados
+fora de URL/ memória; requests abortam em unmount/troca de token.
 
-Reset navigation uses the central App session: authenticated visitors get **Back
-to Account**, confirmed visitors **Back to sign in**; unresolved/error sessions
-remain in the existing session loading/retry UI. Reset retains the existing
-session policy. Account routes first-password requests to the public Forgot
-form, with optional session-email prefill and explicit submission. Forgot stays
-anti-enumeration.
+A navegação usa sessão central: autenticados recebem **Back to Account** e
+visitantes confirmados, **Back to sign in**; sessão indefinida/com erro mantém
+loading/retry. Reset preserva a política de sessões. Account encaminha primeira
+senha ao Forgot público, com preenchimento opcional do e-mail da sessão e submit
+explícito. Forgot preserva proteção contra enumeração.
 
 ### Security — senha da conta
 
@@ -327,11 +314,14 @@ preservados. Os índices de snapshots/journal são independentes do prefixo
 histórico dos SQL; Drizzle pode gerar um próximo prefixo que precise ser
 ajustado antes da primeira aplicação, sem renomear migrations já aplicadas.
 
-`db:migrate` e `db:status` usam D1 local; variantes `:dev` operam remotamente.
-`db:seed` executa apenas `seeds/local.sql`, atualmente sem dados de contas, e
-nunca faz parte do deploy. Migrations aplicadas são imutáveis e recebem
-correções forward-only. A adição permite rollback do código anterior sem remover
-tabelas.
+`db:migrate` e `db:status` usam D1 local; somente `db:status:dev` consulta DEV.
+Escrita remota usa fases independentes de Migration DEV coordenadas com deploy;
+deploy não aplica SQL. Metadata, dirty/recuperação e o fluxo
+`expand → deploy → [backfill] → contract` estão no
+[runbook de migrations](../../docs/runbooks/migrations.md). `db:seed` executa
+apenas `seeds/local.sql`, atualmente sem dados de contas, e nunca faz parte do
+deploy. Migrations aplicadas são imutáveis e recebem correções forward-only. A
+adição permite rollback do código anterior sem remover tabelas.
 
 ## Testes determinísticos
 
@@ -369,8 +359,10 @@ Na raiz, o gate completo é `pnpm check`, incluindo distribuição e release.
 
 O DEV remoto mantém `foundation.t00ls.dev` e o D1 `basic-d1-dev`. Segredos são
 configurados com `wrangler secret put --env dev`; `BASE_URL`/`EMAIL_FROM` estão
-em `env.dev.vars`. A CI validada em `master` precede migration, deploy e smoke
-health.
+em `env.dev.vars`. CI validada coordena fases próprias de migration e deploy,
+com smoke obrigatório de SHA/D1. Ativação exige tokens segregados de
+[Ambientes](../../docs/runbooks/environments.md); CI e inicialização não aplicam
+migrations remotas.
 
 `GET /health` verifica Worker/D1, retorna `503` sanitizado em falha e
 `no-store`. Auth e APIs privadas enviam `private, no-store` e

@@ -1,0 +1,67 @@
+name: Migration DEV
+
+on:
+  workflow_call:
+    inputs:
+      phase:
+        type: string
+        required: true
+      execution_sha:
+        type: string
+        required: true
+    secrets:
+      CLOUDFLARE_ACCOUNT_ID:
+        required: true
+      CLOUDFLARE_D1_MIGRATION_TOKEN:
+        required: true
+      CLOUDFLARE_WORKER_READ_TOKEN:
+        required: false
+      DEV_HEALTH_URL:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+# The caller owns foundation-dev-d1 for its entire lifecycle, including deploy.
+# A second lock with the same group here would deadlock a reusable workflow.
+jobs:
+  migration:
+    if: >-
+      github.repository == 't00ls-dev/foundation' && (github.event_name ==
+      'workflow_run' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    # Environment secrets resolve here, not on the caller's reusable-job entry.
+    environment: dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.execution_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Execute only the authorized phase
+        run: node .github/scripts/migrations.mjs "$MIGRATION_PHASE"
+        env:
+          MIGRATION_PHASE: ${{ inputs.phase }}
+          EXPECTED_SHA: ${{ inputs.execution_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_MIGRATION_TOKEN }}
+          CLOUDFLARE_WORKER_READ_TOKEN:
+            ${{ secrets.CLOUDFLARE_WORKER_READ_TOKEN }}
+          DEV_HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
+      - name: Preserve sanitized operation evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name:
+            migration-${{ inputs.phase }}-${{ github.run_id }}-${{
+            github.run_attempt }}
+          path: ${{ runner.temp }}/migration-${{ inputs.phase }}.json
+          if-no-files-found: warn
+          retention-days: 30

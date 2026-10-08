@@ -1,39 +1,53 @@
 # **PROJECT_NAME**
 
-React SPA, Hono API, Workers Assets, Better Auth, and Cloudflare D1 in one
-Worker. This starter deliberately does not include tenancy.
+React SPA, API Hono, Workers Assets, Better Auth e Cloudflare D1 no mesmo
+Worker. Este starter não inclui tenancy.
 
-## Setup
+## Configuração
 
-1. Install dependencies with `pnpm install`.
-2. Copy `.dev.vars.example` to `.dev.vars` and set `AUTH_SECRET` to at least 32
-   random characters. Configure Resend credentials to deliver auth email.
-3. Create the database with `pnpm wrangler d1 create __PROJECT_NAME__`, then
-   replace `REPLACE_WITH_D1_DATABASE_ID` in `wrangler.jsonc` with its ID.
-4. Apply the local migration with `pnpm db:migrate:local`.
-5. Start the application with `pnpm dev`.
+1. Instale dependências com `pnpm install`.
+2. Copie `.dev.vars.example` para `.dev.vars` e defina `AUTH_SECRET` com pelo
+   menos 32 caracteres aleatórios. Configure Resend para entregar e-mails auth.
+3. Crie o banco com `pnpm wrangler d1 create __PROJECT_NAME__` e substitua
+   `REPLACE_WITH_D1_DATABASE_ID` em `wrangler.jsonc` pelo ID.
+4. Aplique a migration local com `pnpm db:migrate:local`.
+5. Inicie com `pnpm dev`.
 
-Use `pnpm db:generate` after changing `src/schema.ts`, then review the generated
-SQL. `pnpm db:migrate` and `pnpm db:status` target the local database; use the
-`:remote` variants explicitly for the configured remote database. Local seed
-data belongs in `seeds/local.sql` and runs with `pnpm db:seed`. Never edit an
-applied migration; ship a new forward-only migration instead.
+## Migrations e deploy
 
-`GET /health` reports liveness. `GET /ready` checks D1 and returns a generic 503
-when the database is unavailable. Both send `Cache-Control: no-store` to prevent
-stale operational results. Responses under `/api/auth/**` send
-`Cache-Control: private, no-store`. The SPA and auth API share the same origin;
-Better Auth stores accounts and sessions in D1. Google OAuth is enabled only
-when both Google credentials are configured.
+Migrations são operações próprias, desacopladas de CI, deploy e inicialização.
+Use `pnpm db:generate` após alterar `src/schema.ts` e revise
+SQL/snapshots/journal. `pnpm db:migrate` e `pnpm db:status` usam banco
+**local**; `pnpm db:status:remote` consulta explicitamente o banco remoto
+configurado. Seed local fica em `seeds/local.sql` e roda com `pnpm db:seed`.
 
-## Cloudflare cache rule
+O starter não oferece atalho de escrita remota desprotegido. Antes de operar
+banco persistente, defina workflow de migration próprio com identidade do
+commit, aprovação conforme ambiente, credenciais limitadas, serialização e
+resultado auditável. CI pode validar em banco descartável; `pnpm deploy` só
+compila/publica.
 
-On every proxied DEV and PROD domain, create a Cache Rule with the
-`Bypass cache` action for `/api`, `/auth`, `/account`, `/webhooks`, `/health`,
-and `/ready`. Application response headers are defense in depth and do not
-replace this rule when a broad cache policy exists.
+Use `expand → deploy → [backfill] → contract`: mantenha a versão anterior
+compatível durante expand, migre dados separadamente quando necessário e retire
+compatibilidade só após provas atuais de deploy/saúde/backfill. Nunca edite SQL
+aplicado: corrija com migration nova, forward-only. Falha incerta deve bloquear
+avanço até diagnóstico/reconciliação humana; rollback de código não reverte
+schema. Ambientes e política PROD pertencem ao app consumidor.
 
-Use this strict expression:
+`GET /health` informa liveness; `GET /ready` consulta D1 e retorna 503 genérico
+quando indisponível. Ambos usam `Cache-Control: no-store` para evitar resultados
+obsoletos. `/api/auth/**` usa `Cache-Control: private, no-store`. SPA e auth
+compartilham origem; Better Auth persiste contas/sessões em D1. Google OAuth só
+habilita quando ambas as credenciais estão configuradas.
+
+## Regra de cache Cloudflare
+
+Em cada domínio DEV/PROD proxied, crie Cache Rule com ação `Bypass cache` para
+`/api`, `/auth`, `/account`, `/webhooks`, `/health` e `/ready`. Headers são
+defesa adicional, não substituem a regra quando existir uma política ampla de
+cache.
+
+Use esta expressão estrita:
 
 ```text
 (http.request.uri.path eq "/api") or
