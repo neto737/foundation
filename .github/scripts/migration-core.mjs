@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 export const filenamePattern = /^\d+_[a-zA-Z0-9_-]+\.sql$/;
@@ -221,11 +221,18 @@ export function inspectState(plan, state, { allowDirty = false } = {}) {
       !state.attempts.some((a) => ["running", "dirty"].includes(a.state)),
       "Database dirty: explicit recovery required",
     );
-  for (const name of state.applied)
+  for (const name of state.applied) {
     assert(
       plan.operations.some((m) => m.file === name),
       "Unknown remote migration; use current reviewed history",
     );
+    assert(
+      plan.operations
+        .find((m) => m.file === name)
+        .dependsOn.every((dep) => state.applied.includes(dep)),
+      "Applied journal dependency missing",
+    );
+  }
   for (const attempt of state.attempts) {
     assert(
       ["running", "dirty", "applied", "resolved-unapplied"].includes(
@@ -449,9 +456,29 @@ export async function recover({
   authorize,
   context,
   report,
+  assertRecoveryStopped,
 }) {
   assert.equal(spec.format, 1);
+  assert(
+    Object.keys(spec).every((key) =>
+      [
+        "format",
+        "operationId",
+        "resolution",
+        "incident",
+        "proof",
+        "correction",
+        "supersedesRecovery",
+      ].includes(key),
+    ),
+    "Unsupported recovery field/target override",
+  );
   assert(["unapplied", "applied", "corrected"].includes(spec.resolution));
+  if (spec.resolution !== "corrected")
+    assert(
+      spec.correction === undefined,
+      "Correction requires corrected resolution",
+    );
   assert(
     typeof spec.incident === "string" &&
       /^https:\/\/github\.com\/t00ls-dev\/foundation\/(issues|pull)\/\d+$/.test(
@@ -464,8 +491,8 @@ export async function recover({
   const blocked = state.attempts.filter((a) =>
     ["running", "dirty"].includes(a.state),
   );
-  assert.equal(blocked.length, 1);
-  const attempt = blocked[0];
+  const attempt = state.attempts.find((a) => a.id === spec.operationId);
+  assert(attempt, "Recovery operation not found");
   assert.equal(attempt.id, spec.operationId);
   const op = plan.operations.find((m) => m.file === attempt.migration);
   Object.assign(report, {
@@ -475,55 +502,214 @@ export async function recover({
     resolution: spec.resolution,
     incident: spec.incident,
   });
-  await driver.recordRecovery(attempt.id, spec, null, context);
-  if (spec.resolution === "corrected") {
-    const correction = plan.operations.find((m) => m.file === spec.correction);
-    assert(
-      correction &&
-        correction.file !== op.file &&
-        correction.transition === op.transition &&
-        correction.phase !== "contract",
-      "Reviewed new compatible correction required",
-    );
-    assert(correction.dependsOn.every((name) => state.applied.includes(name)));
-    await driver.recordRecovery(attempt.id, spec, correction.hash, context);
-    await authorize();
-    if (!(await driver.state()).applied.includes(correction.file))
-      await driver.apply(correction);
-    await verifyOperation(driver, correction);
-  }
-  const proof = await driver.query(spec.proof);
-  assert(
-    proof.length === 1 && proof[0].remaining === 0,
-    "Human diagnostic proof did not pass",
-  );
-  const applied = (await driver.state()).applied.includes(op.file);
-  if (spec.resolution === "unapplied")
-    assert(!applied, "Already applied: cannot authorize reapplication");
-  else {
-    await verifyOperation(driver, op);
-    if (spec.resolution === "applied")
-      assert(applied, "Native journal proof missing");
-    if (!applied) {
-      await authorize();
-      await driver.reconcileJournal(op.file);
+  const history = recoveryHistory(attempt);
+  for (const record of history) {
+    if (record.correctionHash && state.applied.includes(record.correction)) {
+      assert(
+        plan.operations.find((m) => m.file === record.correction)?.hash ===
+          record.correctionHash,
+        "Applied correction hash differs from audit",
+      );
     }
   }
-  await authorize();
-  await driver.recordRecovery(
-    attempt.id,
-    spec,
-    plan.operations.find((m) => m.file === spec.correction)?.hash ?? null,
-    context,
+  const previous = history.at(-1);
+  if (!["running", "dirty"].includes(attempt.state)) {
+    assert.equal(blocked.length, 0, "Another operation is dirty");
+    assert(
+      previous &&
+        [
+          "format",
+          "operationId",
+          "resolution",
+          "incident",
+          "proof",
+          "correction",
+        ].every((key) => (previous[key] ?? null) === (spec[key] ?? null)),
+      "Recovery definition differs from completed evidence",
+    );
+    assert.equal(
+      attempt.state,
+      spec.resolution === "unapplied" ? "resolved-unapplied" : "applied",
+    );
+    if (spec.resolution === "unapplied")
+      assert(
+        !state.applied.includes(op.file),
+        "Operation advanced since recovery",
+      );
+    else {
+      assert(state.applied.includes(op.file));
+      await verifyCurrentSchema(driver, plan, state, op);
+      if (spec.resolution === "corrected") {
+        const correction = plan.operations.find(
+          (m) => m.file === spec.correction,
+        );
+        assert(
+          correction &&
+            previous.correctionHash === correction.hash &&
+            state.applied.includes(correction.file),
+          "Correction evidence differs",
+        );
+        await verifyCurrentSchema(driver, plan, state, correction);
+      }
+    }
+    const proof = await driver.query(spec.proof);
+    assert(
+      proof.length === 1 && proof[0].remaining === 0,
+      "Completed recovery proof no longer passes",
+    );
+    await authorize();
+    report.result = "already-reconciled";
+    return;
+  }
+  assert.equal(blocked.length, 1);
+  if (previous?.recoveryId && previous.outcome === "running") {
+    assert.equal(
+      spec.supersedesRecovery,
+      previous.recoveryId,
+      "Recovery already owned; explicit interrupted-run evidence required",
+    );
+    assert(assertRecoveryStopped, "Stopped recovery evidence required");
+    report.superseded = await assertRecoveryStopped(previous);
+  }
+  const ownedContext = {
+    ...context,
+    recoveryId: randomUUID(),
+    ...(report.superseded ? { superseded: report.superseded } : {}),
+  };
+  report.recoveryId = ownedContext.recoveryId;
+  try {
+    await driver.claimRecovery(attempt, spec, ownedContext);
+    await authorize();
+    await driver.recordRecovery(attempt.id, spec, null, ownedContext);
+    if (spec.resolution === "corrected") {
+      const correction = plan.operations.find(
+        (m) => m.file === spec.correction,
+      );
+      assert(
+        correction &&
+          correction.file !== op.file &&
+          correction.transition === op.transition &&
+          correction.phase !== "contract",
+        "Reviewed new compatible correction required",
+      );
+      assert(
+        correction.dependsOn.every((name) => state.applied.includes(name)),
+      );
+      await driver.recordRecovery(
+        attempt.id,
+        spec,
+        correction.hash,
+        ownedContext,
+      );
+      await authorize();
+      if (!(await driver.state()).applied.includes(correction.file))
+        await driver.apply(correction);
+      assert(
+        (await driver.state()).applied.includes(correction.file),
+        "Correction native journal proof missing",
+      );
+      await verifyOperation(driver, correction);
+    }
+    const proof = await driver.query(spec.proof);
+    assert(
+      proof.length === 1 && proof[0].remaining === 0,
+      "Human diagnostic proof did not pass",
+    );
+    const applied = (await driver.state()).applied.includes(op.file);
+    if (spec.resolution === "unapplied")
+      assert(!applied, "Already applied: cannot authorize reapplication");
+    else {
+      await verifyOperation(driver, op);
+      if (spec.resolution === "applied")
+        assert(applied, "Native journal proof missing");
+      if (!applied) {
+        await authorize();
+        await driver.reconcileJournal(op.file);
+      }
+    }
+    await authorize();
+    await driver.recordRecovery(
+      attempt.id,
+      spec,
+      plan.operations.find((m) => m.file === spec.correction)?.hash ?? null,
+      ownedContext,
+    );
+    inspectState(plan, await driver.state(), { allowDirty: true });
+    await driver.finishRecovery(
+      attempt.id,
+      ownedContext,
+      "completed",
+      spec.resolution === "unapplied" ? "resolved-unapplied" : "applied",
+    );
+    Object.assign(report, {
+      operationId: attempt.id,
+      resolution: spec.resolution,
+      incident: spec.incident,
+      result: "reconciled",
+    });
+  } catch (error) {
+    await driver
+      .finishRecovery(attempt.id, ownedContext, "failed")
+      .catch(() => {});
+    throw error;
+  }
+}
+
+export function recoveryHistory(attempt) {
+  const history = attempt.recovery == null ? [] : JSON.parse(attempt.recovery);
+  assert(
+    Array.isArray(history) &&
+      history.every(
+        (record) =>
+          record && typeof record === "object" && !Array.isArray(record),
+      ),
+    "Invalid recovery audit history",
   );
-  await driver.finish(
-    attempt.id,
-    spec.resolution === "unapplied" ? "resolved-unapplied" : "applied",
+  for (const record of history) {
+    if (record.recoveryId !== undefined || record.outcome !== undefined) {
+      assert(
+        typeof record.recoveryId === "string" && record.recoveryId.length > 0,
+        "Invalid recovery ownership identity",
+      );
+      assert(
+        ["running", "failed", "completed"].includes(record.outcome),
+        "Unknown recovery ownership outcome",
+      );
+    }
+  }
+  return history;
+}
+
+export function validateStoppedRecovery(run, claim) {
+  assert.equal(run.id, Number(claim.runId));
+  assert.equal(run.repository?.full_name, "t00ls-dev/foundation");
+  assert.equal(run.head_repository?.full_name, "t00ls-dev/foundation");
+  assert.equal(run.path, ".github/workflows/migration-recovery-dev.yml");
+  assert.equal(run.event, "workflow_dispatch");
+  assert.equal(run.head_branch, "master");
+  assert.equal(run.head_sha, claim.sha);
+  assert(
+    Number.isSafeInteger(run.run_attempt) &&
+      run.run_attempt >= Number(claim.attempt),
   );
-  Object.assign(report, {
-    operationId: attempt.id,
-    resolution: spec.resolution,
-    incident: spec.incident,
-    result: "reconciled",
-  });
+  assert.equal(run.status, "completed", "Prior recovery is still active");
+  assert(
+    [
+      "success",
+      "failure",
+      "cancelled",
+      "timed_out",
+      "startup_failure",
+      "action_required",
+      "skipped",
+      "neutral",
+    ].includes(run.conclusion),
+  );
+  return {
+    runId: run.id,
+    attempt: run.run_attempt,
+    sha: run.head_sha,
+    conclusion: run.conclusion,
+    recoveryId: claim.recoveryId,
+  };
 }

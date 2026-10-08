@@ -25,6 +25,7 @@ import {
   validateDeployment,
   validatePlan,
   verifyCurrentSchema,
+  validateStoppedRecovery,
 } from "./migration-core.mjs";
 
 const app = "examples/links";
@@ -245,18 +246,58 @@ export function d1Driver(plan, token = process.env.CLOUDFLARE_API_TOKEN) {
       );
     },
     async recordRecovery(id, spec, correctionHash, context) {
-      await query(
-        "UPDATE foundation_migration_operations SET recovery=json_insert(COALESCE(recovery,'[]'),'$[#]',json(?)) WHERE id=? AND state IN ('running','dirty')",
+      const rows = await query(
+        "UPDATE foundation_migration_operations SET recovery=json_insert(COALESCE(recovery,'[]'),'$[#]',json(?)) WHERE id=? AND state IN ('running','dirty') AND json_extract(recovery,'$[#-1].recoveryId')=? AND json_extract(recovery,'$[#-1].outcome')='running' RETURNING id",
         [
           JSON.stringify({
             ...spec,
             correctionHash,
             ...context,
+            outcome: "running",
             recordedAt: new Date().toISOString(),
           }),
           id,
+          context.recoveryId,
         ],
       );
+      assert.equal(rows.length, 1, "Recovery ownership changed");
+    },
+    async claimRecovery(attempt, spec, context) {
+      const rows = await query(
+        "UPDATE foundation_migration_operations SET recovery=json_insert(COALESCE(recovery,'[]'),'$[#]',json(?)) WHERE id=? AND state IN ('running','dirty') AND COALESCE(recovery,'[]')=? RETURNING id",
+        [
+          JSON.stringify({
+            ...spec,
+            ...context,
+            outcome: "running",
+            recordedAt: new Date().toISOString(),
+          }),
+          attempt.id,
+          attempt.recovery ?? "[]",
+        ],
+      );
+      assert.equal(
+        rows.length,
+        1,
+        "Recovery state changed or was acquired concurrently",
+      );
+    },
+    async finishRecovery(id, context, outcome, state) {
+      assert(["completed", "failed"].includes(outcome));
+      if (outcome === "completed")
+        assert(["applied", "resolved-unapplied"].includes(state));
+      const now = new Date().toISOString();
+      const rows = await query(
+        `UPDATE foundation_migration_operations SET recovery=json_insert(recovery,'$[#]',json_set(json_extract(recovery,'$[#-1]'),'$.outcome',?,'$.recordedAt',?))${outcome === "completed" ? ", state=?, finished_at=?" : ""} WHERE id=? AND state IN ('running','dirty') AND json_extract(recovery,'$[#-1].recoveryId')=? AND json_extract(recovery,'$[#-1].outcome')='running' RETURNING id`,
+        [
+          outcome,
+          now,
+          ...(outcome === "completed" ? [state, now] : []),
+          id,
+          context.recoveryId,
+        ],
+      );
+      assert.equal(rows.length, 1, "Recovery outcome/ownership not persisted");
     },
     async reconcileJournal(name) {
       await query("INSERT INTO d1_migrations (name) VALUES (?)", [name]);
@@ -479,7 +520,17 @@ async function main(phase) {
             "utf8",
           ),
         );
-        await recover({ ...options, spec });
+        await recover({
+          ...options,
+          spec,
+          assertRecoveryStopped: async (claim) => {
+            const run = await authenticatedJson(
+              `https://api.github.com/repos/${repository}/actions/runs/${Number(claim.runId)}`,
+              process.env.GITHUB_TOKEN,
+            );
+            return validateStoppedRecovery(run, claim);
+          },
+        });
       } else
         await runPhase({
           ...options,
@@ -487,6 +538,7 @@ async function main(phase) {
           deploymentEvidence: (id) => deploymentEvidence(plan, id),
         });
     }
+    if (phase === "recover") report.recoveryResult = report.result;
     report.result = "succeeded";
   } catch (error) {
     if (error instanceof MissingDevSecretsError)

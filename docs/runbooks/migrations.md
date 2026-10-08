@@ -160,6 +160,13 @@ deadlock). Execuções novas aguardam ou podem substituir tentativas ainda
 pendentes pelo GitHub; não cancelam mutation iniciada. Novo SHA revalida tudo.
 Um índice único D1 também impede duas intenções modificadoras ativas.
 
+Recovery mantém essa intenção dirty enquanto adquire posse por compare-and-set
+no histórico JSON da mesma linha. Só o detentor pode registrar
+progresso/concluir; duas recuperações não podem modificar simultaneamente o
+mesmo estado, mesmo sem depender exclusivamente da fila de Actions. Não há
+tabela/journal paralelo nem espera temporal para liberar posse. Auditoria de
+conclusão e estado final são gravados no mesmo UPDATE atômico.
+
 ## Autoridade, evidências e dirty
 
 - **Git:** definição, fases, dependências, probes e histórico.
@@ -214,9 +221,37 @@ gh workflow run migration-recovery-dev.yml --ref master \
   reaplicar.
 - `corrected`: inclui `correction` com **novo** SQL compatível da mesma
   transição na policy/journal Drizzle. Aplica apenas se pendente; valida
-  correção, prova diagnóstica e probe original. Só então reconcilia o nome
-  original no journal, registrando como o estado final foi atingido. Falha
-  mantém dirty ativo.
+  correção, seu registro no journal nativo, prova diagnóstica e probe original.
+  Só então reconcilia o nome original no journal, registrando como o estado
+  final foi atingido. Falha mantém dirty ativo.
+
+Repetir uma recuperação concluída é read-only e retorna `already-reconciled` em
+`recoveryResult` no resultado da CLI (o resultado global da fase é `succeeded`)
+somente se a definição semântica do diagnóstico corresponder à evidência
+registrada, não existir outra operação dirty e journal/postcondições/prova
+continuarem válidos. Não reexecuta SQL nem reescreve auditoria. Diagnóstico
+alterado, journal incompleto ou estado que avançou depois da recuperação falham
+fechado. Nomes aplicados também precisam das dependências no journal.
+
+Se o runner desaparecer durante **recovery**, a posse permanece no histórico com
+`recoveryId` e outcome `running`; falha capturada registra `failed` e mantém
+dirty. Para retomar uma posse abandonada, inclua no diagnóstico versionado
+`supersedesRecovery` com o `recoveryId` anterior. O executor exige evidência
+atual da API Actions: run original do workflow Recovery DEV,
+repository/origem/master, SHA e tentativa compatíveis, com execução concluída.
+Essa prova fica na auditoria. Execução ativa, API indisponível ou identidade
+divergente impedem a retomada. Não basta declarar abandono nem aguardar um
+prazo; não existe `force-unlock`.
+
+Os únicos campos aceitos no diagnóstico são `format`, `operationId`,
+`resolution`, `incident`, `proof`, `correction` (somente em `corrected`) e
+`supersedesRecovery`. Inputs de ambiente/banco e campos desconhecidos são
+rejeitados: o alvo continua sendo DEV na configuração do SHA autorizado.
+
+O histórico original em array JSON permanece compatível. Os registros novos
+acrescentam posse/outcome, sem alterar SQL/snapshots/journal de aplicação. Os
+checkpoints disponíveis hoje são migrations finitas concluídas e tentativas
+duráveis; não são checkpoints por lote de um backfill grande.
 
 Depois, reexecute o ciclo somente para master atual:
 
