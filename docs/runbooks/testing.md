@@ -25,6 +25,29 @@ cache de resultados. Reexecuções explícitas da CI e SHAs distintos (PR/merge)
 continuam sendo validados integralmente. Veja [Pacotes](packages.md) para os
 requisitos da evidência reutilizada.
 
+### Resumos no GitHub Actions
+
+Os testes Vitest exibem um resumo compacto por pacote e suíte em
+`GITHUB_STEP_SUMMARY`, usando os resultados e diagnósticos da API do framework.
+Incluem Passed, Failed, Skipped (também `todo`), Flaky e duração desde a
+inicialização do reporter. No Vitest, Flaky é subconjunto de Passed.
+
+Cada shard Playwright apresenta sua identificação `N/4`, as contagens finais
+obtidas por `TestCase.outcome()` e a duração nativa. Passed significa resultado
+esperado, incluindo falhas esperadas; Flaky é separado de Passed. Erros de
+coleta/setup são destacados sem transformá-los em falhas de testes fictícias. O
+reporter `github`, os retries e os traces existentes continuam ativos.
+
+Distribuição resume os tarballs, imports públicos e instalações efetivamente
+validados, além da duração. Não atribui contagens de testes a esses contratos.
+As durações dos reporters não incluem setup de Node/dependências nem builds
+anteriores. Release/migrations e checks estáticos mantêm os diagnósticos e
+estados de steps nativos do Actions, sem duplicá-los em resumos artificiais.
+
+Os resumos são informativos: nenhuma contagem é extraída de logs, o estado e o
+exit code dos frameworks determinam o gate, e falhas de escrita de resumo não
+alteram os resultados. Nenhum serviço externo ou runner adicional é necessário.
+
 ## Durante o desenvolvimento
 
 Execute primeiro o pacote alterado:

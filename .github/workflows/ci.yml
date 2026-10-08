@@ -34,8 +34,18 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-      - run: pnpm test
-      - run: pnpm test:integration
+      - name: Unitários
+        run:
+          pnpm test -- --reporter=default
+          --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"
+        env:
+          GITHUB_TEST_SUITE: Unitários
+      - name: Integração
+        run:
+          pnpm test:integration -- --reporter=default
+          --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"
+        env:
+          GITHUB_TEST_SUITE: Integração
       - run: pnpm build
       - run: pnpm test:release
       - run: pnpm test:migrations
