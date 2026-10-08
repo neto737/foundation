@@ -183,8 +183,11 @@ export function BookmarkLibrary() {
           ...displayed.filters,
           offset: Math.max(0, displayed.filters.offset - 20),
         });
+      } else {
+        // Refresh only in place: changing offset already reloads the list and
+        // must not refetch the emptied page before the router commits navigation.
+        setRevision((value) => value + 1);
       }
-      setRevision((value) => value + 1);
       confirmed(crypto.randomUUID(), "Bookmark deleted.");
     } catch {
       if (active())
