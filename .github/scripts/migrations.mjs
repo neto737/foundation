@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
-  appendFileSync,
   lstatSync,
   mkdtempSync,
   readFileSync,
@@ -14,6 +13,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { migrationSummary, writeDeploySummary } from "./deploy-summary.mjs";
 import { approvedCi, validateDeployEvent } from "./ci-evidence.mjs";
 import { authenticatedJson, repository, shaPattern } from "./release-core.mjs";
 import {
@@ -553,11 +553,8 @@ async function main(phase) {
           join(process.env.RUNNER_TEMP, `migration-${phase}.json`),
           `${JSON.stringify(report, null, 2)}\n`,
         );
-      if (process.env.GITHUB_STEP_SUMMARY)
-        appendFileSync(
-          process.env.GITHUB_STEP_SUMMARY,
-          `## Migration ${phase}\n\n\`\`\`json\n${JSON.stringify(report, null, 2)}\n\`\`\`\n`,
-        );
+      if (phase === "recover")
+        writeDeploySummary(() => migrationSummary(report, { phase }));
     }
   }
 }
