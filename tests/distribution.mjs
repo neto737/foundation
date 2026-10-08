@@ -13,10 +13,12 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import ts from "typescript";
+import { distributionAttempts } from "./distribution-attempts.mjs";
 
 // This test never publishes. Foundation is installed exclusively from tarballs,
 // outside the workspace, with no paths/baseUrl or workspace dependency resolution.
 const root = resolve(import.meta.dirname, "..");
+const attempts = distributionAttempts(process.env.DISTRIBUTION_ATTEMPT);
 const temporary = mkdtempSync(join(tmpdir(), "foundation-distribution-"));
 const artifacts = join(temporary, "artifacts");
 mkdirSync(artifacts);
@@ -228,7 +230,7 @@ try {
     ),
   );
   assert.deepEqual(entrypoints.toSorted(), expectedEntrypoints.toSorted());
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (const attempt of attempts) {
     const consumer = join(temporary, `consumer-${attempt}`);
     mkdirSync(consumer);
     // Pin the tested dependency versions, not patched copies. No third-party

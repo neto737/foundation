@@ -43,6 +43,7 @@ import {
   validateCiRun,
   validateDeployEvent,
 } from "./ci-evidence.mjs";
+import { distributionAttempts } from "../../tests/distribution-attempts.mjs";
 
 const sha = "a".repeat(40);
 const record = () => ({
@@ -1461,10 +1462,7 @@ test("workflow cannot publish on push or audit; only publisher has packages:writ
   assert.equal(ci.jobs.version.permissions["pull-requests"], "write");
   assert(!("packages" in ci.jobs.version.permissions));
   assert.equal(ci.permissions.contents, "read");
-  assert.equal(
-    ci.jobs.checks.steps.filter((step) => step.run === "pnpm check").length,
-    1,
-  );
+  validateCiStructure(ci, ciSetup());
   for (const job of [ci.jobs.version, ...Object.values(workflow.jobs)]) {
     assert(
       !job.steps.some((step) =>
@@ -1511,6 +1509,237 @@ test("workflow cannot publish on push or audit; only publisher has packages:writ
       runInNewContext(expression, candidate, { timeout: 1000 }),
       false,
     );
+});
+
+const ciSetup = () =>
+  parse(readFileSync(".github/actions/setup/action.yml", "utf8"));
+const currentCi = () => parse(readFileSync(".github/workflows/ci.yml", "utf8"));
+const validationCommands = {
+  static: ["pnpm format:check", "pnpm lint", "pnpm typecheck"],
+  tests: [
+    "pnpm test",
+    "pnpm test:integration",
+    "pnpm build",
+    "pnpm test:release",
+    "pnpm test:migrations",
+  ],
+  e2e: [
+    "pnpm --filter @t00ls-dev/example-links exec playwright install --with-deps chromium",
+    "pnpm test:e2e -- --shard=${{ matrix.shard }}/4",
+  ],
+  distribution: ["pnpm test:distribution"],
+};
+
+// Compare executable YAML objects, not text occurrences. Any new execution
+// condition, shell, environment override or dependency requires explicit review.
+function validateCiStructure(ci, setup) {
+  assert.deepEqual(ci.on, {
+    pull_request: null,
+    push: { branches: ["master"] },
+  });
+  assert.deepEqual(ci.permissions, { contents: "read" });
+  assert.equal(ci.env, undefined);
+  assert.equal(ci.defaults, undefined);
+  assert.deepEqual(ci.concurrency, {
+    "group": "ci-${{ github.ref }}",
+    "cancel-in-progress": true,
+  });
+  const jobs = structuredClone(ci.jobs);
+  for (const job of Object.values(jobs))
+    for (const step of job.steps) delete step.name;
+  assert.deepEqual(Object.keys(jobs).sort(), [
+    "checks",
+    "distribution",
+    "e2e",
+    "static",
+    "tests",
+    "version",
+  ]);
+  assert.equal(
+    Object.values(jobs).filter((j) => j.name === "checks").length,
+    0,
+  );
+  for (const [name, commands] of Object.entries(validationCommands)) {
+    const expected = {
+      "runs-on": "ubuntu-24.04",
+      "steps": [
+        { uses: "actions/checkout@v7", with: { "fetch-depth": 0 } },
+        { uses: "./.github/actions/setup" },
+        ...commands.map((run) => ({ run })),
+      ],
+    };
+    if (name === "e2e")
+      expected.strategy = {
+        "fail-fast": false,
+        "matrix": { shard: [1, 2, 3, 4] },
+      };
+    if (name === "distribution") {
+      expected.strategy = {
+        "fail-fast": false,
+        "matrix": { attempt: [1, 2] },
+      };
+      expected.steps.at(-1).env = {
+        DISTRIBUTION_ATTEMPT: "${{ matrix.attempt }}",
+      };
+    }
+    assert.deepEqual(jobs[name], expected, `Required validation job: ${name}`);
+  }
+  assert.deepEqual(jobs.checks, {
+    "if": "always()",
+    "needs": Object.keys(validationCommands),
+    "runs-on": "ubuntu-24.04",
+    "steps": [
+      { uses: "actions/checkout@v7" },
+      {
+        run: "node .github/scripts/ci-checks.mjs",
+        env: { CI_NEEDS: "${{ toJSON(needs) }}" },
+      },
+    ],
+  });
+  assert.equal(jobs.version.needs, "checks");
+  assert.equal(
+    jobs.version.if,
+    "github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository == 't00ls-dev/foundation'",
+  );
+  assert.deepEqual(setup.runs, {
+    using: "composite",
+    steps: [
+      { uses: "pnpm/action-setup@v6.1.0" },
+      {
+        uses: "actions/setup-node@v7",
+        with: { "node-version": "22.23.2", "cache": "pnpm" },
+      },
+      { run: "pnpm install --frozen-lockfile", shell: "bash" },
+    ],
+  });
+  const local = JSON.parse(readFileSync("package.json", "utf8")).scripts.check;
+  assert.equal(
+    local,
+    "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution && pnpm test:release && pnpm test:migrations",
+  );
+}
+
+test("CI structural guard covers the complete local gate", () =>
+  validateCiStructure(currentCi(), ciSetup()));
+for (const name of Object.keys(validationCommands)) {
+  for (const [index] of validationCommands[name].entries()) {
+    for (const mutation of ["remove", "disable", "ignore", "mask"]) {
+      test(`CI guard rejects ${name} command ${index}: ${mutation}`, () => {
+        const ci = currentCi();
+        const steps = ci.jobs[name].steps;
+        const step = steps[index + 2];
+        if (mutation === "remove") steps.splice(index + 2, 1);
+        if (mutation === "disable") step.if = "false";
+        if (mutation === "ignore") step["continue-on-error"] = true;
+        if (mutation === "mask") step.run += " || true";
+        assert.throws(() => validateCiStructure(ci, ciSetup()));
+      });
+    }
+  }
+  for (const mutation of [
+    "remove",
+    "detach",
+    "condition",
+    "dependency",
+    "ignore",
+  ]) {
+    test(`CI guard rejects ${name} job: ${mutation}`, () => {
+      const ci = currentCi();
+      if (mutation === "remove") delete ci.jobs[name];
+      if (mutation === "detach")
+        ci.jobs.checks.needs = ci.jobs.checks.needs.filter((n) => n !== name);
+      if (mutation === "condition") ci.jobs[name].if = "false";
+      if (mutation === "dependency") ci.jobs[name].needs = "version";
+      if (mutation === "ignore") ci.jobs[name]["continue-on-error"] = true;
+      assert.throws(() => validateCiStructure(ci, ciSetup()));
+    });
+  }
+}
+for (const mutate of [
+  (ci) => {
+    ci.jobs.checks.if = "success()";
+  },
+  (ci) => {
+    ci.jobs.checks.steps[1].if = "false";
+  },
+  (ci) => {
+    ci.jobs.checks.steps[1].run = "true";
+  },
+  (ci) => {
+    ci.jobs.static.name = "checks";
+  },
+  (ci) => {
+    ci.jobs.e2e.strategy.matrix.shard.pop();
+  },
+  (ci) => {
+    ci.jobs.e2e.strategy.matrix.exclude = [{ shard: 4 }];
+  },
+  (ci) => {
+    ci.jobs.distribution.strategy.matrix.attempt.pop();
+  },
+  (ci) => {
+    ci.jobs.version.needs = "static";
+  },
+  (ci) => {
+    ci.jobs.version.if = "always()";
+  },
+  (ci) => {
+    ci.on = { workflow_dispatch: null };
+  },
+]) {
+  test(`CI guard rejects altered execution contract: ${mutate.toString()}`, () => {
+    const ci = currentCi();
+    mutate(ci);
+    assert.throws(() => validateCiStructure(ci, ciSetup()));
+  });
+}
+test("CI guard rejects disabled or missing dependency installation", () => {
+  for (const mutation of ["disable", "remove"]) {
+    const setup = ciSetup();
+    if (mutation === "disable") setup.runs.steps[2].if = "false";
+    else setup.runs.steps.pop();
+    assert.throws(() => validateCiStructure(currentCi(), setup));
+  }
+});
+test("checks fails closed on every unsuccessful or missing dependency", () => {
+  const needs = Object.fromEntries(
+    Object.keys(validationCommands).map((name) => [
+      name,
+      { result: "success" },
+    ]),
+  );
+  const run = (value) =>
+    execFileSync(process.execPath, [".github/scripts/ci-checks.mjs"], {
+      env: { ...process.env, CI_NEEDS: JSON.stringify(value) },
+      stdio: "pipe",
+    });
+  run(needs);
+  for (const name of Object.keys(needs)) {
+    for (const result of ["failure", "cancelled", "skipped", "neutral", null])
+      assert.throws(() => run({ ...needs, [name]: { result } }));
+    const missing = { ...needs };
+    delete missing[name];
+    assert.throws(() => run(missing));
+  }
+  assert.throws(() => run({ ...needs, unexpected: { result: "success" } }));
+});
+test("distribution accepts exclusively attempts 1/2 and preserves local execution", () => {
+  assert.deepEqual(distributionAttempts(undefined), [1, 2]);
+  assert.deepEqual(distributionAttempts("1"), [1]);
+  assert.deepEqual(distributionAttempts("2"), [2]);
+  for (const value of [
+    "",
+    "0",
+    "3",
+    "01",
+    "1.0",
+    "1x",
+    " 1",
+    "2 ",
+    "NaN",
+    "1,2",
+  ])
+    assert.throws(() => distributionAttempts(value));
 });
 
 test("only Version Packages retains checkout credentials for Changesets history fetches", () => {
