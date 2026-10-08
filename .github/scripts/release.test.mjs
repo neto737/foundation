@@ -44,6 +44,7 @@ import {
   validateDeployEvent,
 } from "./ci-evidence.mjs";
 import { distributionAttempts } from "../../tests/distribution-attempts.mjs";
+import "./ci-reporting.test.mjs";
 
 const sha = "a".repeat(40);
 const record = () => ({
@@ -1517,8 +1518,8 @@ const currentCi = () => parse(readFileSync(".github/workflows/ci.yml", "utf8"));
 const validationCommands = {
   static: ["pnpm format:check", "pnpm lint", "pnpm typecheck"],
   tests: [
-    "pnpm test",
-    "pnpm test:integration",
+    'pnpm test -- --reporter=default --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"',
+    'pnpm test:integration -- --reporter=default --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"',
     "pnpm build",
     "pnpm test:release",
     "pnpm test:migrations",
@@ -1573,6 +1574,10 @@ function validateCiStructure(ci, setup) {
         "fail-fast": false,
         "matrix": { shard: [1, 2, 3, 4] },
       };
+    if (name === "tests") {
+      expected.steps[2].env = { GITHUB_TEST_SUITE: "Unitários" };
+      expected.steps[3].env = { GITHUB_TEST_SUITE: "Integração" };
+    }
     if (name === "distribution") {
       expected.strategy = {
         "fail-fast": false,

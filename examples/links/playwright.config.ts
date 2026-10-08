@@ -5,7 +5,9 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? "github" : "list",
+  reporter: process.env.CI
+    ? [["github"], ["../../.github/scripts/playwright-summary.mjs"]]
+    : "list",
   use: {
     baseURL: "http://127.0.0.1:5174",
     trace: "on-first-retry",

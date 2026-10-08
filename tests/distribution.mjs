@@ -14,11 +14,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import ts from "typescript";
 import { distributionAttempts } from "./distribution-attempts.mjs";
+import { duration, writeSummary } from "../.github/scripts/test-summary.mjs";
 
 // This test never publishes. Foundation is installed exclusively from tarballs,
 // outside the workspace, with no paths/baseUrl or workspace dependency resolution.
 const root = resolve(import.meta.dirname, "..");
 const attempts = distributionAttempts(process.env.DISTRIBUTION_ATTEMPT);
+const started = performance.now();
+let completed = 0;
 const temporary = mkdtempSync(join(tmpdir(), "foundation-distribution-"));
 const artifacts = join(temporary, "artifacts");
 mkdirSync(artifacts);
@@ -438,9 +441,24 @@ export async function resolveAuth(auth: FoundationAuth, headers: Headers) {
     // Consumers are ephemeral; retain reports/artifacts without accumulating
     // dependency trees between runs or masking the second clean installation.
     rmSync(join(consumer, "node_modules"), { recursive: true, force: true });
+    completed++;
   }
   console.log(`Artifacts and diagnostic evidence: ${temporary}`);
+  writeSummary(
+    `## Distribuição · tentativa ${attempts.join(" e ")}\n\n` +
+      `| Contrato validado | Quantidade |\n| :--- | ---: |\n` +
+      `| Tarballs | ${manifests.length} |\n` +
+      `| Imports públicos | ${entrypoints.length} |\n` +
+      `| Instalações limpas | ${completed} |\n\n` +
+      `Duração: **${duration(performance.now() - started)}**.\n\n`,
+  );
 } catch (error) {
+  writeSummary(
+    `## Distribuição · tentativa ${attempts.join(" e ")}\n\n` +
+      `**❌ Falha na validação de distribuição.**\n\n` +
+      `Instalações concluídas: ${completed}/${attempts.length}. ` +
+      `Duração: ${duration(performance.now() - started)}. Veja o diagnóstico nos logs.\n\n`,
+  );
   console.error(`Distribution test failed; evidence retained at ${temporary}`);
   if (error.stderr) console.error(error.stderr.toString());
   throw error;
