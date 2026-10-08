@@ -15,12 +15,15 @@ CI/deploy, dirty/retry/recuperação e evidências de contract, com ciclo em D1
 Miniflare descartável. Não usa credenciais remotas. CI obtém histórico Git
 completo para conferir imutabilidade dos SQL versionados.
 
-Em Actions, o gate completo e a instalação Chromium ficam no job `checks` da CI,
-tanto em PR como no push de master. Version Packages depende desse job; Release
-manual valida pela API a CI aprovada do `execution_sha` exato, sem repetir a
-suíte. Não se substituem testes por cache de resultados. Reexecuções explícitas
-da CI e SHAs distintos (PR/merge) continuam sendo validados integralmente. Veja
-[Pacotes](packages.md) para os requisitos da evidência reutilizada.
+Em Actions, o gate completo é dividido entre `static`, `tests`, quatro shards
+`e2e` (com Chromium e ambiente próprios) e duas instalações `distribution`. O
+agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
+todas as entradas das matrizes; falha, cancelamento ou skip bloqueiam o gate.
+Version Packages depende desse job; Release manual valida pela API a CI aprovada
+do `execution_sha` exato, sem repetir a suíte. Não se substituem testes por
+cache de resultados. Reexecuções explícitas da CI e SHAs distintos (PR/merge)
+continuam sendo validados integralmente. Veja [Pacotes](packages.md) para os
+requisitos da evidência reutilizada.
 
 ## Durante o desenvolvimento
 

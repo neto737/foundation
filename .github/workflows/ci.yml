@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
+  static:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -22,25 +22,67 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6.1.0
+      - uses: ./.github/actions/setup
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
         with:
-          node-version: 22.23.2
-          cache: pnpm
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: pnpm test
+      - run: pnpm test:integration
+      - run: pnpm build
+      - run: pnpm test:release
+      - run: pnpm test:migrations
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+  e2e:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
 
       - name: Install Playwright browser
         run:
           pnpm --filter @t00ls-dev/example-links exec playwright install
           --with-deps chromium
 
-      - name: Run checks
-        run: pnpm check
+      - run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
+
+  distribution:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: pnpm test:distribution
+        env:
+          DISTRIBUTION_ATTEMPT: ${{ matrix.attempt }}
+
+  checks:
+    if: always()
+    needs: [static, tests, e2e, distribution]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: node .github/scripts/ci-checks.mjs
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
 
   version:
     if:
