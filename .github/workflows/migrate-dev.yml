@@ -65,3 +65,11 @@ jobs:
           path: ${{ runner.temp }}/migration-${{ inputs.phase }}.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Summarize this migration phase
+        if: always()
+        continue-on-error: true
+        run: node .github/scripts/deploy-summary.mjs
+        env:
+          SUMMARY_PHASE: ${{ inputs.phase }}
+          SUMMARY_STATUS: ${{ job.status }}

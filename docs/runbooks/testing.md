@@ -41,8 +41,14 @@ reporter `github`, os retries e os traces existentes continuam ativos.
 Distribuição resume os tarballs, imports públicos e instalações efetivamente
 validados, além da duração. Não atribui contagens de testes a esses contratos.
 As durações dos reporters não incluem setup de Node/dependências nem builds
-anteriores. Release/migrations e checks estáticos mantêm os diagnósticos e
-estados de steps nativos do Actions, sem duplicá-los em resumos artificiais.
+anteriores. Release e checks estáticos mantêm os diagnósticos e estados de steps
+nativos do Actions. Deploy/migrations apresentam os resultados estruturados e
+outcomes dos steps conforme [Deploy](deployment.md#resumos-do-actions).
+`pnpm test:migrations` inclui os contratos de renderização: execução,
+reaplicação, no-op, falha/dirty, inelegibilidade, cancelamento, JSON incompleto,
+proteção de informações sensíveis e falhas de escrita. Usa um JSON real
+sanitizado do Deploy DEV #84 e variações no formato dos registros existentes,
+sem mutation remota.
 
 Os resumos são informativos: nenhuma contagem é extraída de logs, o estado e o
 exit code dos frameworks determinam o gate, e falhas de escrita de resumo não

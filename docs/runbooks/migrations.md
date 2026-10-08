@@ -178,6 +178,13 @@ conclusão e estado final são gravados no mesmo UPDATE atômico.
   artifact sanitizado por fase, retido 30 dias. Sucesso de Actions sozinho não
   comprova schema nem backfill.
 
+Os summaries são derivados desses registros e distinguem SQL executado de
+`already-applied`, fases sem operações e operações `ineligible` (Skipped).
+Contagens são parciais quando uma falha interrompe o registro da fase. O JSON
+completo permanece nos logs e artifacts, com schema/digest/SHA/run/tentativa
+inalterados. Veja [Resumos do Actions](deployment.md#resumos-do-actions) para
+estados, investigação, limites de cancelamento e leitura mobile.
+
 Wrangler recebe diretório temporário com **um único SQL autorizado** e binding
 DEV resolvido da configuração versionada. Um apply de expand não descobre
 contract. Preserva executor/journal oficiais. D1/Wrangler oferece rollback da

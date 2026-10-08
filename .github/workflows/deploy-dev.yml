@@ -48,6 +48,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Summarize validation
+        if: always()
+        continue-on-error: true
+        run: node .github/scripts/deploy-summary.mjs
+        env:
+          SUMMARY_PHASE: validate
+          SUMMARY_STATUS: ${{ job.status }}
+          SUMMARY_STEPS: ${{ toJSON(steps) }}
+
   expand:
     needs: validate
     uses: ./.github/workflows/migrate-dev.yml
@@ -105,6 +114,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Require the DEV schema before deploy (read-only)
+        id: schema
         run: node .github/scripts/migrations.mjs verify
         env:
           EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
@@ -113,6 +123,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_READ_TOKEN }}
 
       - name: Deploy DEV
+        id: publish
         working-directory: examples/links
         run: pnpm deploy:dev
         env:
@@ -121,10 +132,21 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Smoke test
+        id: health
         env:
           HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
           EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
         run: node .github/scripts/migration-health.mjs
+
+      - name: Summarize deploy and verification
+        if: always()
+        continue-on-error: true
+        run: node .github/scripts/deploy-summary.mjs
+        env:
+          SUMMARY_PHASE: deploy
+          SUMMARY_STATUS: ${{ job.status }}
+          SUMMARY_STEPS: ${{ toJSON(steps) }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
 
   backfill:
     needs: [validate, deploy]
