@@ -103,7 +103,29 @@ function memory(plan) {
     finish: async (id, status) => {
       state.attempts.find((a) => a.id === id).state = status;
     },
-    recordRecovery: async () => {},
+    recordRecovery: async (id, spec, correctionHash, ctx) => {
+      const row = state.attempts.find((a) => a.id === id);
+      const history = JSON.parse(row.recovery ?? "[]");
+      assert.equal(history.at(-1).recoveryId, ctx.recoveryId);
+      history.push({ ...spec, correctionHash, ...ctx, outcome: "running" });
+      row.recovery = JSON.stringify(history);
+    },
+    claimRecovery: async (attempt, spec, ctx) => {
+      const row = state.attempts.find((a) => a.id === attempt.id);
+      assert.equal(row.recovery, attempt.recovery);
+      row.recovery = JSON.stringify([
+        ...JSON.parse(row.recovery ?? "[]"),
+        { ...spec, ...ctx, outcome: "running" },
+      ]);
+    },
+    finishRecovery: async (id, ctx, outcome, status) => {
+      const row = state.attempts.find((a) => a.id === id);
+      const history = JSON.parse(row.recovery ?? "[]");
+      assert.equal(history.at(-1).recoveryId, ctx.recoveryId);
+      history.push({ ...history.at(-1), outcome });
+      row.recovery = JSON.stringify(history);
+      if (status) row.state = status;
+    },
     reconcileJournal: async (name) => {
       state.applied.push(name);
     },
