@@ -228,6 +228,18 @@ test("delete is single-submit, preserves filters and returns the last-page item 
   );
   await expect(page.getByRole("article")).toHaveCount(1);
   const held = gate();
+  const refreshHeld = gate();
+  const refreshStarted = gate();
+  const refreshOffsets: string[] = [];
+  await page.route("**/api/bookmarks?**", async (route) => {
+    const offset = new URL(route.request().url()).searchParams.get("offset")!;
+    refreshOffsets.push(offset);
+    if (offset === "20") {
+      refreshStarted.release();
+      await refreshHeld.promise;
+    }
+    await route.continue();
+  });
   let deletes = 0;
   await page.route("**/api/bookmarks/*", async (route) => {
     if (route.request().method() === "DELETE") {
@@ -259,8 +271,21 @@ test("delete is single-submit, preserves filters and returns the last-page item 
   ).toBeDisabled();
   held.release();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await refreshStarted.promise;
+  await expect(page).toHaveURL(
+    `${origin}/bookmarks?q=Matching&tag=docs&offset=20`,
+  );
+  await expect(
+    page.getByRole("region", { name: "Bookmark results" }),
+  ).toHaveAttribute("aria-busy", "true");
+  await expect(page.getByLabel("Loading bookmark rows")).toBeVisible();
+  refreshHeld.release();
   await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
   await expect(page.getByRole("article")).toHaveCount(20);
+  await expect(
+    page.getByRole("region", { name: "Bookmark results" }),
+  ).toHaveAttribute("aria-busy", "false");
+  expect(refreshOffsets).toEqual(["20"]);
   await expect(page.getByLabel("Search", { exact: true })).toHaveValue(
     "Matching",
   );
@@ -291,6 +316,7 @@ test("delete is single-submit, preserves filters and returns the last-page item 
     `${origin}/bookmarks?q=Matching&tag=docs&offset=20`,
   );
   expect(deletes).toBe(2);
+  expect(refreshOffsets).toEqual(["20", "20"]);
 });
 
 test("closing a pending delete does not claim rollback or success after a lost response", async ({
