@@ -1,5 +1,12 @@
 # @t00ls-dev/email
 
+## 0.1.2
+
+### Patch Changes
+
+- ab27036: Adota a licença MIT aprovada e inclui seu texto na distribuição, com
+  o aviso `Copyright (c) 2026 t00ls-dev` confirmado pelo mantenedor.
+
 ## 0.1.1
 
 ### Patch Changes

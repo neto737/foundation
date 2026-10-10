@@ -1,5 +1,33 @@
 # @t00ls-dev/auth
 
+## 0.2.0
+
+### Minor Changes
+
+- f58976d: Add opt-in password-login TOTP using public Better Auth APIs, with
+  explicit enrollment activation, no backup codes/OTP/trusted devices, typed
+  session state and indeterminate failure responses. Add optional
+  database-backed rate limiting with consumer-selected trusted IP headers;
+  existing consumers retain their default behavior.
+- 8b72814: Add opt-in public-auth Turnstile protection using the official Better
+  Auth CAPTCHA plugin, distinct actions and explicit pre-auth availability
+  errors, plus minimal opt-in widget CSP. Preserve existing auth/rate-limit
+  contracts and document the accepted Better Auth 1.7.7 truthy-success upstream
+  payload limitation.
+- a1e32b4: Add typed `resolveSession(headers)` for server-side session
+  resolution, including response headers needed to propagate session refresh
+  cookies. Keep the Better Auth API internal and preserve mandatory email
+  verification.
+
+### Patch Changes
+
+- ab27036: Adota a licença MIT aprovada e inclui seu texto na distribuição, com
+  o aviso `Copyright (c) 2026 t00ls-dev` confirmado pelo mantenedor.
+- bd335a8: Upgrade Better Auth to 1.7.7 to fix GHSA-965c-763c-88jm, isolating
+  OAuth state from Magic Link verification. Upgrade servers sharing verification
+  storage together, request new Magic Links, and restart pending OAuth sign-ins;
+  no database migration is required.
+
 ## 0.1.1
 
 ### Patch Changes
