@@ -4,7 +4,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { z } from "zod";
 import { extractEmailUrl } from "../test/email-link.js";
 
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 const password = "correct-horse-battery-staple";
 const invalidMessage =
   "This password link is invalid, expired, or already used.";

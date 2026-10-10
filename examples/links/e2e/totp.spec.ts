@@ -6,7 +6,7 @@ import { openNavigation } from "./navigation.js";
 
 // Enrollment fixtures contain ephemeral secrets: no persisted browser traces/video.
 test.use({ trace: "off", video: "off", screenshot: "off" });
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 const password = "correct-horse-battery-staple";
 const identity = z.object({
   user: z

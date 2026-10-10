@@ -189,7 +189,12 @@ try {
     );
     assert.equal(packed.name, source.name);
     assert.equal(packed.version, source.version);
-    assert.equal(packed.license, "UNLICENSED");
+    assert.equal(packed.license, "MIT");
+    assert(files.has("LICENSE"), `${name}: missing MIT license`);
+    assert.equal(
+      run("tar", ["-xOzf", tarball, "package/LICENSE"]),
+      readFileSync(join(root, "LICENSE"), "utf8"),
+    );
     for (const field of [
       "dependencies",
       "devDependencies",
@@ -210,7 +215,7 @@ try {
     }
     for (const file of files) {
       assert(
-        /^(dist\/.*\.(js|d\.ts)|README\.md|package\.json)$/.test(file),
+        /^(dist\/.*\.(js|d\.ts)|README\.md|LICENSE|package\.json)$/.test(file),
         `${name}: unexpected file ${file}`,
       );
       if (file.endsWith(".d.ts")) {

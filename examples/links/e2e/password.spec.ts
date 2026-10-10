@@ -5,7 +5,7 @@ import { extractEmailUrl } from "../test/email-link.js";
 
 const password = "correct-horse-battery-staple";
 const newPassword = "  replacement-horse-battery-staple  ";
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 const unconfirmed =
   "We couldn't confirm whether your password change completed. Try signing in again. If needed, use password reset.";
 const sessionSchema = z.object({

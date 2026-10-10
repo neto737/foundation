@@ -3,7 +3,7 @@ import { z } from "zod";
 import { openNavigation } from "./navigation.js";
 import { extractEmailUrl } from "../test/email-link.js";
 
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 const password = "correct-horse-battery-staple";
 const unconfirmed =
   "We couldn't confirm whether your name was saved. Reload Account to check before trying again.";

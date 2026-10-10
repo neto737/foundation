@@ -4,7 +4,7 @@ import { extractEmailUrl } from "../test/email-link.js";
 import { totp } from "../test/totp-harness.js";
 
 test.use({ trace: "off", video: "off", screenshot: "off" });
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 const password = "correct-horse-battery-staple";
 const sdk =
   "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";

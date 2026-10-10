@@ -16,6 +16,7 @@ import {
   reconcile,
   remainingPlan,
   validateContext,
+  validateRepository,
   validateManifests,
   validatePacket,
   validatePr,
@@ -124,8 +125,90 @@ const registry = (versions = ["0.1.0"], latest = versions.at(-1)) => ({
 });
 const invalid = (name, fn) => test(name, () => assert.throws(fn));
 
+const repositoryMetadata = (privateRepo) => ({
+  full_name: "t00ls-dev/foundation",
+  name: "foundation",
+  owner: { login: "t00ls-dev" },
+  default_branch: "master",
+  private: privateRepo,
+});
+for (const privateRepo of [false, true]) {
+  test(`release accepts exact repository with private=${privateRepo}`, () => {
+    validateRepository(repositoryMetadata(privateRepo));
+    validateContext(context(), true);
+  });
+  for (const change of [
+    { full_name: "t00ls-dev/other", name: "other" },
+    { full_name: "other/foundation", owner: { login: "other" } },
+    { name: "other" },
+    { owner: { login: "other" } },
+    { default_branch: "feature" },
+    { private: undefined },
+  ]) {
+    invalid(
+      `repository private=${privateRepo} rejects ${JSON.stringify(change)}`,
+      () =>
+        validateRepository({ ...repositoryMetadata(privateRepo), ...change }),
+    );
+  }
+  for (const change of [
+    { repository: "t00ls-dev/other" },
+    { repository: "other/foundation" },
+    { ref: "refs/heads/feature" },
+    { sha: "f".repeat(40) },
+    { event: "pull_request" },
+    { confirmation: undefined },
+  ]) {
+    invalid(
+      `release private=${privateRepo} rejects ${JSON.stringify(change)}`,
+      () => {
+        validateRepository(repositoryMetadata(privateRepo));
+        validateContext({ ...context(), ...change }, true);
+      },
+    );
+  }
+  test(`release private=${privateRepo} rejects invalid CI evidence`, () => {
+    validateRepository(repositoryMetadata(privateRepo));
+    assert.throws(() =>
+      validateCiRun(
+        { ...ciRun(), conclusion: "failure" },
+        [ciJob()],
+        ciWorkflow(),
+        sha,
+      ),
+    );
+  });
+}
+
+test("executor validates API repository identity for every context", () => {
+  const source = readFileSync(".github/scripts/release.mjs", "utf8");
+  assert.match(
+    source,
+    /const repo = await request\(gh\);\s+validateRepository\(repo\);/,
+  );
+  assert.match(source, /validateContext\(value, value.mode !== "audit"\)/);
+  assert.match(source, /await approvedCi\(value.executionSha\)/);
+});
+
+test("actual nine manifests use MIT and preserve restricted publication", () => {
+  for (const name of names) {
+    const pkg = JSON.parse(
+      readFileSync(`packages/${name.split("/")[1]}/package.json`, "utf8"),
+    );
+    assert.equal(pkg.license, "MIT");
+    assert.equal(
+      readFileSync(`packages/${name.split("/")[1]}/LICENSE`, "utf8"),
+      readFileSync("LICENSE", "utf8"),
+    );
+    assert.equal(pkg.publishConfig.access, "restricted");
+    assert.equal(pkg.publishConfig.registry, "https://npm.pkg.github.com");
+  }
+  assert.equal(JSON.parse(readFileSync("package.json", "utf8")).private, true);
+});
+
 function inputTree() {
   const paths = [
+    "LICENSE",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -142,6 +225,7 @@ function inputTree() {
       const dir = `packages/${name.split("/")[1]}`;
       return [
         `${dir}/package.json`,
+        `${dir}/LICENSE`,
         `${dir}/CHANGELOG.md`,
         `${dir}/src/index.ts`,
         `${dir}/tsconfig.build.json`,
@@ -408,7 +492,7 @@ test("real binding loader uses immutable commit/tree API identities", async () =
     }),
   );
 });
-test("repository fixture equivalent to #25 content plus #27 permitted delta", () => {
+test("repository fixture with MIT inputs preserves the #27 permitted delta", () => {
   const tree = {
     sha: execFileSync("git", ["rev-parse", "HEAD^{tree}"], {
       encoding: "utf8",
@@ -425,6 +509,18 @@ test("repository fixture equivalent to #25 content plus #27 permitted delta", ()
         return { path: line.slice(split + 1), mode, type, sha };
       }),
   };
+  for (const path of [
+    "LICENSE",
+    ...names.map((name) => `packages/${name.split("/")[1]}/LICENSE`),
+  ]) {
+    if (!tree.tree.some((entry) => entry.path === path))
+      tree.tree.push({
+        path,
+        mode: "100644",
+        type: "blob",
+        sha: hash(readFileSync(path), "sha1"),
+      });
+  }
   const execution = structuredClone(tree);
   for (const path of [
     ".github/scripts/release-core.mjs",
@@ -1295,7 +1391,7 @@ test("workspace policy and unauthorized version checks", () => {
     pkg: {
       name,
       version: name === names[0] ? "0.1.1" : "0.1.0",
-      license: "UNLICENSED",
+      license: "MIT",
       repository: "https://github.com/t00ls-dev/foundation",
       publishConfig: {
         registry: "https://npm.pkg.github.com",
@@ -1309,6 +1405,11 @@ test("workspace policy and unauthorized version checks", () => {
     pkg: { name: "@t00ls-dev/foundation", private: true },
   });
   validateManifests(manifests, record());
+  for (const license of ["UNLICENSED", "Apache-2.0", undefined]) {
+    manifests[0].pkg.license = license;
+    assert.throws(() => validateManifests(manifests, record()));
+  }
+  manifests[0].pkg.license = "MIT";
   manifests[0].pkg.version = "0.1.2";
   assert.throws(() => validateManifests(manifests, record()));
   manifests[0].pkg.version = "0.1.1";
@@ -1362,6 +1463,41 @@ test("actual Changesets 3.0.3 pack-directory format works offline without publis
     assert.equal(entry.name, pkg.name);
     assert.equal(entry.version, pkg.version);
     const bytes = readFileSync(join(out, entry.tarball.path));
+    const executor = readFileSync(".github/scripts/release.mjs", "utf8");
+    const inspectorSource = executor.slice(
+      executor.indexOf("function inspect("),
+      executor.indexOf("function packPlan("),
+    );
+    const inspector = (read) =>
+      runInNewContext(`${inspectorSource}; inspect`, {
+        assert,
+        join,
+        hash,
+        names,
+        registry: "https://npm.pkg.github.com",
+        readFileSync: read,
+        jsonFrom: (buffer) => JSON.parse(buffer.toString()),
+        run: (command, args) =>
+          execFileSync(command, args, { encoding: "utf8" }),
+        Buffer,
+      });
+    const inspected = {
+      ...entry,
+      path: entry.tarball.path,
+      hash: hash(bytes),
+      integrity: `sha512-${hash(bytes, "sha512", "base64")}`,
+      packIntegrity: entry.tarball.integrity,
+    };
+    inspector(readFileSync)(out, inspected);
+    assert.throws(
+      () =>
+        inspector((path, options) =>
+          path === "LICENSE"
+            ? "substituted license"
+            : readFileSync(path, options),
+        )(out, inspected),
+      /Artifact license differs from approved source/,
+    );
     validateArtifactPath({ ...entry, path: entry.tarball.path });
     assert.equal(
       entry.tarball.path,
@@ -1612,7 +1748,7 @@ function validateCiStructure(ci, setup) {
       { uses: "pnpm/action-setup@v6.1.0" },
       {
         uses: "actions/setup-node@v7",
-        with: { "node-version": "22.23.2", "cache": "pnpm" },
+        with: { "node-version": "22.23.3", "cache": "pnpm" },
       },
       { run: "pnpm install --frozen-lockfile", shell: "bash" },
     ],

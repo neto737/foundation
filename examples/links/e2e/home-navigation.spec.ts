@@ -4,7 +4,7 @@ import { z } from "zod";
 import { extractEmailUrl } from "../test/email-link.js";
 
 const password = "correct-horse-battery-staple";
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 
 async function mail(page: Page, email: string, subject: string) {
   const response = await page.request.get(

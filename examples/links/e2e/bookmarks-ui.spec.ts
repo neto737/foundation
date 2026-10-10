@@ -4,7 +4,7 @@ import { openNavigation } from "./navigation.js";
 import { extractEmailUrl } from "../test/email-link.js";
 import { bookmarkResponseSchema } from "../src/shared/bookmarks.js";
 
-const origin = "http://127.0.0.1:5174";
+import { origin } from "./urls.js";
 const password = "correct-horse-battery-staple";
 function gate() {
   let release!: () => void;

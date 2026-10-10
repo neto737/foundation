@@ -22,6 +22,7 @@ import {
   remainingPlan,
   repository,
   validateContext,
+  validateRepository,
   validateManifests,
   validatePacket,
   validatePr,
@@ -72,10 +73,7 @@ async function content(path, ref) {
 
 async function context() {
   const repo = await request(gh);
-  assert(
-    repo.private && repo.default_branch === "master",
-    "Repository must remain private with master base",
-  );
+  validateRepository(repo);
   const master = await request(`${gh}/git/ref/heads/master`);
   const value = {
     event: process.env.GITHUB_EVENT_NAME,
@@ -284,7 +282,12 @@ function inspect(directory, item) {
   );
   assert.equal(pkg.name, item.name);
   assert.equal(pkg.version, item.version);
-  assert.equal(pkg.license, "UNLICENSED");
+  assert.equal(pkg.license, "MIT");
+  assert.equal(
+    run("tar", ["-xOzf", path, "package/LICENSE"]),
+    readFileSync("LICENSE", "utf8"),
+    "Artifact license differs from approved source",
+  );
   assert(!pkg.private);
   assert.equal(pkg.repository, "https://github.com/t00ls-dev/foundation");
   assert.equal(pkg.publishConfig?.registry, registry);
@@ -315,7 +318,7 @@ function inspect(directory, item) {
     );
   for (const file of list) {
     assert(
-      /^(dist\/.*\.(js|d\.ts)|README\.md|CHANGELOG\.md|package\.json)$/.test(
+      /^(dist\/.*\.(js|d\.ts)|README\.md|CHANGELOG\.md|LICENSE|package\.json)$/.test(
         file,
       ),
       `Unexpected artifact file: ${file}`,

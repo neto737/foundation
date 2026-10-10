@@ -4,6 +4,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { appPort, origin } from "./e2e/urls.js";
 
 export default defineConfig(() => {
   const path = process.env.LINKS_E2E_STATE;
@@ -34,10 +35,11 @@ export default defineConfig(() => {
       tailwindcss(),
       cloudflare({
         configPath: "e2e/wrangler.jsonc",
+        config: (config) => ({ vars: { ...config.vars, BASE_URL: origin } }),
         persistState: { path },
         inspectorPort: false,
       }),
     ],
-    server: { host: "127.0.0.1", port: 5174, strictPort: true },
+    server: { host: "127.0.0.1", port: appPort, strictPort: true },
   };
 });

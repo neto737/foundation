@@ -1,5 +1,6 @@
 import process from "node:process";
 import { defineConfig, devices } from "@playwright/test";
+import { origin, assetsOrigin } from "./e2e/urls.js";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -9,7 +10,7 @@ export default defineConfig({
     ? [["github"], ["../../.github/scripts/playwright-summary.mjs"]]
     : "list",
   use: {
-    baseURL: "http://127.0.0.1:5174",
+    baseURL: origin,
     trace: "on-first-retry",
   },
   projects: [
@@ -21,13 +22,13 @@ export default defineConfig({
       command: "node --experimental-strip-types e2e/start.ts",
       reuseExistingServer: false,
       timeout: 120_000,
-      url: "http://127.0.0.1:5174/health",
+      url: `${origin}/health`,
     },
     {
       command: "node --experimental-strip-types e2e/start-assets.ts",
       reuseExistingServer: false,
       timeout: 120_000,
-      url: "http://127.0.0.1:5175/health",
+      url: `${assetsOrigin}/health`,
     },
   ],
 });

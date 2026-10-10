@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { z } from "zod";
 import { openNavigation } from "./navigation.js";
 import { extractEmailUrl } from "../test/email-link.js";
+import { origin } from "./urls.js";
 
 test("compact header and bookmark layouts preserve targets and long content at 320px, mobile and desktop", async ({
   page,
@@ -148,7 +149,6 @@ test("bookmark CRUD, search, tag and clear filters remain usable at 320px with r
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 900 });
-  const origin = "http://127.0.0.1:5174";
   const email = `mobile-bookmarks-${crypto.randomUUID()}@example.com`;
   const password = "correct-horse-battery-staple";
   expect(
