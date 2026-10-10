@@ -5,6 +5,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import type * as Urls from "./urls.js";
+// This entrypoint runs directly in Node's strip-types mode, without a bundler.
+const { assetsPort } = (await import(
+  new URL("./urls.ts", import.meta.url).href
+)) as typeof Urls;
 
 const state = await mkdtemp(join(tmpdir(), "links-assets-e2e-"));
 const worker = spawn(
@@ -16,7 +21,11 @@ const worker = spawn(
     "--config",
     "dist/foundation/wrangler.json",
     "--port",
-    "5175",
+    String(assetsPort),
+    "--ip",
+    "127.0.0.1",
+    "--inspector-port",
+    "0",
     "--persist-to",
     state,
     "--var",

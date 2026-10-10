@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { z } from "zod";
 import { extractEmailUrl } from "../test/email-link.js";
+import { origin } from "./urls.js";
 
 test("official reset GET exposes a stable final URL through real Worker/Assets without SPA navigation or consumption", async ({
   page,
 }) => {
-  const origin = "http://127.0.0.1:5174";
   const email = `reset-transport-${crypto.randomUUID()}@example.com`;
   expect(
     (

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const origin = "http://127.0.0.1:5175";
+import { assetsOrigin as origin } from "./urls.js";
 
 test("built SPA, static asset and Worker responses carry the central security policy", async ({
   request,

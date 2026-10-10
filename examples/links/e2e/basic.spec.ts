@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import { openNavigation } from "./navigation.js";
 import { extractEmailUrl } from "../test/email-link.js";
+import { origin } from "./urls.js";
 
 const password = "correct-horse-battery-staple";
 function email() {
@@ -20,9 +21,7 @@ async function verify(request: APIRequestContext, address: string) {
   expect(response.ok()).toBe(true);
   const message = z
     .object({
-      text: z
-        .string()
-        .transform((text) => extractEmailUrl(text, "http://127.0.0.1:5174")),
+      text: z.string().transform((text) => extractEmailUrl(text, origin)),
     })
     .parse(await response.json());
   return message.text;
@@ -255,7 +254,7 @@ test("guards double Google clicks, sanitizes initiation errors and retries using
     } else {
       await heldRedirect;
       await route.fulfill({
-        json: { redirect: true, url: "http://127.0.0.1:5174/__oauth-ui-test" },
+        json: { redirect: true, url: `${origin}/__oauth-ui-test` },
       });
     }
   });
@@ -471,7 +470,7 @@ test("isolates two browser users and refuses direct access to another user's boo
     .getAttribute("href");
   const id = editLink!.split("/")[2]!;
   const contextB = await browser.newContext({
-    baseURL: "http://127.0.0.1:5174",
+    baseURL: origin,
   });
   try {
     const b = await contextB.newPage();
@@ -483,10 +482,10 @@ test("isolates two browser users and refuses direct access to another user's boo
       await b.request.get(`/api/bookmarks/${id}`),
       await b.request.patch(`/api/bookmarks/${id}`, {
         data: { title: "Stolen" },
-        headers: { Origin: "http://127.0.0.1:5174" },
+        headers: { Origin: origin },
       }),
       await b.request.delete(`/api/bookmarks/${id}`, {
-        headers: { Origin: "http://127.0.0.1:5174" },
+        headers: { Origin: origin },
       }),
     ])
       expect(response.status()).toBe(404);
@@ -589,7 +588,7 @@ test("handles library loading, errors, retries, mutation failures and session ex
     .join("; ");
   await request.post("/api/auth/sign-out", {
     data: {},
-    headers: { Origin: "http://127.0.0.1:5174", Cookie: cookie },
+    headers: { Origin: origin, Cookie: cookie },
   });
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(
@@ -606,14 +605,14 @@ test("requires email verification and keeps service routes outside the SPA", asy
   const credentials = { email: address, password };
   const signup = await request.post("/api/auth/sign-up/email", {
     data: { ...credentials, name: "Unverified" },
-    headers: { Origin: "http://127.0.0.1:5174" },
+    headers: { Origin: origin },
   });
   expect(signup.ok()).toBe(true);
   expect(
     (
       await request.post("/api/auth/sign-in/email", {
         data: credentials,
-        headers: { Origin: "http://127.0.0.1:5174" },
+        headers: { Origin: origin },
       })
     ).status(),
   ).toBe(403);
@@ -705,7 +704,7 @@ test("paginates a private library with limit and offset", async ({ page }) => {
   for (let index = 0; index < 21; index++) {
     const response = await page.request.post("/api/bookmarks", {
       data: { title: `Bookmark ${index}`, url: `https://example.com/${index}` },
-      headers: { Origin: "http://127.0.0.1:5174" },
+      headers: { Origin: origin },
     });
     expect(response.status()).toBe(201);
   }
@@ -733,7 +732,7 @@ test("keeps B authenticated when A's pending mutation returns 401", async ({
     (
       await request.post("/api/auth/sign-up/email", {
         data: { email: b, password, name: "User B" },
-        headers: { Origin: "http://127.0.0.1:5174" },
+        headers: { Origin: origin },
       })
     ).ok(),
   ).toBe(true);
