@@ -1,10 +1,12 @@
-# Pacotes privados do Foundation
+# Pacotes e Release do Foundation
 
 Os nove pacotes reutilizáveis `@t00ls-dev/*` usam versões SemVer independentes,
 Changesets e GitHub Packages (`https://npm.pkg.github.com`). A raiz, examples,
 tests e tooling, incluindo create-app/doctor, permanecem privados e não são
-publicados. Os pacotes usam `UNLICENSED`. O deploy do Foundation continua
-DEV-only.
+publicados. O código próprio usa MIT, com o aviso `Copyright (c) 2026 t00ls-dev`
+confirmado pelo mantenedor, conforme [Licenças e distribuição](licensing.md). O
+acesso aos pacotes continua restrito; a visibilidade do repositório não o
+altera. O deploy do Foundation continua DEV-only.
 
 ## Histórico do bootstrap
 
@@ -62,14 +64,16 @@ Execute Release em `master` por `workflow_dispatch` com:
 O antigo input `expected_sha` foi removido e é rejeitado explicitamente, sem
 fallback. Dispatches antigos não devem ser reutilizados.
 
-O job audit tem somente leitura de packages. Verifica repositório privado,
-evento/ref/SHA, estado/base/head/autor do PR gerado, commit do bot, registro
-revisado, changesets consumidos e hashes no SHA base. Confere o checkout,
-instalação congelada, CI aprovada do `execution_sha`, ausência de changesets
-ativos, allowlist dos nove nomes, demais workspaces privados, UNLICENSED e
-registry. O registry é consultado autenticadamente; erros não são interpretados
-como versões ausentes. Versões inesperadas, downgrade, pacote inacessível ou
-alvo já publicado falham.
+O job audit tem somente leitura de packages. Aceita repositório público ou
+privado e verifica identidade exata retornada pela API (`full_name`, nome e
+proprietário `t00ls-dev/foundation`) e base `master`, evento/ref/SHA,
+estado/base/head/autor do PR gerado, commit do bot, registro revisado,
+changesets consumidos e hashes no SHA base. Confere o checkout, instalação
+congelada, CI aprovada do `execution_sha`, ausência de changesets ativos,
+allowlist dos nove nomes, demais workspaces privados, MIT e registry. O registry
+é consultado autenticadamente; erros não são interpretados como versões
+ausentes. Versões inesperadas, downgrade, pacote inacessível ou alvo já
+publicado falham.
 
 Release consulta a API de Actions com `actions: read` em cada validação de
 contexto, inclusive imediatamente antes e após a publicação. A evidência exige
@@ -156,7 +160,8 @@ inputs obrigatórios ausentes interrompem o fluxo.
 
 O plano calculado por Changesets precisa corresponder exatamente ao registro
 aprovado ainda ausente no registry. Só esses packages são empacotados pelo CLI;
-metadata, exports e arquivos são inspecionados. O resultado inclui hashes
+metadata, exports e arquivos são inspecionados. Cada tarball contém `LICENSE`
+idêntico ao texto raiz aprovado, além de manifest MIT. O resultado inclui hashes
 SHA-256/SHA-512 e um `plan_digest` SHA-256 do envelope canônico contendo PR,
 repository, release PR, release_sha, execution_sha, protectedInputsDigest,
 registro, audit_run e artifacts. Anote também o ID `audit_run`.

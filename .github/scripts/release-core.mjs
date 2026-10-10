@@ -17,6 +17,14 @@ export const names = [
 ].map((name) => `@t00ls-dev/${name}`);
 export const shaPattern = /^[0-9a-f]{40}$/;
 
+export function validateRepository(repo) {
+  assert.equal(repo.full_name, repository, "Wrong repository identity");
+  assert.equal(repo.name, "foundation", "Wrong repository name");
+  assert.equal(repo.owner?.login, "t00ls-dev", "Wrong repository owner");
+  assert.equal(repo.default_branch, "master", "Wrong repository base");
+  assert.equal(typeof repo.private, "boolean", "Missing repository visibility");
+}
+
 export const infrastructurePaths = [
   ".github/workflows/release.yml",
   ".github/scripts/release-core.mjs",
@@ -66,11 +74,13 @@ export function protectedInputs(tree) {
     });
   }
   for (const path of [
+    "LICENSE",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     ".changeset/release-plan.json",
     ...names.map((name) => `packages/${name.split("/")[1]}/package.json`),
+    ...names.map((name) => `packages/${name.split("/")[1]}/LICENSE`),
   ])
     assert(
       entries.some((entry) => entry.path === path),
@@ -493,7 +503,7 @@ export function validateManifests(manifests, record) {
       continue;
     }
     assert.equal(path, `packages/${pkg.name.split("/")[1]}`);
-    assert.equal(pkg.license, "UNLICENSED");
+    assert.equal(pkg.license, "MIT");
     assert.equal(pkg.repository, "https://github.com/t00ls-dev/foundation");
     assert.equal(pkg.publishConfig?.registry, registry);
     assert.equal(pkg.publishConfig?.access, "restricted");
