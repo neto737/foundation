@@ -24,7 +24,10 @@
   },
   "pnpm": {
     "overrides": {
-      "vitest>jsdom": "26.1.0"
+      "vitest>jsdom": "26.1.0",
+      "miniflare>undici": "7.29.1",
+      "miniflare>sharp": "0.35.5",
+      "@esbuild-kit/core-utils>esbuild": "0.25.12"
     }
   },
   "devDependencies": {

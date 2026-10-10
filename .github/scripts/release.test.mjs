@@ -1612,7 +1612,7 @@ function validateCiStructure(ci, setup) {
       { uses: "pnpm/action-setup@v6.1.0" },
       {
         uses: "actions/setup-node@v7",
-        with: { "node-version": "22.23.2", "cache": "pnpm" },
+        with: { "node-version": "22.23.3", "cache": "pnpm" },
       },
       { run: "pnpm install --frozen-lockfile", shell: "bash" },
     ],
