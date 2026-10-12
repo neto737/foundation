@@ -103,8 +103,8 @@ importers:
         specifier: ^5.20260918.1
         version: 5.20260922.1
       '@playwright/test':
-        specifier: ^1.63.0
-        version: 1.63.0
+        specifier: ^1.64.0
+        version: 1.64.0
       '@t00ls-dev/typescript-config':
         specifier: workspace:*
         version: link:../../tooling/typescript-config
@@ -1532,8 +1532,8 @@ packages:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
 
-  '@playwright/test@1.63.0':
-    resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
+  '@playwright/test@1.64.0':
+    resolution: {integrity: sha512-oTN9FNYuN6bqQMwiho6jJKLCG2/QOYCixGXuCjRmzOq23eODeukuY2XiAVoVpAECbuezMt1MHQjAiQxK8F+Y+g==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -3173,8 +3173,8 @@ packages:
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
 
-  node-abi@3.97.0:
-    resolution: {integrity: sha512-6Pu8F0eXGZlyz0EepPJrWgWDcBI8rKt2Wj8exOJU1tjVbu/VyZy5ZaLYS5N+Jp/Y3IP3sIRKcIOElTu7uC6KKA==}
+  node-abi@3.98.0:
+    resolution: {integrity: sha512-Llh8noNw7s15m+rmIrZnZQbe4gLyasL9loT74rC92PkmwWKeEedKvc7o6pjp8B3MhrYT/Cl846NOYZbz1wmddw==}
     engines: {node: '>=10'}
 
   normalize-path@3.0.0:
@@ -3249,13 +3249,13 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
-  playwright-core@1.63.0:
-    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+  playwright-core@1.64.0:
+    resolution: {integrity: sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg==}
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.63.0:
-    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+  playwright@1.64.0:
+    resolution: {integrity: sha512-kVzTnYFYEyQ9RGzBjNCd2+yEqWmVbxl3AHPynv3qQ6JTjv4a+kwRcnqQwIpuP3NnrnIrE/Q6wWAIAvMfIE2/Yg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -4745,9 +4745,9 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-  '@playwright/test@1.63.0':
+  '@playwright/test@1.64.0':
     dependencies:
-      playwright: 1.63.0
+      playwright: 1.64.0
 
   '@pnpm/deps.graph-sequencer@1100.0.1': {}
 
@@ -6260,7 +6260,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  node-abi@3.97.0:
+  node-abi@3.98.0:
     dependencies:
       semver: 7.8.5
     optional: true
@@ -6327,11 +6327,11 @@ snapshots:
 
   picomatch@4.0.7: {}
 
-  playwright-core@1.63.0: {}
+  playwright-core@1.64.0: {}
 
-  playwright@1.63.0:
+  playwright@1.64.0:
     dependencies:
-      playwright-core: 1.63.0
+      playwright-core: 1.64.0
 
   pngjs@5.0.0: {}
 
@@ -6351,7 +6351,7 @@ snapshots:
       minimist: 1.2.8
       mkdirp-classic: 0.5.3
       napi-build-utils: 2.0.0
-      node-abi: 3.97.0
+      node-abi: 3.98.0
       pump: 3.0.4
       rc: 1.2.8
       simple-get: 4.0.1
