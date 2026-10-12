@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "reviewedAt": "2026-10-12",
+  "installer": "skills@1.7.2",
+  "scope": "project",
+  "directory": ".agents/skills",
+  "skills": [
+    {
+      "name": "cloudflare",
+      "repository": "cloudflare/skills",
+      "commit": "c430dd965cea3a8faf0ef035e3b3d73b38518081",
+      "path": "skills/cloudflare",
+      "skillSha256": "1bf4996c74a94ab1b0ad1821b4e50f88484c6036a558831090f34d61c06d99ca",
+      "license": "licenses/cloudflare-skills.txt"
+    },
+    {
+      "name": "workers-best-practices",
+      "repository": "cloudflare/skills",
+      "commit": "c430dd965cea3a8faf0ef035e3b3d73b38518081",
+      "path": "skills/workers-best-practices",
+      "skillSha256": "8ae8c6e7359171ba6a1688503850fa05ce47199c4e288343bf55b5e277351bae",
+      "license": "licenses/cloudflare-skills.txt"
+    },
+    {
+      "name": "wrangler",
+      "repository": "cloudflare/skills",
+      "commit": "c430dd965cea3a8faf0ef035e3b3d73b38518081",
+      "path": "skills/wrangler",
+      "skillSha256": "9d9bd78c79823cdad36a88dbece8e48d8512c7262c66546ccbfac64ae08d310f",
+      "license": "licenses/cloudflare-skills.txt"
+    },
+    {
+      "name": "workers-profiling",
+      "repository": "cloudflare/skills",
+      "commit": "c430dd965cea3a8faf0ef035e3b3d73b38518081",
+      "path": "skills/workers-profiling",
+      "skillSha256": "fd608bf7d8e64708ddd301318007aa8581de5d2e1344231ea969e8fd1d0c9e4e",
+      "license": "licenses/cloudflare-skills.txt"
+    },
+    {
+      "name": "web-perf",
+      "repository": "cloudflare/skills",
+      "commit": "c430dd965cea3a8faf0ef035e3b3d73b38518081",
+      "path": "skills/web-perf",
+      "skillSha256": "79c531e95ca4d96a7de920c28c127c2c09ec55cd452a92222267d2954580be23",
+      "license": "licenses/cloudflare-skills.txt"
+    },
+    {
+      "name": "turborepo",
+      "repository": "vercel/turborepo",
+      "commit": "29352022807cc9c313b12eeab1aa35c14731becc",
+      "path": "skills/turborepo",
+      "skillSha256": "e475e520f1822f0de4ca5fbbfd37906949db67d35b038f2b8a76ef4c95c13c53",
+      "license": "licenses/vercel-turborepo.txt"
+    },
+    {
+      "name": "vercel-react-best-practices",
+      "repository": "vercel-labs/agent-skills",
+      "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
+      "path": "skills/react-best-practices",
+      "skillSha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355",
+      "license": "MIT declarada no frontmatter upstream; sem arquivo de licença"
+    },
+    {
+      "name": "postgres-drizzle",
+      "repository": "ccheney/robust-skills",
+      "commit": "0eea7b060d12e3520556a73b15fbfa79480987d1",
+      "path": "skills/postgres-drizzle",
+      "skillSha256": "a68232b5a4511e1c9ae1db2e0d5d2d8342fc9eb7fc5e7e4c7c7a45f07c149b83",
+      "license": "licenses/ccheney-robust-skills.txt"
+    },
+    {
+      "name": "playwright-cli",
+      "repository": "microsoft/playwright-cli",
+      "commit": "b85c7a736bb473bf55b584e54a09ffa698d6d871",
+      "path": "skills/playwright-cli",
+      "skillSha256": "9bba755285a4c9ad72a4a41b9c7baef6fb516d329c0b44ed0573715f4479b906",
+      "license": "licenses/microsoft-playwright-cli.txt"
+    },
+    {
+      "name": "vitest",
+      "repository": "antfu/skills",
+      "commit": "feb0f3aba6566426f12230e7fc7a10d97c1293bb",
+      "path": "skills/vitest",
+      "skillSha256": "d0c470a07b90936ca77fea9fbe25ab657a5bc1f386eb45b18bb70899df7e6baf",
+      "license": "licenses/antfu-skills.txt"
+    },
+    {
+      "name": "typescript-advanced-types",
+      "repository": "wshobson/agents",
+      "commit": "46891e7e60da0e52baf1050b7b6391b64e84c6d9",
+      "path": "plugins/javascript-typescript/skills/typescript-advanced-types",
+      "skillSha256": "c32101c65134d94ef1a3305ef486020b57be6408f97ed952c9c560e3fe04188d",
+      "license": "licenses/wshobson-agents.txt"
+    },
+    {
+      "name": "typescript-best-practices",
+      "repository": "cursor/plugins",
+      "commit": "1b6d44ff26d4e242f4e8f68c391e6d2f7ca16def",
+      "path": "pstack/skills/typescript-best-practices",
+      "skillSha256": "28f9e61710e205f6f3c5476f333483cff0e988f6a5b639e2faad536344b40c5e",
+      "license": "licenses/cursor-pstack.txt"
+    },
+    {
+      "name": "principle-type-system-discipline",
+      "repository": "cursor/plugins",
+      "commit": "1b6d44ff26d4e242f4e8f68c391e6d2f7ca16def",
+      "path": "pstack/skills/principle-type-system-discipline",
+      "skillSha256": "2e492cef34bb25a20b9115df61f9ef3a9837e3fda144ffda8079e5f45a1b72e8",
+      "license": "licenses/cursor-pstack.txt"
+    },
+    {
+      "name": "accessibility",
+      "repository": "addyosmani/web-quality-skills",
+      "commit": "afa8da942115f2961fdbfa80807ea0b232ff6c00",
+      "path": "skills/accessibility",
+      "skillSha256": "267fb2a0707d6142f2871f22688203a42ba21291a2aa200fb740936e41362b5d",
+      "license": "licenses/addyosmani-web-quality-skills.txt"
+    },
+    {
+      "name": "create-github-action-workflow-specification",
+      "repository": "github/awesome-copilot",
+      "commit": "70ddff7fab9d4d49743d221b56d761cff58048d0",
+      "path": "skills/create-github-action-workflow-specification",
+      "skillSha256": "25b57a8e4ed35e2e640dc9f6f255dc6c8f86574b98d2abc5153b5a8c9b22491c",
+      "license": "licenses/github-awesome-copilot.txt"
+    }
+  ]
+}
