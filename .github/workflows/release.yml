@@ -126,7 +126,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Retrieve original audit artifacts, never repack them
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           name: foundation-release-${{ inputs.plan_digest }}
           run-id: ${{ inputs.audit_run }}
@@ -182,7 +182,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@t00ls-dev"
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: verified-private-release
           path: ${{ runner.temp }}/private-release
