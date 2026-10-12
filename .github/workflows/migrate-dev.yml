@@ -57,7 +57,7 @@ jobs:
           DEV_HEALTH_URL: ${{ secrets.DEV_HEALTH_URL }}
       - name: Preserve sanitized operation evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name:
             migration-${{ inputs.phase }}-${{ github.run_id }}-${{
