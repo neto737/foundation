@@ -30,7 +30,7 @@ jobs:
     if: >-
       github.repository == 't00ls-dev/foundation' && (github.event_name ==
       'workflow_run' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     # Environment secrets resolve here, not on the caller's reusable-job entry.
     environment: dev
     steps:

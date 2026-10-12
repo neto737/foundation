@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   static:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -28,7 +28,7 @@ jobs:
       - run: pnpm typecheck
 
   tests:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,7 +51,7 @@ jobs:
       - run: pnpm test:migrations
 
   e2e:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +70,7 @@ jobs:
       - run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
 
   distribution:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -87,7 +87,7 @@ jobs:
   checks:
     if: always()
     needs: [static, tests, e2e, distribution]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: node .github/scripts/ci-checks.mjs
@@ -99,7 +99,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/master' &&
       github.repository == 't00ls-dev/foundation'
     needs: checks
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     # Shared with manual Release; never interrupt a publication.
     concurrency:
       group: foundation-private-release

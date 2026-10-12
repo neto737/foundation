@@ -31,7 +31,7 @@ jobs:
       github.repository == 't00ls-dev/foundation' && github.ref ==
       'refs/heads/master' && inputs.execution_sha == github.sha &&
       inputs.confirmation == 'RECONCILE_DEV_D1'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     environment: dev
     steps:
       - uses: actions/checkout@v7
