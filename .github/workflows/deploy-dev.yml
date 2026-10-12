@@ -35,7 +35,7 @@ jobs:
       github.event.workflow_run.head_branch == 'master' &&
       github.event.workflow_run.head_repository.full_name ==
       't00ls-dev/foundation'))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.ci.outputs.sha }}
     steps:
@@ -80,7 +80,7 @@ jobs:
       github.event.workflow_run.repository.full_name == 't00ls-dev/foundation'
       && github.event.workflow_run.head_repository.full_name ==
       't00ls-dev/foundation'))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     environment: dev
     steps:
       - name: Check out trusted workflow validator

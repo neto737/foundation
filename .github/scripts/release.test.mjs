@@ -1698,7 +1698,7 @@ function validateCiStructure(ci, setup) {
   );
   for (const [name, commands] of Object.entries(validationCommands)) {
     const expected = {
-      "runs-on": "ubuntu-26.04",
+      "runs-on": "ubuntu-latest",
       "steps": [
         { uses: "actions/checkout@v7", with: { "fetch-depth": 0 } },
         { uses: "./.github/actions/setup" },
@@ -1728,7 +1728,7 @@ function validateCiStructure(ci, setup) {
   assert.deepEqual(jobs.checks, {
     "if": "always()",
     "needs": Object.keys(validationCommands),
-    "runs-on": "ubuntu-26.04",
+    "runs-on": "ubuntu-latest",
     "steps": [
       { uses: "actions/checkout@v7" },
       {

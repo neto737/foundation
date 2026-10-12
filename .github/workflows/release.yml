@@ -46,7 +46,7 @@ concurrency:
 jobs:
   audit:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'audit'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
@@ -95,7 +95,7 @@ jobs:
     if:
       github.event_name == 'workflow_dispatch' && (inputs.mode == 'publish' ||
       inputs.mode == 'resume')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
@@ -156,7 +156,7 @@ jobs:
           && inputs.execution_sha == github.sha && needs.preflight.result ==
       'success' }}
     needs: preflight
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
