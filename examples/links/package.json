@@ -32,7 +32,7 @@
     "@t00ls-dev/security": "workspace:*",
     "@t00ls-dev/ui": "workspace:*",
     "better-auth": "^1.7.7",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.4",
     "hono": "^4.13.12",
     "lucide-react": "1.52.0",
     "qrcode": "1.5.4",
