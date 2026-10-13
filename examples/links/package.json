@@ -34,12 +34,12 @@
     "better-auth": "^1.7.7",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
-    "lucide-react": "1.52.0",
+    "lucide-react": "1.54.0",
     "qrcode": "1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-hook-form": "^7.88.0",
-    "react-router": "^8.3.1",
+    "react-hook-form": "^7.89.0",
+    "react-router": "^8.4.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -52,13 +52,13 @@
     "@types/qrcode": "1.5.6",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "cross-env": "^10.0.0",
     "drizzle-kit": "^0.31.11",
     "miniflare": "^4.20250906.0",
     "tailwindcss": "^4.1.13",
     "vite": "^8.3.4",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "wrangler": "^4.149.0"
   }
 }
