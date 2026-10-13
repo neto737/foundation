@@ -34,7 +34,7 @@
     "better-auth": "^1.7.7",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
-    "lucide-react": "1.54.0",
+    "lucide-react": "1.55.0",
     "qrcode": "1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
