@@ -40,8 +40,12 @@ da primeira entrega.
 - ESLint compartilhado em `@t00ls-dev/eslint-config`.
 - Formatação com Prettier.
 - Builds ordenados pelos limites de dependência do workspace.
-- Dependabot semanal, segunda-feira às 03:00 UTC, com limite de cinco PRs por
-  ecossistema.
+- Dependabot semanal, segunda-feira às 03:00 UTC, com limite de dez PRs de
+  versão por ecossistema. Atualizações minor/patch agrupadas por frontend,
+  tooling/testes e GitHub Actions; majors permanecem individuais.
+- Dependabot alerts e atualizações automáticas de segurança habilitados no
+  GitHub (verificado em 13/10/2026). Os grupos se aplicam somente a atualizações
+  de versão, cujo limite não restringe PRs de segurança.
 - `@types/node` mantido na major 22 enquanto esse for o runtime mínimo
   suportado.
 
