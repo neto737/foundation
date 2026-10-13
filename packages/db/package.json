@@ -37,7 +37,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^5.20260918.1",
+    "@cloudflare/workers-types": "^5.20261010.1",
     "drizzle-orm": "^0.45.4",
     "postgres": "^3.4.7"
   },

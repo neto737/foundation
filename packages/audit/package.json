@@ -33,7 +33,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^5.20260918.1",
+    "@cloudflare/workers-types": "^5.20261010.1",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
