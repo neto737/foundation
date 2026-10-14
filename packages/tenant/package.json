@@ -5,8 +5,8 @@
   "license": "MIT",
   "repository": "https://github.com/t00ls-dev/foundation",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "files": [
     "dist",

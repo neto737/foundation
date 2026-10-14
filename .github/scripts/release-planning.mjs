@@ -15,6 +15,9 @@ import {
   repository,
   validateAncestry,
   validateProtectedInputs,
+  validateDistribution,
+  snapshotChanges,
+  digest,
 } from "./release-core.mjs";
 
 export async function treeAtCommit(sha, request) {
@@ -30,7 +33,13 @@ export async function treeAtCommit(sha, request) {
   return tree;
 }
 
-export async function contentBinding(releaseSha, executionSha, request) {
+export async function contentBinding(
+  releaseSha,
+  executionSha,
+  request,
+  context = { distribution: "release" },
+  record,
+) {
   const root = `https://api.github.com/repos/${repository}`;
   assert(shaPattern.test(releaseSha) && shaPattern.test(executionSha));
   validateAncestry(
@@ -43,9 +52,18 @@ export async function contentBinding(releaseSha, executionSha, request) {
     executionSha === releaseSha
       ? releaseTree
       : await treeAtCommit(executionSha, request);
+  validateDistribution(context, record);
+  const changes = snapshotChanges(releaseTree, executionTree);
   return {
     releaseTree,
-    protectedInputsDigest: validateProtectedInputs(releaseTree, executionTree),
+    // Bootstrap audit is a proposal, not authorization. The separate owner approval
+    // binds this new immutable snapshot and all reviewed historical differences.
+    protectedInputsDigest: validateProtectedInputs(
+      context.distribution === "bootstrap" ? executionTree : releaseTree,
+      executionTree,
+    ),
+    changes,
+    changesDigest: digest({ releaseSha, snapshotSha: executionSha, changes }),
   };
 }
 
