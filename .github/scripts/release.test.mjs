@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { parse } from "yaml";
 import { runInNewContext } from "node:vm";
@@ -33,6 +39,19 @@ import {
   validateProtectedInputs,
   validateAncestry,
   validateAuditRun,
+  registry as officialRegistry,
+  approvalConfirmation,
+  bootstrapSha,
+  releaseOwner,
+  npmVersion,
+  snapshotChanges,
+  validateDistribution,
+  validateReleaseActor,
+  approvalCertificate,
+  validateApproval,
+  validatePublisherEnvironment,
+  canonical,
+  validateReviewEvidence,
 } from "./release-core.mjs";
 import {
   recordFromBase,
@@ -78,8 +97,12 @@ const context = () => ({
   mode: "publish",
   releasePr: 25,
   confirmation,
-  planDigest: "d".repeat(64),
+  planDigest: envelopeDigest(packet()),
   auditRun: 100,
+  approvalRun: 101,
+  distribution: "release",
+  changesDigest: "d".repeat(64),
+  reviewedChangesDigest: "d".repeat(64),
 });
 const pr = () => ({
   number: 25,
@@ -105,8 +128,14 @@ const artifacts = () => [
   },
 ];
 const packet = () => ({
-  format: 2,
+  format: 3,
   repository: "t00ls-dev/foundation",
+  registry: officialRegistry,
+  access: "public",
+  scopeOwner: "user:t00ls-dev",
+  distribution: "release",
+  snapshotSha: sha,
+  changesDigest: "d".repeat(64),
   releasePr: 25,
   releaseSha: sha,
   executionSha: sha,
@@ -124,6 +153,480 @@ const registry = (versions = ["0.1.0"], latest = versions.at(-1)) => ({
   },
 });
 const invalid = (name, fn) => test(name, () => assert.throws(fn));
+
+const bootstrapRecord = () =>
+  JSON.parse(readFileSync(".changeset/release-plan.json", "utf8"));
+const bootstrapContext = () => ({
+  ...context(),
+  distribution: "bootstrap",
+  releasePr: 30,
+  releaseSha: bootstrapSha,
+});
+const owner = () => ({ ...releaseOwner, type: "User" });
+const releaseWorkflow = () => ({
+  id: 456,
+  path: ".github/workflows/release.yml",
+});
+const ownerPermission = () => ({ permission: "admin", user: owner() });
+const approvalRun = () => ({
+  id: 101,
+  run_attempt: 1,
+  workflow_id: 456,
+  path: ".github/workflows/release.yml",
+  repository: { full_name: "t00ls-dev/foundation" },
+  head_repository: { full_name: "t00ls-dev/foundation" },
+  event: "workflow_dispatch",
+  head_branch: "master",
+  head_sha: sha,
+  actor: owner(),
+  triggering_actor: owner(),
+  status: "completed",
+  conclusion: "success",
+});
+const approvalJobs = () => [
+  {
+    name: "approve",
+    run_id: 101,
+    run_attempt: 1,
+    head_sha: sha,
+    status: "completed",
+    conclusion: "success",
+  },
+];
+
+test("bootstrap observation is not permission to publish; exact historical plan is required", async () => {
+  const r = bootstrapRecord(),
+    c = bootstrapContext();
+  validateDistribution(c, r);
+  const state = await registryInventory("bootstrap", async () => ({
+    status: 404,
+    json: async () => ({ error: "Not found" }),
+  }));
+  assert.deepEqual(Object.keys(state), names);
+  assert.throws(() => reconcile(r, state), /previous version/);
+  assert.equal(remainingPlan(r, reconcile(r, state, [], c), "audit").length, 9);
+  assert.throws(
+    () => validateContext({ ...c, approvalRun: undefined }, true),
+    /approval_run/,
+  );
+  for (const change of [
+    { releasePr: 31 },
+    { releaseSha: sha },
+    { distribution: undefined },
+  ])
+    assert.throws(() => validateDistribution({ ...c, ...change }, r));
+  for (const mutate of [
+    (r) => r.packages.pop(),
+    (r) => (r.packages[0].version = "0.1.3"),
+    (r) => (r.packages[0].oldVersion = "0.0.0"),
+  ]) {
+    const changed = bootstrapRecord();
+    mutate(changed);
+    assert.throws(() => validateDistribution(c, changed));
+  }
+});
+
+test("bootstrap rejects ambiguous absence, auth/server failures and foreign pre-existing versions", async () => {
+  for (const status of [401, 403, 500, 503, 206])
+    await assert.rejects(
+      registryInventory("bootstrap", async () => ({ status, ok: false })),
+    );
+  await assert.rejects(
+    registryInventory("bootstrap", async () => ({
+      status: 404,
+      json: async () => ({ error: "unauthorized" }),
+    })),
+  );
+  const r = bootstrapRecord(),
+    c = bootstrapContext();
+  const state = Object.fromEntries(
+    r.packages.map((p) => [
+      p.name,
+      { name: p.name, versions: [], latest: null, integrities: {} },
+    ]),
+  );
+  state[names[0]].versions = ["0.1.1"];
+  assert.throws(() => reconcile(r, state, [], c), /Unexpected existing/);
+});
+
+test("bootstrap partial resume retains exact artifacts and then normal npm continuity", () => {
+  const r = bootstrapRecord(),
+    c = bootstrapContext();
+  const a = r.packages.map((p) => ({ name: p.name, integrity: sri(p.name) }));
+  const state = Object.fromEntries(
+    r.packages.map((p, i) => [
+      p.name,
+      {
+        name: p.name,
+        versions: i === 0 ? [p.version] : [],
+        latest: i === 0 ? p.version : null,
+        integrities: i === 0 ? { [p.version]: a[i].integrity } : {},
+      },
+    ]),
+  );
+  const states = reconcile(r, state, a, c);
+  assert.equal(remainingPlan(r, states, "resume").length, 8);
+  assert.throws(() => remainingPlan(r, states, "publish"));
+  const damaged = structuredClone(state);
+  damaged[names[0]].integrities[r.packages[0].version] = "sha512-wrong";
+  assert.throws(() => remainingPlan(r, reconcile(r, damaged, a, c), "resume"));
+  const next = record();
+  next.packages[0] = {
+    ...next.packages[0],
+    oldVersion: "0.1.2",
+    version: "0.1.3",
+  };
+  assert.equal(reconcile(next, state)[0].state, "absent");
+  assert.throws(() =>
+    reconcile(next, {
+      [names[0]]: { name: names[0], versions: [], latest: null },
+    }),
+  );
+});
+
+test("owner approval is proven by exact GitHub actor ID and current admin permission", () => {
+  const p = packet(),
+    c = context(),
+    run = approvalRun();
+  const actor = validateReleaseActor(
+    run,
+    releaseWorkflow(),
+    ownerPermission(),
+    { ...c, runId: run.id },
+  );
+  const certificate = approvalCertificate(p, actor, run.id);
+  validateApproval(
+    certificate,
+    run,
+    approvalJobs(),
+    releaseWorkflow(),
+    ownerPermission(),
+    p,
+    c,
+  );
+  for (const mutate of [
+    (r) => r.actor.id++,
+    (r) => (r.actor.login = "another"),
+    (r) => (r.actor.type = "Bot"),
+    (r) => r.triggering_actor.id++,
+    (r) => r.run_attempt++,
+    (r) => (r.head_sha = "f".repeat(40)),
+    (r) => (r.event = "push"),
+    (r) => (r.path = ".github/workflows/other.yml"),
+    (r) => (r.head_repository.full_name = "fork/foundation"),
+    (r) => (r.status = "in_progress"),
+    (r) => (r.conclusion = "failure"),
+  ]) {
+    const changed = approvalRun();
+    mutate(changed);
+    assert.throws(() =>
+      validateApproval(
+        certificate,
+        changed,
+        approvalJobs(),
+        releaseWorkflow(),
+        ownerPermission(),
+        p,
+        c,
+      ),
+    );
+  }
+  assert.throws(() =>
+    validateApproval(
+      certificate,
+      run,
+      approvalJobs(),
+      releaseWorkflow(),
+      { ...ownerPermission(), permission: "write" },
+      p,
+      c,
+    ),
+  );
+  assert.throws(() =>
+    validateApproval(
+      certificate,
+      run,
+      [],
+      releaseWorkflow(),
+      ownerPermission(),
+      p,
+      c,
+    ),
+  );
+  assert.throws(() =>
+    validateApproval(
+      certificate,
+      run,
+      [...approvalJobs(), ...approvalJobs()],
+      releaseWorkflow(),
+      ownerPermission(),
+      p,
+      c,
+    ),
+  );
+  assert.throws(() =>
+    validateApproval(
+      certificate,
+      run,
+      approvalJobs(),
+      releaseWorkflow(),
+      ownerPermission(),
+      p,
+      { ...c, approvalRun: undefined },
+    ),
+  );
+});
+
+test("approval rejects stale snapshot, artifacts, registry, historical deltas and self-declared authority", () => {
+  const p = packet(),
+    run = approvalRun();
+  const certificate = approvalCertificate(
+    p,
+    { ...releaseOwner, permission: "admin" },
+    run.id,
+  );
+  for (const [key, value] of Object.entries({
+    registry: "https://npm.pkg.github.com",
+    access: "restricted",
+    snapshotSha: "f".repeat(40),
+    artifactsDigest: "f".repeat(64),
+    planDigest: "f".repeat(64),
+    changesDigest: "f".repeat(64),
+    distribution: "bootstrap",
+    actor: { ...releaseOwner, permission: "write" },
+  }))
+    assert.throws(() =>
+      validateApproval(
+        { ...certificate, [key]: value },
+        run,
+        approvalJobs(),
+        releaseWorkflow(),
+        ownerPermission(),
+        p,
+        context(),
+      ),
+    );
+  const changed = packet();
+  changed.artifacts[0].hash = "0".repeat(64);
+  assert.throws(() =>
+    validateApproval(
+      certificate,
+      run,
+      approvalJobs(),
+      releaseWorkflow(),
+      ownerPermission(),
+      changed,
+      context(),
+    ),
+  );
+  assert.throws(() =>
+    validateApproval(
+      { approved: true },
+      run,
+      approvalJobs(),
+      releaseWorkflow(),
+      ownerPermission(),
+      p,
+      context(),
+    ),
+  );
+});
+
+test("new envelope binds destination and rejects every old envelope and unapproved changes", () => {
+  const p = packet(),
+    c = { ...context(), planDigest: envelopeDigest(p) };
+  validatePacket(p, c, record());
+  for (const change of [
+    { format: 1 },
+    { format: 2 },
+    { registry: "https://npm.pkg.github.com" },
+    { access: "restricted" },
+    { scopeOwner: "org:t00ls-dev" },
+    { changesDigest: "f".repeat(64) },
+    { snapshotSha: "f".repeat(40) },
+    { distribution: "bootstrap" },
+  ])
+    assert.throws(() => validatePacket({ ...p, ...change }, c, record()));
+  assert.notEqual(
+    envelopeDigest({ ...p, registry: "https://npm.pkg.github.com" }),
+    c.planDigest,
+  );
+  validateContext(
+    {
+      ...c,
+      mode: "approve",
+      confirmation: approvalConfirmation,
+      approvalRun: undefined,
+    },
+    true,
+  );
+  assert.throws(() =>
+    validateContext({ ...c, reviewedChangesDigest: undefined }, true),
+  );
+  assert.throws(() =>
+    validateContext(
+      { ...c, confirmation: "PUBLISH_PRIVATE_FOUNDATION_PACKAGES" },
+      true,
+    ),
+  );
+});
+
+test("snapshot review covers complete historical differences including executor exceptions", () => {
+  const before = inputTree(),
+    after = structuredClone(before);
+  after.tree.find((f) => f.path === "packages/access/package.json").sha =
+    "f".repeat(40);
+  after.tree.find((f) => f.path === infrastructurePaths[0]).sha = "e".repeat(
+    40,
+  );
+  assert.throws(() => validateProtectedInputs(before, after));
+  const changes = snapshotChanges(before, after);
+  assert.deepEqual(
+    changes.map((c) => c.path),
+    [infrastructurePaths[0], "packages/access/package.json"],
+  );
+  assert.notEqual(digest(changes), digest([]));
+  const evidence = {
+    releaseSha: bootstrapSha,
+    snapshotSha: sha,
+    changesDigest: digest(changes),
+    changes,
+  };
+  validateReviewEvidence(evidence, structuredClone(evidence));
+  assert.throws(() =>
+    validateReviewEvidence({ ...evidence, changes: [] }, evidence),
+  );
+  const forgedReview = structuredClone(evidence);
+  forgedReview.changes[0].after.oid = "0".repeat(40);
+  assert.throws(() => validateReviewEvidence(forgedReview, evidence));
+  const approved = structuredClone(after);
+  approved.tree.find((f) => f.path === "packages/access/package.json").sha =
+    "d".repeat(40);
+  assert.throws(() => validateProtectedInputs(after, approved));
+});
+
+test("OIDC requires the pinned npm and rejects missing context or token fallback", () => {
+  const env = {
+    ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/oidc",
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic",
+  };
+  validatePublisherEnvironment(env, npmVersion);
+  assert.throws(() => validatePublisherEnvironment(env, "10.9.8"));
+  assert.throws(() => validatePublisherEnvironment({}, npmVersion));
+  for (const name of ["NODE_AUTH_TOKEN", "NPM_TOKEN", "NPM_CONFIG_TOKEN"])
+    assert.throws(() =>
+      validatePublisherEnvironment({ ...env, [name]: "synthetic" }, npmVersion),
+    );
+  assert.equal(
+    JSON.parse(readFileSync("node_modules/npm/package.json", "utf8")).version,
+    npmVersion,
+  );
+});
+
+test("actual Changesets to pnpm tarball publisher delegates to explicit npm path without publishing", () => {
+  const temp = mkdtempSync(join(tmpdir(), "foundation-npm-wrapper-"));
+  try {
+    const pkg = JSON.parse(
+      readFileSync("packages/access/package.json", "utf8"),
+    );
+    const input = join(temp, "plan.json"),
+      packed = join(temp, "packed"),
+      consumer = join(temp, "consumer"),
+      captured = join(temp, "captured.json"),
+      npmStub = join(temp, "npm-stub.cjs");
+    const release = {
+      kind: "publish",
+      name: pkg.name,
+      version: pkg.version,
+      access: "public",
+      tag: "latest",
+    };
+    writeFileSync(input, JSON.stringify({ version: 1, plan: [[release]] }));
+    execFileSync(
+      "pnpm",
+      [
+        "exec",
+        "changeset",
+        "pack",
+        "--from-publish-plan",
+        input,
+        "--out-dir",
+        packed,
+      ],
+      { encoding: "utf8" },
+    );
+    const plan = JSON.parse(
+      readFileSync(join(packed, "publish-plan.json"), "utf8"),
+    );
+    const artifact = join(packed, plan.plan[0][0].tarball.path);
+    const originalHash = hash(readFileSync(artifact));
+    mkdirSync(join(consumer, "packages/access"), { recursive: true });
+    mkdirSync(join(consumer, ".changeset"));
+    writeFileSync(
+      join(consumer, "package.json"),
+      JSON.stringify({
+        name: "wrapper-fixture",
+        private: true,
+        packageManager: "pnpm@10.15.1",
+      }),
+    );
+    writeFileSync(
+      join(consumer, "pnpm-workspace.yaml"),
+      "packages:\n  - packages/*\n",
+    );
+    writeFileSync(
+      join(consumer, "packages/access/package.json"),
+      JSON.stringify(pkg),
+    );
+    writeFileSync(
+      join(consumer, ".changeset/config.json"),
+      JSON.stringify({
+        ...JSON.parse(readFileSync(".changeset/config.json", "utf8")),
+        ignore: [],
+      }),
+    );
+    // The only npm executable in this test is a recorder: no registry requests.
+    writeFileSync(
+      npmStub,
+      `#!/usr/bin/env node\nconst fs=require("node:fs");fs.writeFileSync(${JSON.stringify(captured)},JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),oidcPresent:Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN)}));console.log("{}");\n`,
+      { mode: 0o755 },
+    );
+    execFileSync(
+      process.execPath,
+      [
+        resolve("node_modules/@changesets/cli/bin.js"),
+        "publish",
+        "--from-pack-dir",
+        packed,
+        "--no-git-tag",
+      ],
+      {
+        encoding: "utf8",
+        cwd: consumer,
+        env: {
+          ...process.env,
+          npm_config_npm_path: npmStub,
+          npm_config_registry: officialRegistry,
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic",
+        },
+      },
+    );
+    const invocation = JSON.parse(readFileSync(captured, "utf8"));
+    assert.equal(invocation.args[0], "publish");
+    assert.equal(resolve(invocation.cwd, invocation.args[1]), artifact);
+    assert(
+      invocation.args.includes("public") && invocation.args.includes("latest"),
+    );
+    assert.equal(invocation.oidcPresent, true);
+    assert.equal(
+      hash(readFileSync(artifact)),
+      originalHash,
+      "Publisher must not repack approved bytes",
+    );
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
 
 const repositoryMetadata = (privateRepo) => ({
   full_name: "t00ls-dev/foundation",
@@ -190,7 +693,7 @@ test("executor validates API repository identity for every context", () => {
   assert.match(source, /await approvedCi\(value.executionSha\)/);
 });
 
-test("actual nine manifests use MIT and preserve restricted publication", () => {
+test("actual nine manifests use MIT and public npm publication", () => {
   for (const name of names) {
     const pkg = JSON.parse(
       readFileSync(`packages/${name.split("/")[1]}/package.json`, "utf8"),
@@ -200,8 +703,8 @@ test("actual nine manifests use MIT and preserve restricted publication", () => 
       readFileSync(`packages/${name.split("/")[1]}/LICENSE`, "utf8"),
       readFileSync("LICENSE", "utf8"),
     );
-    assert.equal(pkg.publishConfig.access, "restricted");
-    assert.equal(pkg.publishConfig.registry, "https://npm.pkg.github.com");
+    assert.equal(pkg.publishConfig.access, "public");
+    assert.equal(pkg.publishConfig.registry, officialRegistry);
   }
   assert.equal(JSON.parse(readFileSync("package.json", "utf8")).private, true);
 });
@@ -573,6 +1076,7 @@ test("resume binds both SHAs and original protected inputs/artifacts", () => {
       masterSha: "d".repeat(40),
     };
   p.executionSha = c.executionSha;
+  p.snapshotSha = c.executionSha;
   c.planDigest = envelopeDigest(p);
   validateContext(c, true);
   validatePacket(p, c, record());
@@ -612,10 +1116,11 @@ test("resume binds both SHAs and original protected inputs/artifacts", () => {
   validateContext(newExecutor, true);
   assert.throws(
     () => validatePacket(p, newExecutor, record()),
-    /execution SHA/,
+    /execution SHA|Snapshot differs/,
   );
   const changed = structuredClone(p);
   changed.executionSha = newExecutor.executionSha;
+  changed.snapshotSha = newExecutor.executionSha;
   assert.notEqual(envelopeDigest(changed), c.planDigest);
   assert.throws(
     () => validatePacket(changed, newExecutor, record()),
@@ -634,6 +1139,7 @@ test("audit run provenance binds execution SHA, not historical release SHA", () 
   const c = { ...context(), executionSha: "d".repeat(40) };
   const audit = {
     id: c.auditRun,
+    run_attempt: 1,
     event: "workflow_dispatch",
     conclusion: "success",
     head_branch: "master",
@@ -669,7 +1175,7 @@ const packument = (
         version,
         dist: {
           integrity: sri(`${name}@${version}`),
-          tarball: `https://npm.pkg.github.com/download/${name}/${version}/fixture`,
+          tarball: `${officialRegistry}/${name}/-/${name.split("/")[1]}-${version}.tgz`,
         },
       },
     ]),
@@ -689,26 +1195,21 @@ test("valid packument yields only observed registry facts, no administrative cla
       !("repository" in result),
   );
 });
-test("real inventory queries all nine npm packuments directly with authenticated full metadata", async () => {
+test("real inventory reads all nine npm packuments without credentials", async () => {
   const urls = [];
-  const result = await registryInventory(
-    "fixture-token",
-    async (url, options) => {
-      urls.push(url);
-      assert.equal(new URL(url).origin, "https://npm.pkg.github.com");
-      assert.equal(options.headers.Authorization, "Bearer fixture-token");
-      assert.equal(options.headers.Accept, "application/json");
-      assert.equal(options.redirect, "error");
-      assert(options.signal instanceof AbortSignal);
-      const name = decodeURIComponent(new URL(url).pathname.slice(1));
-      return { ok: true, status: 200, json: async () => packument(name) };
-    },
-  );
+  const result = await registryInventory("release", async (url, options) => {
+    urls.push(url);
+    assert.equal(new URL(url).origin, officialRegistry);
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(options.headers.Accept, "application/json");
+    assert.equal(options.redirect, "error");
+    assert(options.signal instanceof AbortSignal);
+    const name = decodeURIComponent(new URL(url).pathname.slice(1));
+    return { ok: true, status: 200, json: async () => packument(name) };
+  });
   assert.deepEqual(
     urls,
-    names.map(
-      (name) => `https://npm.pkg.github.com/${name.replace("/", "%2F")}`,
-    ),
+    names.map((name) => `${officialRegistry}/${name.replace("/", "%2F")}`),
   );
   assert.deepEqual(Object.keys(result), names);
   assert.equal(reconcile(record(), result)[0].state, "absent");
@@ -814,12 +1315,12 @@ for (const [label, mutate] of [
 for (const status of [401, 403, 404, 500, 503, 206])
   test(`inventory fails closed on HTTP ${status}, never onboards on 404`, async () => {
     await assert.rejects(
-      registryInventory("fixture-token", async () => ({
+      registryInventory("release", async () => ({
         ok: status < 300,
         status,
         json: async () => packument(),
       })),
-      /Authenticated request failed/,
+      /Registry request failed/,
     );
   });
 test("inventory rejects network failure, timeout and invalid JSON", async () => {
@@ -828,12 +1329,12 @@ test("inventory rejects network failure, timeout and invalid JSON", async () => 
     new DOMException("timeout", "TimeoutError"),
   ])
     await assert.rejects(
-      registryInventory("fixture-token", async () => {
+      registryInventory("release", async () => {
         throw failure;
       }),
     );
   await assert.rejects(
-    registryInventory("fixture-token", async () => ({
+    registryInventory("release", async () => ({
       ok: true,
       status: 200,
       json: async () => {
@@ -1250,7 +1751,11 @@ test("valid internal dependency propagation", () => {
   validateRecord(r);
 });
 invalid("digest divergent", () =>
-  validatePacket(packet(), context(), record()),
+  validatePacket(
+    packet(),
+    { ...context(), planDigest: "0".repeat(64) },
+    record(),
+  ),
 );
 invalid("computed Changesets plan differs", () =>
   validatePublishPlan(
@@ -1262,7 +1767,7 @@ invalid("computed Changesets plan differs", () =>
             name: names[1],
             version: "0.1.1",
             kind: "publish",
-            access: "restricted",
+            access: "public",
             tag: "latest",
           },
         ],
@@ -1394,8 +1899,8 @@ test("workspace policy and unauthorized version checks", () => {
       license: "MIT",
       repository: "https://github.com/t00ls-dev/foundation",
       publishConfig: {
-        registry: "https://npm.pkg.github.com",
-        access: "restricted",
+        registry: officialRegistry,
+        access: "public",
       },
       files: ["dist", "README.md"],
     },
@@ -1438,7 +1943,7 @@ test("actual Changesets 3.0.3 pack-directory format works offline without publis
               kind: "publish",
               name: pkg.name,
               version: pkg.version,
-              access: "restricted",
+              access: "public",
               tag: "latest",
             },
           ],
@@ -1473,8 +1978,9 @@ test("actual Changesets 3.0.3 pack-directory format works offline without publis
         assert,
         join,
         hash,
+        canonical,
         names,
-        registry: "https://npm.pkg.github.com",
+        registry: officialRegistry,
         readFileSync: read,
         jsonFrom: (buffer) => JSON.parse(buffer.toString()),
         run: (command, args) =>
@@ -1545,7 +2051,7 @@ test("actual Changesets 3.0.3 pack-directory format works offline without publis
   }
 });
 
-test("workflow cannot publish on push or audit; only publisher has packages:write", () => {
+test("workflow separates audit/owner approval/publication; only publisher has OIDC", () => {
   const workflow = parse(readFileSync(".github/workflows/release.yml", "utf8"));
   const ci = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
@@ -1556,22 +2062,18 @@ test("workflow cannot publish on push or audit; only publisher has packages:writ
     workflow.on.workflow_dispatch.inputs.execution_sha.required,
     true,
   );
-  for (const name of ["audit", "preflight", "publish"]) {
-    assert.equal(
-      workflow.jobs[name].env.RELEASE_SHA,
-      "${{ inputs.release_sha }}",
-    );
-    assert.equal(
-      workflow.jobs[name].env.EXECUTION_SHA,
-      "${{ inputs.execution_sha }}",
-    );
-    assert(!("EXPECTED_SHA" in workflow.jobs[name].env));
+  for (const name of ["audit", "approve", "preflight", "publish"]) {
+    assert.equal(workflow.jobs[name].permissions.packages, undefined);
+    assert.equal(workflow.env.RELEASE_SHA, "${{ inputs.release_sha }}");
+    assert.equal(workflow.env.EXECUTION_SHA, "${{ inputs.execution_sha }}");
+    assert(!("EXPECTED_SHA" in workflow.env));
   }
-  assert.equal(workflow.jobs.audit.permissions.packages, "read");
-  assert.equal(workflow.jobs.preflight.permissions.packages, "read");
+  assert.equal(workflow.jobs.audit.permissions["id-token"], undefined);
+  assert.equal(workflow.jobs.approve.permissions["id-token"], undefined);
+  assert.equal(workflow.jobs.preflight.permissions["id-token"], undefined);
   assert.deepEqual(
     Object.entries(workflow.jobs)
-      .filter(([, job]) => job.permissions?.packages === "write")
+      .filter(([, job]) => job.permissions?.["id-token"] === "write")
       .map(([name]) => name),
     ["publish"],
   );

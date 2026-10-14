@@ -26,15 +26,15 @@ relicencia esses componentes.
 
 Licença do código, visibilidade do repositório e publicação de pacotes são
 decisões distintas. Workspaces com `private: true` continuam sem publicação npm,
-embora seu código próprio esteja no escopo da licença raiz. Os nove nomes
-distribuídos continuam no GitHub Packages com `access: restricted`; não há
-publicação npmjs nem acesso anônimo ao registry prometidos.
+embora seu código próprio esteja no escopo da licença raiz. O destino oficial
+dos nove nomes é npmjs.com público no scope do usuário `t00ls-dev`. Preparação
+local não significa publicação: o histórico privado GitHub permanece intacto.
 
 Versões antigas publicadas como `UNLICENSED` não são reempacotadas ou alteradas
-retroativamente. A transição deve gerar novas versões via Changesets, após
-revisão, CI e autorização explícita. A mudança da licença e dos gates exige nova
-base de Release, novo audit e novo digest: não reaproveite o PR de
-versionamento, artifacts ou autorizações anteriores para esses bytes.
+retroativamente. Os alvos MIT planejados no #30 permanecem preservados para
+bootstrap, sujeito a audit e nova aprovação integral do snapshot/destino/bytes.
+O record histórico conserva sua proveniência; artifacts e autorizações antigas
+GitHub não autorizam npm. Mudanças seguintes usam Changesets após revisão/CI.
 
 Consulte [Pacotes e Release](packages.md) para identidade, integridade,
 provenance, preflight e autorização do publisher em repositório público ou

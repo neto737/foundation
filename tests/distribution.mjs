@@ -190,6 +190,10 @@ try {
     assert.equal(packed.name, source.name);
     assert.equal(packed.version, source.version);
     assert.equal(packed.license, "MIT");
+    assert.deepEqual(packed.publishConfig, {
+      registry: "https://registry.npmjs.org",
+      access: "public",
+    });
     assert(files.has("LICENSE"), `${name}: missing MIT license`);
     assert.equal(
       run("tar", ["-xOzf", tarball, "package/LICENSE"]),
@@ -217,6 +221,13 @@ try {
       assert(
         /^(dist\/.*\.(js|d\.ts)|README\.md|LICENSE|package\.json)$/.test(file),
         `${name}: unexpected file ${file}`,
+      );
+      const contents = run("tar", ["-xOzf", tarball, `package/${file}`]);
+      assert(
+        !/-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----|(?:npm_|ghp_)[A-Za-z0-9]{30,}/.test(
+          contents,
+        ),
+        `${name}: credential pattern in artifact`,
       );
       if (file.endsWith(".d.ts")) {
         const declaration = run("tar", ["-xOzf", tarball, `package/${file}`]);

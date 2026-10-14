@@ -8,11 +8,10 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   authenticatedJson,
   canonical,
-  digest,
   envelopeDigest,
   hash,
   names,
@@ -32,6 +31,12 @@ import {
   validateRecordPlan,
   validateProtectedInputs,
   validateAuditRun,
+  validateReleaseActor,
+  validateApproval,
+  approvalCertificate,
+  releaseOwner,
+  validatePublisherEnvironment,
+  validateReviewEvidence,
 } from "./release-core.mjs";
 import {
   recordFromBase,
@@ -93,6 +98,10 @@ async function context() {
     confirmation: process.env.RELEASE_CONFIRMATION,
     planDigest: process.env.PLAN_DIGEST,
     auditRun: Number(process.env.AUDIT_RUN),
+    approvalRun: Number(process.env.APPROVAL_RUN),
+    runId: Number(process.env.GITHUB_RUN_ID),
+    distribution: process.env.DISTRIBUTION_MODE,
+    reviewedChangesDigest: process.env.CHANGES_DIGEST,
   };
   validateContext(value, value.mode !== "audit");
   assert.equal(
@@ -106,6 +115,19 @@ async function context() {
     value.executionSha,
     "Master advanced while validating CI evidence",
   );
+  if (value.mode !== "audit") {
+    const currentRun = await request(`${gh}/actions/runs/${value.runId}`);
+    const workflow = await request(`${gh}/actions/workflows/release.yml`);
+    const permission = await request(
+      `${gh}/collaborators/${releaseOwner.login}/permission`,
+    );
+    value.actor = validateReleaseActor(currentRun, workflow, permission, value);
+    assert.equal(
+      Number(process.env.GITHUB_RUN_ATTEMPT),
+      1,
+      "Re-run authorization forbidden",
+    );
+  }
   return value;
 }
 
@@ -163,6 +185,8 @@ async function provenance(value) {
     value.releaseSha,
     value.executionSha,
     request,
+    value,
+    record,
   );
   validateProtectedInputs(
     await treeAtCommit(pr.head.sha, request),
@@ -192,7 +216,12 @@ async function provenance(value) {
       ),
     );
   }
-  return { record, protectedInputsDigest: binding.protectedInputsDigest };
+  return {
+    record,
+    protectedInputsDigest: binding.protectedInputsDigest,
+    changes: binding.changes,
+    changesDigest: binding.changesDigest,
+  };
 }
 const jsonFrom = (buffer) => JSON.parse(buffer.toString());
 
@@ -221,6 +250,16 @@ function sourceGates(record) {
     record.cliVersion,
   );
   validateManifests(manifests(), record);
+  const scopeRegistry = run("pnpm", [
+    "config",
+    "get",
+    "@t00ls-dev:registry",
+  ]).trim();
+  assert(
+    ["undefined", registry].includes(scopeRegistry),
+    "Unexpected scoped registry configuration",
+  );
+  assert.equal(run("pnpm", ["config", "get", "registry"]).trim(), registry);
   assert(
     !readdirSync(".changeset").some(
       (file) => file.endsWith(".md") && file !== "README.md",
@@ -238,8 +277,8 @@ function sourceGates(record) {
   );
 }
 
-async function inventory() {
-  return registryInventory(process.env.NODE_AUTH_TOKEN);
+async function inventory(value) {
+  return registryInventory(value.distribution);
 }
 
 function unchangedPackages(record, state) {
@@ -291,7 +330,12 @@ function inspect(directory, item) {
   assert(!pkg.private);
   assert.equal(pkg.repository, "https://github.com/t00ls-dev/foundation");
   assert.equal(pkg.publishConfig?.registry, registry);
-  assert.equal(pkg.publishConfig?.access, "restricted");
+  assert.equal(pkg.publishConfig?.access, "public");
+  assert.equal(
+    canonical(pkg.publishConfig),
+    canonical({ registry, access: "public" }),
+    "Unexpected artifact publication overrides",
+  );
   assert(pkg.exports && Object.keys(pkg.exports).length);
   for (const field of [
     "dependencies",
@@ -365,6 +409,12 @@ function summarize(value, packet, states) {
     releasePr: value.releasePr,
     releaseSha: value.releaseSha,
     executionSha: value.executionSha,
+    snapshotSha: packet.snapshotSha,
+    registry: packet.registry,
+    access: packet.access,
+    distribution: packet.distribution,
+    changesDigest: packet.changesDigest,
+    approvalRun: value.approvalRun || null,
     protectedInputsDigest: packet.protectedInputsDigest,
     mode: value.mode,
     planDigest: envelopeDigest(packet),
@@ -376,7 +426,7 @@ function summarize(value, packet, states) {
   if (process.env.GITHUB_STEP_SUMMARY)
     writeFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      "\n## Private Foundation release\n```json\n" +
+      "\n## Release pública Foundation\n```json\n" +
         JSON.stringify(report, null, 2) +
         "\n```\n",
       { flag: "a" },
@@ -391,14 +441,26 @@ function summarize(value, packet, states) {
 
 async function prepare(directory) {
   const value = await context();
-  const { record, protectedInputsDigest } = await provenance(value);
+  const { record, protectedInputsDigest, changes, changesDigest } =
+    await provenance(value);
   value.protectedInputsDigest = protectedInputsDigest;
+  value.changesDigest = changesDigest;
+  if (value.mode !== "audit")
+    assert.equal(
+      value.reviewedChangesDigest,
+      changesDigest,
+      "Historical differences were not approved exactly",
+    );
   sourceGates(record);
-  const current = await inventory();
+  const current = await inventory(value);
   unchangedPackages(record, current);
   let packet;
   if (value.mode === "audit") {
-    const approved = remainingPlan(record, reconcile(record, current), "audit");
+    const approved = remainingPlan(
+      record,
+      reconcile(record, current, [], value),
+      "audit",
+    );
     const { path: planPath } = changesetsPlan(directory, approved);
     run("pnpm", [
       "exec",
@@ -438,8 +500,14 @@ async function prepare(directory) {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
     packet = {
-      format: 2,
+      format: 3,
       repository,
+      registry,
+      access: "public",
+      scopeOwner: "user:t00ls-dev",
+      distribution: value.distribution,
+      snapshotSha: value.executionSha,
+      changesDigest,
       releasePr: value.releasePr,
       releaseSha: value.releaseSha,
       executionSha: value.executionSha,
@@ -449,6 +517,12 @@ async function prepare(directory) {
       artifacts,
     };
     write(join(directory, "authorization.json"), packet);
+    write(join(directory, "reviewed-changes.json"), {
+      releaseSha: value.releaseSha,
+      snapshotSha: value.executionSha,
+      changesDigest,
+      changes,
+    });
   } else {
     packet = json(join(directory, "authorization.json"));
     const audit = await request(`${gh}/actions/runs/${value.auditRun}`);
@@ -459,12 +533,52 @@ async function prepare(directory) {
     );
     validateAuditRun(audit, jobs, workflow.id, value);
     validatePacket(packet, value, record);
+    if (value.mode !== "approve") {
+      const approval = json(join(directory, "approval.json"));
+      const run = await request(`${gh}/actions/runs/${value.approvalRun}`);
+      const jobs = await pages(
+        `${gh}/actions/runs/${value.approvalRun}/jobs?filter=latest`,
+        "jobs",
+      );
+      const permission = await request(
+        `${gh}/collaborators/${releaseOwner.login}/permission`,
+      );
+      validateApproval(
+        approval,
+        run,
+        jobs,
+        workflow,
+        permission,
+        packet,
+        value,
+      );
+      // Re-check the run after jobs to reject concurrent re-runs and revocation.
+      validateApproval(
+        approval,
+        await request(`${gh}/actions/runs/${value.approvalRun}`),
+        jobs,
+        workflow,
+        await request(`${gh}/collaborators/${releaseOwner.login}/permission`),
+        packet,
+        value,
+      );
+    }
   }
+  validateReviewEvidence(json(join(directory, "reviewed-changes.json")), {
+    releaseSha: value.releaseSha,
+    snapshotSha: value.executionSha,
+    changesDigest,
+    changes,
+  });
   for (const item of packet.artifacts) inspect(join(directory, "packed"), item);
-  const fresh = await inventory();
+  const fresh = await inventory(value);
   unchangedPackages(record, fresh);
-  const states = reconcile(record, fresh, packet.artifacts);
-  const remaining = remainingPlan(record, states, value.mode);
+  const states = reconcile(record, fresh, packet.artifacts, value);
+  const remaining = remainingPlan(
+    record,
+    states,
+    value.mode === "approve" ? "audit" : value.mode,
+  );
   const computed = changesetsPlan(directory, remaining).plan;
   sourceGates(record);
   await context();
@@ -483,11 +597,11 @@ async function publish(directory) {
     ["publish", "resume"].includes(value.mode),
     "Audit cannot call publisher",
   );
-  const latest = await inventory();
+  const latest = await inventory(value);
   unchangedPackages(record, latest);
   const remaining = remainingPlan(
     record,
-    reconcile(record, latest, packet.artifacts),
+    reconcile(record, latest, packet.artifacts, value),
     value.mode,
   );
   const computed = changesetsPlan(directory, remaining).plan;
@@ -499,6 +613,10 @@ async function publish(directory) {
   );
   sourceGates(record);
   await context();
+  validatePublisherEnvironment(
+    process.env,
+    require("npm/package.json").version,
+  );
   let exitCode = 0;
   if (remaining.length)
     exitCode =
@@ -512,12 +630,22 @@ async function publish(directory) {
           join(directory, "packed"),
           "--no-git-tag",
         ],
-        { stdio: "inherit" },
+        {
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            npm_config_npm_path: join(
+              dirname(require.resolve("npm/package.json")),
+              "bin/npm-cli.js",
+            ),
+            npm_config_registry: registry,
+          },
+        },
       ).status ?? 1;
   // Always reconcile after an attempted publish, even when only some succeeded.
   let final;
   try {
-    final = reconcile(record, await inventory(), packet.artifacts);
+    final = reconcile(record, await inventory(value), packet.artifacts, value);
     await context();
   } catch (error) {
     final = record.packages.map((item) => ({
@@ -549,7 +677,16 @@ try {
     const value = await context();
     await provenance(value);
   } else if (command === "prepare") await prepare(resolve(path));
-  else if (command === "publish") await publish(resolve(path));
+  else if (command === "approve") {
+    const directory = resolve(path);
+    const { value, packet } = await prepare(directory);
+    assert.equal(value.mode, "approve");
+    const fresh = await context();
+    write(
+      join(directory, "approval.json"),
+      approvalCertificate(packet, fresh.actor, fresh.runId),
+    );
+  } else if (command === "publish") await publish(resolve(path));
   else throw new Error("Expected context, prepare or publish");
 } catch (error) {
   console.error(error);

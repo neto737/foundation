@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
 export const repository = "t00ls-dev/foundation";
-export const registry = "https://npm.pkg.github.com";
-export const confirmation = "PUBLISH_PRIVATE_FOUNDATION_PACKAGES";
+export const registry = "https://registry.npmjs.org";
+export const confirmation = "PUBLISH_PUBLIC_FOUNDATION_PACKAGES";
+export const approvalConfirmation = "APPROVE_PUBLIC_FOUNDATION_SNAPSHOT";
+export const npmVersion = "11.5.1";
+export const releaseOwner = { login: "t00ls-dev", id: 14156701 };
+export const bootstrapSha = "90a100377fa8c1e0e1b30174d4e611c545ed0ac4";
 export const names = [
   "access",
   "audit",
@@ -101,6 +105,178 @@ export function validateProtectedInputs(releaseTree, executionTree) {
   return digest(approved);
 }
 
+export function snapshotChanges(releaseTree, snapshotTree) {
+  // Validate complete trees, then include even the six executor exceptions in review.
+  protectedInputs(releaseTree);
+  protectedInputs(snapshotTree);
+  const entries = (tree) =>
+    new Map(
+      tree.tree
+        .filter((f) => f.type !== "tree")
+        .map((f) => [f.path, { mode: f.mode, type: f.type, oid: f.sha }]),
+    );
+  const before = entries(releaseTree),
+    after = entries(snapshotTree);
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .sort()
+    .flatMap((path) =>
+      canonical(before.get(path) ?? null) === canonical(after.get(path) ?? null)
+        ? []
+        : [
+            {
+              path,
+              before: before.get(path) ?? null,
+              after: after.get(path) ?? null,
+            },
+          ],
+    );
+}
+
+export function validateReviewEvidence(evidence, expected) {
+  assert.equal(
+    canonical(evidence),
+    canonical(expected),
+    "Historical review evidence changed",
+  );
+}
+
+export function validateDistribution(context, record) {
+  assert(
+    ["release", "bootstrap"].includes(context.distribution),
+    "Explicit distribution mode required",
+  );
+  if (context.distribution !== "bootstrap") return;
+  assert.equal(context.releasePr, 30, "Bootstrap is restricted to PR #30");
+  assert.equal(
+    context.releaseSha,
+    bootstrapSha,
+    "Immutable bootstrap provenance required",
+  );
+  assert.deepEqual(
+    record.packages.map((p) => p.name).sort(),
+    [...names].sort(),
+    "Bootstrap requires exactly nine packages",
+  );
+  for (const item of record.packages) {
+    assert.equal(item.oldVersion, "0.1.1");
+    assert.equal(
+      item.version,
+      ["@t00ls-dev/auth", "@t00ls-dev/security"].includes(item.name)
+        ? "0.2.0"
+        : "0.1.2",
+    );
+  }
+}
+
+export function validateReleaseActor(run, workflow, permission, context) {
+  assert(
+    Number.isSafeInteger(context.runId) && context.runId > 0,
+    "Authorization run identity required",
+  );
+  assert(Number.isSafeInteger(workflow.id) && workflow.id > 0);
+  assert.equal(run.id, context.runId, "Wrong authorization run");
+  assert.equal(run.run_attempt, 1, "Re-runs cannot authorize releases");
+  assert.equal(run.workflow_id, workflow.id);
+  assert.equal(workflow.path, ".github/workflows/release.yml");
+  assert.equal(run.path, workflow.path);
+  assert.equal(run.repository?.full_name, repository);
+  assert.equal(run.head_repository?.full_name, repository);
+  assert.equal(run.event, "workflow_dispatch");
+  assert.equal(run.head_branch, "master");
+  assert.equal(run.head_sha, context.executionSha);
+  assert(
+    ["in_progress", "completed"].includes(run.status),
+    "Incomplete authorization run",
+  );
+  for (const actor of [run.actor, run.triggering_actor, permission.user]) {
+    assert.equal(actor?.type, "User", "Human release owner required");
+    assert.equal(actor?.login, releaseOwner.login);
+    assert.equal(
+      actor?.id,
+      releaseOwner.id,
+      "Immutable approver identity mismatch",
+    );
+  }
+  assert.equal(
+    permission.permission,
+    "admin",
+    "Current administrator authority required",
+  );
+  return { ...releaseOwner, permission: "admin" };
+}
+
+export function approvalCertificate(packet, actor, runId) {
+  return {
+    format: 1,
+    domain: "foundation-npm-snapshot-approval",
+    registry,
+    access: "public",
+    distribution: packet.distribution,
+    releasePr: packet.releasePr,
+    releaseSha: packet.releaseSha,
+    snapshotSha: packet.snapshotSha,
+    executionSha: packet.executionSha,
+    protectedInputsDigest: packet.protectedInputsDigest,
+    changesDigest: packet.changesDigest,
+    planDigest: envelopeDigest(packet),
+    auditRun: packet.auditRun,
+    artifactsDigest: digest(packet.artifacts),
+    approvalRun: runId,
+    actor,
+  };
+}
+
+export function validateApproval(
+  certificate,
+  run,
+  jobs,
+  workflow,
+  permission,
+  packet,
+  context,
+) {
+  validatePacket(packet, context, packet.record);
+  assert(
+    Number.isSafeInteger(context.approvalRun) && context.approvalRun > 0,
+    "Approval run required",
+  );
+  const actor = validateReleaseActor(run, workflow, permission, {
+    ...context,
+    runId: context.approvalRun,
+  });
+  assert.equal(run.status, "completed");
+  assert.equal(run.conclusion, "success");
+  const approvals = jobs.filter((job) => job.name === "approve");
+  assert.equal(approvals.length, 1, "Exactly one approval job required");
+  const job = approvals[0];
+  assert.equal(job.run_id, run.id);
+  assert.equal(job.run_attempt, 1);
+  assert.equal(job.head_sha, context.executionSha);
+  assert.equal(job.status, "completed");
+  assert.equal(job.conclusion, "success");
+  assert.equal(
+    digest(certificate),
+    digest(approvalCertificate(packet, actor, run.id)),
+    "Snapshot/artifact approval mismatch",
+  );
+}
+
+export function validatePublisherEnvironment(env, actualNpmVersion) {
+  assert.equal(
+    actualNpmVersion,
+    npmVersion,
+    "Pinned OIDC-compatible npm required",
+  );
+  assert(
+    env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+    "OIDC publisher context required",
+  );
+  assert(
+    !env.NODE_AUTH_TOKEN && !env.NPM_TOKEN && !env.NPM_CONFIG_TOKEN,
+    "Token fallback is forbidden",
+  );
+}
+
 export function validateAncestry(comparison, releaseSha, executionSha) {
   assert(shaPattern.test(releaseSha) && shaPattern.test(executionSha));
   assert.equal(
@@ -123,6 +299,7 @@ export function validateAncestry(comparison, releaseSha, executionSha) {
 
 export function validateAuditRun(audit, jobs, workflowId, context) {
   assert.equal(audit.id, context.auditRun, "Different audit run");
+  assert.equal(audit.run_attempt, 1, "Audit re-run requires a new dispatch");
   assert.equal(audit.event, "workflow_dispatch");
   assert.equal(audit.conclusion, "success");
   assert.equal(audit.head_branch, "master");
@@ -261,10 +438,10 @@ export function validatePackument(packument, name) {
       !tarball.username && !tarball.password && !tarball.hash,
       "Unsafe registry tarball URL",
     );
-    const prefix = `/download/${name}/${version}/`;
-    assert(
-      tarball.pathname.startsWith(prefix) &&
-        /^[a-zA-Z0-9_-]+$/.test(tarball.pathname.slice(prefix.length)),
+    assert.equal(tarball.search, "", "Unexpected tarball query");
+    assert.equal(
+      decodeURIComponent(tarball.pathname),
+      `/${name}/-/${name.split("/")[1]}-${version}.tgz`,
       "Registry tarball package/version mismatch",
     );
     integrities[version] = pkg.dist.integrity;
@@ -272,18 +449,36 @@ export function validatePackument(packument, name) {
   return { name, versions, latest, integrities };
 }
 
-export async function registryInventory(token, fetcher = fetch) {
+export async function registryInventory(
+  distribution = "release",
+  fetcher = fetch,
+) {
+  assert(
+    ["release", "bootstrap"].includes(distribution),
+    "Unknown distribution mode",
+  );
   const result = {};
   for (const name of names) {
-    // Full packument: a successful read anchors existence/access. A package
-    // 404 is ambiguous and always fatal, never permission to first-publish.
-    const packument = await authenticatedJson(
-      `${registry}/${name.replace("/", "%2F")}`,
-      token,
-      fetcher,
-      "application/json",
-    );
-    result[name] = validatePackument(packument, name);
+    const response = await fetcher(`${registry}/${name.replace("/", "%2F")}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(30000),
+      redirect: "error",
+    });
+    if (response.status === 404 && distribution === "bootstrap") {
+      assert.equal(
+        (await response.json()).error,
+        "Not found",
+        "Invalid absence response",
+      );
+      // Observation only: reconciliation, approval and publisher gates must authorize creation.
+      result[name] = { name, versions: [], latest: null, integrities: {} };
+    } else {
+      assert(
+        response.ok && response.status === 200,
+        `Registry request failed: ${response.status}`,
+      );
+      result[name] = validatePackument(await response.json(), name);
+    }
   }
   return result;
 }
@@ -373,7 +568,14 @@ export function validateContext(context, authorization = false) {
     context.executionSha,
     "master moved after executor authorization",
   );
-  assert(["audit", "publish", "resume"].includes(context.mode), "Invalid mode");
+  assert(
+    ["release", "bootstrap"].includes(context.distribution),
+    "Explicit distribution mode required",
+  );
+  assert(
+    ["audit", "approve", "publish", "resume"].includes(context.mode),
+    "Invalid mode",
+  );
   assert(
     Number.isSafeInteger(context.releasePr) && context.releasePr > 0,
     "Invalid release_pr",
@@ -381,8 +583,8 @@ export function validateContext(context, authorization = false) {
   if (authorization) {
     assert.equal(
       context.confirmation,
-      confirmation,
-      "Incorrect private publication confirmation",
+      context.mode === "approve" ? approvalConfirmation : confirmation,
+      "Incorrect public release confirmation",
     );
     assert(
       /^[0-9a-f]{64}$/.test(context.planDigest),
@@ -392,6 +594,15 @@ export function validateContext(context, authorization = false) {
       Number.isSafeInteger(context.auditRun) && context.auditRun > 0,
       "audit_run required",
     );
+    assert(
+      /^[0-9a-f]{64}$/.test(context.reviewedChangesDigest),
+      "Exact reviewed changes_digest required",
+    );
+    if (context.mode !== "approve")
+      assert(
+        Number.isSafeInteger(context.approvalRun) && context.approvalRun > 0,
+        "approval_run required",
+      );
   }
 }
 
@@ -506,7 +717,12 @@ export function validateManifests(manifests, record) {
     assert.equal(pkg.license, "MIT");
     assert.equal(pkg.repository, "https://github.com/t00ls-dev/foundation");
     assert.equal(pkg.publishConfig?.registry, registry);
-    assert.equal(pkg.publishConfig?.access, "restricted");
+    assert.equal(pkg.publishConfig?.access, "public");
+    assert.deepEqual(
+      pkg.publishConfig,
+      { registry, access: "public" },
+      "Unexpected publication overrides",
+    );
     assert.deepEqual(pkg.files, ["dist", "README.md"]);
     const approved = record.packages.find((item) => item.name === pkg.name);
     if (approved)
@@ -517,8 +733,14 @@ export function validateManifests(manifests, record) {
 
 // Inventory contains registry-observed facts. Privacy and administrative
 // repository association are onboarding invariants, not npm runtime facts.
-export function reconcile(record, inventory, artifacts = []) {
+export function reconcile(
+  record,
+  inventory,
+  artifacts = [],
+  context = { distribution: "release" },
+) {
   validateRecord(record);
+  validateDistribution(context, record);
   const states = [];
   for (const item of record.packages) {
     const pkg = inventory[item.name];
@@ -526,10 +748,17 @@ export function reconcile(record, inventory, artifacts = []) {
       pkg && pkg.name === item.name,
       `Registry inaccessible/identity mismatch: ${item.name}`,
     );
-    assert(
-      Array.isArray(pkg.versions) && pkg.versions.includes(item.oldVersion),
-      "Registry lacks approved previous version",
-    );
+    assert(Array.isArray(pkg.versions));
+    if (context.distribution === "bootstrap")
+      assert(
+        pkg.versions.every((v) => v === item.version),
+        "Unexpected existing bootstrap versions",
+      );
+    else
+      assert(
+        pkg.versions.includes(item.oldVersion),
+        "Registry lacks approved previous version",
+      );
     const higher = pkg.versions
       .filter((v) => /^\d+\.\d+\.\d+$/.test(v))
       .some((v) => compareVersions(v, item.version) > 0);
@@ -543,7 +772,11 @@ export function reconcile(record, inventory, artifacts = []) {
           pkg.latest !== item.version))
     )
       state = "divergent";
-    if (state === "absent" && pkg.latest !== item.oldVersion)
+    if (
+      state === "absent" &&
+      pkg.latest !==
+        (context.distribution === "bootstrap" ? null : item.oldVersion)
+    )
       state = "divergent";
     states.push({ name: item.name, version: item.version, state });
   }
@@ -584,6 +817,12 @@ export function envelopeDigest(packet) {
   return digest({
     format: packet.format,
     repository: packet.repository,
+    registry: packet.registry,
+    access: packet.access,
+    scopeOwner: packet.scopeOwner,
+    distribution: packet.distribution,
+    snapshotSha: packet.snapshotSha,
+    changesDigest: packet.changesDigest,
     releasePr: packet.releasePr,
     releaseSha: packet.releaseSha,
     executionSha: packet.executionSha,
@@ -602,7 +841,7 @@ export function validatePublishPlan(plan, approved) {
     entries.every(
       (item) =>
         item.kind === "publish" &&
-        item.access === "restricted" &&
+        item.access === "public" &&
         item.tag === "latest",
     ),
     "Unexpected Changesets publish entry",
@@ -617,10 +856,30 @@ export function validatePublishPlan(plan, approved) {
 export function validatePacket(packet, context, record) {
   assert.equal(
     packet.format,
-    2,
+    3,
     "Legacy/unknown authorization envelope; new audit required",
   );
   assert.equal(packet.repository, repository);
+  assert.equal(packet.registry, registry, "Wrong authorization registry");
+  assert.equal(packet.access, "public", "Public authorization required");
+  assert.equal(packet.scopeOwner, "user:t00ls-dev");
+  assert.equal(packet.distribution, context.distribution);
+  validateDistribution(context, record);
+  assert.equal(
+    packet.snapshotSha,
+    context.executionSha,
+    "Snapshot differs from executor",
+  );
+  assert(
+    /^[0-9a-f]{64}$/.test(context.changesDigest),
+    "Verified change digest required",
+  );
+  assert.equal(packet.changesDigest, context.changesDigest);
+  assert.equal(
+    context.reviewedChangesDigest,
+    context.changesDigest,
+    "Reviewed changes digest mismatch",
+  );
   assert.equal(packet.releasePr, context.releasePr);
   assert.equal(packet.releaseSha, context.releaseSha, "Different release SHA");
   assert.equal(

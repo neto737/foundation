@@ -121,9 +121,11 @@ Regras de dependência:
 ## Publicação e consumo
 
 Na v0.1, exemplos e tooling consomem pacotes com o protocolo `workspace:`. Os
-nove pacotes em `packages/*` são preparados para distribuição privada via GitHub
-Packages, com Changesets e versões independentes. A publicação está bloqueada
-até habilitação revisada. Veja o [runbook de pacotes](../runbooks/packages.md).
+nove pacotes publicáveis em `packages/*` são preparados para npmjs.com público
+no scope do usuário `t00ls-dev`, com Changesets e versões independentes. O
+histórico GitHub privado permanece intacto. Primeiro registro, nova aprovação do
+snapshot #30 e OIDC remoto ainda dependem de validação/autorização operacional.
+Veja o [runbook de pacotes](../runbooks/packages.md).
 
 ## Ambientes e entrega
 

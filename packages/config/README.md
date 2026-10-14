@@ -9,7 +9,9 @@ para carregar arquivos, ler variáveis de ambiente ou armazenar segredos.
 
 ## Instalação
 
-Pacote privado do workspace; não é publicado em registry.
+Destino oficial: npmjs.com público no scope do usuário `t00ls-dev`. A primeira
+publicação ainda depende de autorização; no Foundation use `workspace:*`. Após
+publicação confirmada, consumidores usam uma versão disponível no npm.
 
 ```sh
 pnpm --filter <app> add '@t00ls-dev/config@workspace:*'

@@ -37,7 +37,7 @@ arquitetura, [`docs/decisions`](docs/decisions) para as decisões vigentes e
 bypass de cache nos domínios Cloudflare.
 
 O [runbook de pacotes e Release](docs/runbooks/packages.md) descreve Changesets,
-Release PRs e instalação via GitHub Packages.
+Release PRs, aprovação de snapshots e preparação da distribuição pública npm.
 
 Runbooks operacionais adicionais cobrem
 [ambientes](docs/runbooks/environments.md),
@@ -47,7 +47,9 @@ Runbooks operacionais adicionais cobrem
 
 ## Posicionamento
 
-O acesso aos pacotes depende das permissões do GitHub Packages.
+O destino oficial dos nove pacotes é npmjs.com público, no scope do usuário
+`t00ls-dev`. A primeira publicação ainda precisa de autorização e pré-requisitos
+operacionais; as versões privadas históricas GitHub permanecem intactas.
 
 O desenvolvimento a partir do código usa dependências workspace e não requer
 token privado do registry. Para o exemplo Links, copie
@@ -69,10 +71,10 @@ O código próprio é licenciado sob MIT, com o aviso
 `Copyright (c) 2026 t00ls-dev` confirmado pelo mantenedor; veja
 [LICENSE](LICENSE) e [licenças e distribuição](docs/runbooks/licensing.md).
 Licenças de terceiros permanecem vigentes. Código-fonte público não autoriza
-publicação nem torna automaticamente públicos os pacotes no GitHub Packages.
-Workspaces com `private: true` não são publicados no registry, embora seu código
-esteja público. O acesso aos pacotes depende das permissões e da herança
-administrativas do GitHub Packages, separadas da visibilidade do código.
+publicação nem comprova a primeira entrega no npmjs.com. Workspaces com
+`private: true` não são publicados no registry, embora seu código esteja
+público. Código, licença, autorização de publicação e acesso ao registry são
+decisões separadas.
 
 Veja [CONTRIBUTING.md](CONTRIBUTING.md) para contribuir e
 [SECURITY.md](SECURITY.md) para divulgação responsável de vulnerabilidades.

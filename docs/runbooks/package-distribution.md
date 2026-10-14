@@ -2,11 +2,11 @@
 
 Execute `pnpm test:distribution` para compilar e empacotar os nove pacotes pelo
 mesmo `pnpm pack` usado na distribuição. O teste inspeciona os manifests finais,
-exports, arquivos, protocolos locais e links; instala os tarballs em dois
-consumidores novos em `/tmp`, sem resolução pelo workspace, e testa typecheck,
-emissão JavaScript, todos os 18 entrypoints públicos e runtime D1 mínimo. O gate
-`pnpm check` inclui esse teste. Os artifacts e diagnósticos ficam no diretório
-temporário informado ao final para inspeção.
+exports, destino npm/public, arquivos, protocolos locais e links; instala os
+tarballs em dois consumidores novos em `/tmp`, sem resolução pelo workspace, e
+testa typecheck, emissão JavaScript, todos os 18 entrypoints públicos e runtime
+D1 mínimo. O gate `pnpm check` inclui esse teste. Os artifacts e diagnósticos
+ficam no diretório temporário informado ao final para inspeção.
 
 ## Decisões de empacotamento
 

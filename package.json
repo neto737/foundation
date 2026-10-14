@@ -36,6 +36,7 @@
     "@t00ls-dev/eslint-config": "workspace:*",
     "eslint": "^10.12.0",
     "jsdom": "26.1.0",
+    "npm": "11.5.1",
     "prettier": "^3.9.9",
     "turbo": "^2.11.7",
     "typescript": "^6.0.3",

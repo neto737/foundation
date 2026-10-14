@@ -63,13 +63,17 @@ da primeira entrega.
 | `@t00ls-dev/observability` | Logging JSON estruturado com contexto de request, usuário e tenant.                                                                                                 |
 | `@t00ls-dev/audit`         | Eventos append-only para D1/PostgreSQL, com validação recursiva que rejeita chaves sensíveis na metadata.                                                           |
 
-Os nove pacotes possuem versões `0.1.0` e `0.1.1` publicadas com visibilidade
-privada no GitHub Packages; internamente são consumidos com `workspace:*`. Novas
-publicações exigem execução manual de Release e autorização explícita.
-Código-fonte público não torna automaticamente os pacotes públicos; seu acesso
-depende das permissões e da herança administrativas. Os demais workspaces com
-`private: true` não são publicados no registry, embora seu código esteja
-público.
+Os nove pacotes possuem versões históricas `0.1.0` e `0.1.1` privadas no GitHub
+Packages; internamente são consumidos com `workspace:*`. A distribuição oficial
+é preparada para npmjs.com público no scope do usuário `t00ls-dev`, sem
+organização/publicação dupla. Os alvos #30 (`auth`/`security` `0.2.0`, demais
+`0.1.2`) exigem novo audit e aprovação integral do owner; não estão publicados
+no npm por efeito desta preparação. OIDC remoto e primeiro registro ainda
+dependem de pré-requisitos operacionais. Release permanece manual e
+explicitamente autorizado. Código-fonte público não torna automaticamente os
+pacotes públicos; seu acesso depende das permissões e da herança
+administrativas. Os demais workspaces com `private: true` não são publicados no
+registry, embora seu código esteja público.
 
 ### Aplicação de referência
 
@@ -197,9 +201,9 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 - Version Packages é um job isolado da CI de push/master, dependente de
   `checks`, sem repetir o gate. Compartilha a serialização global com Release
   manual.
-- `Release`: somente manual; audit/preflight/publisher verificam pela API a CI
-  aprovada do SHA exato, preservando autorização, provenance e checks de
-  registry.
+- `Release`: somente manual; audit/approve/preflight/publisher verificam pela
+  API a CI aprovada do SHA exato, preservando autorização, provenance e checks
+  de registry.
 - `Deploy DEV`: inicia após uma CI verde em `master`, faz checkout do SHA
   validado e coordena expand/deploy/backfill/contract em jobs independentes.
   Migration DEV é workflow reutilizável; deploy não aplica SQL e verifica
@@ -289,11 +293,12 @@ Não serão implementados sem consumidor real:
 ## Publicação e releases
 
 Changesets prepara releases independentes dos nove pacotes reutilizáveis em
-`packages/*` para GitHub Packages privado. O job Version Packages da CI de
-push/master cria ou atualiza o PR de versionamento; não publica pacotes. Release
-é manual e requer CI aprovada do SHA exato, audit/preflight e autorização
-explícita. As versões `0.1.0` e `0.1.1` já foram publicadas; abertura do código
-não autoriza uma nova publicação. Veja o
+`packages/*` para npmjs.com público no scope do usuário `t00ls-dev`. O job
+Version Packages da CI de push/master cria ou atualiza o PR de versionamento;
+não publica pacotes. Release é manual e requer CI aprovada do SHA exato, audit,
+aprovação do owner por identidade/permissão verificadas na API, preflight e
+autorização explícita. As versões `0.1.0` e `0.1.1` já foram publicadas;
+abertura do código não autoriza uma nova publicação. Veja o
 [runbook de pacotes](runbooks/packages.md). Nesse fluxo:
 
 - APIs podem amadurecer sem releases artificiais;

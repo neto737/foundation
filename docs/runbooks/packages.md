@@ -1,311 +1,220 @@
 # Pacotes e Release do Foundation
 
-Os nove pacotes reutilizáveis `@t00ls-dev/*` usam versões SemVer independentes,
-Changesets e GitHub Packages (`https://npm.pkg.github.com`). O código-fonte do
-repositório é público. A raiz e os workspaces de examples, tests e tooling,
-incluindo create-app/doctor, usam `private: true` e não são publicados no
-registry; isso não restringe a leitura de seu código. O código próprio usa MIT,
-com o aviso `Copyright (c) 2026 t00ls-dev` confirmado pelo mantenedor, conforme
-[Licenças e distribuição](licensing.md). Os nove pacotes publicados continuam
-com visibilidade privada no GitHub Packages. O acesso depende de permissões,
-herança e Manage Actions access: código público não torna automaticamente os
-pacotes públicos nem garante que o público autorizado permaneça igual. O deploy
-do Foundation continua DEV-only.
+O destino oficial dos nove packages é **npmjs.com público**, no scope do
+**usuário npm `t00ls-dev`**, sem organização npm e sem publicação dupla. O
+registry é `https://registry.npmjs.org`; os manifests e Changesets usam
+`public`. Cada package mantém sua versão independente. Raiz, UI, examples, tests
+e tooling, incluindo create-app/doctor, continuam privados para publicação.
 
-## Histórico do bootstrap
-
-A primeira publicação privada dos nove pacotes em `0.1.0` foi concluída pelo
-bootstrap especial no SHA `33c4963b4c2c7f4cb34d5045eec7cc3162ca6857`, execução
-[36615440630](https://github.com/t00ls-dev/foundation/actions/runs/36615440630).
-Não foram criadas tags Git ou GitHub Releases. A infraestrutura específica foi
-substituída pelo fluxo permanente; sua implementação permanece no histórico Git.
-O antigo PR #23 com bumps `0.2.0` foi descartado sem merge. Rejeição de metadata
-sensível em audit e redação dos logs em observability (`12f1f8d`, antigo
-safe-audit-logs) já integram a base inicial `0.1.0`.
+**Estado operacional:** o fluxo está preparado localmente; isso não comprova
+primeira publicação nem OIDC remoto. As versões históricas `0.1.0`/`0.1.1`
+permanecem privadas no GitHub Packages. Não as exclua, altere ou publique
+novamente como preparação. MIT/notices seguem [Licenças](licensing.md). O deploy
+continua DEV-only e o gerador `basic-d1` não é alterado por esta preparação.
 
 ## Desenvolvimento e Version Packages
 
-1. Crie um changeset com `pnpm exec changeset` para cada mudança publicável,
-   selecionando os pacotes e patch/minor/major apropriados. Não edite versões
-   manualmente; dependências internas podem produzir bumps derivados pelo
-   Changesets.
-2. Após o merge do PR de desenvolvimento, a CI de `push` na `master` executa
-   `pnpm check`. Seu job `version`, dependente de `checks`, instala com lockfile
-   congelado e cria/atualiza Version Packages sem repetir o gate. O SHA validado
-   deve continuar sendo master. Não há `publish-script`: **pushes nunca publicam
-   pacotes**. A branch permanece `changeset-release/master`, com commits
-   assinados pela API da Changesets Action e sem commits manuais.
-3. O Version Packages inclui `.changeset/release-plan.json`, registro
-   determinístico de packages/versões anteriores e novas, bumps, changesets
-   consumidos e seus hashes, dependências que justificam bumps derivados, versão
-   do CLI e SHA base do planejamento. Revise-o com manifests e changelogs.
-4. PRs gerados pelo `GITHUB_TOKEN` não disparam automaticamente a CI de PR.
-   Antes de mesclar, provoque uma validação humana do head (por exemplo, reabrir
-   o PR com identidade humana) e confira o SHA validado. Não use PAT de
-   publicação.
-5. Após a revisão e merge do Version Packages, espere a CI verde do merge. A
-   publicação requer autorização separada. `release_sha` identifica o merge
-   commit imutável desse PR; `execution_sha` identifica o HEAD atual de master
-   com o executor autorizado. Correções posteriores do mecanismo só podem mudar
-   os arquivos de infraestrutura explicitamente permitidos abaixo.
+Mudanças publicáveis usam Changesets, nunca edição manual de versões. Após
+merge, a CI push/master executa o gate completo; `version` depende de `checks`,
+confirma que o SHA continua sendo master e cria/atualiza Version Packages pelo
+bot. Não há publish-script, tags ou GitHub Releases automáticos. A serialização
+compartilhada com Release não cancela publicação em andamento.
 
-O checkout do job CI `version` mantém a credencial Git temporária do
-`GITHUB_TOKEN`: o CLI Changesets pode aprofundar o clone via `git fetch` para
-identificar os commits que adicionaram changesets ao gerar changelogs. O cleanup
-da Checkout Action remove a credencial ao finalizar o job. Os checkouts de
-Release e Deploy DEV continuam com `persist-credentials: false`. Isso não muda o
-push via API da Changesets Action nem autoriza publicação via Git CLI.
+O record format 1 contém baseSha, CLI `3.0.3`, packages/versões/bumps, hashes
+dos changesets consumidos e dependências derivadas. Ele é recalculado
+independentemente pelas bibliotecas instaladas do Changesets a partir da base
+imutável. O PR deve possuir um único commit bot assinado via API, parent igual à
+base, head exato, arquivos relacionados, changelogs e changesets consumidos. Não
+desenvolva na branch `changeset-release/master` nem faça commits manuais no PR
+do bot.
 
-## Audit manual (nenhuma publicação)
+PRs gerados com GITHUB_TOKEN não iniciam CI automaticamente. Valide o head pela
+intervenção humana documentada, revise o plano e espere a CI do merge. O
+checkout do job version preserva temporariamente a credencial para aprofundar o
+histórico Changesets; Release mantém `persist-credentials: false`.
 
-Execute Release em `master` por `workflow_dispatch` com:
+## Primeira distribuição: bootstrap do #30
 
-- `mode=audit` (padrão);
-- `release_pr`: número do Version Packages **mesclado**;
-- `release_sha`: SHA completo do merge do Version Packages;
-- `execution_sha`: SHA completo atual de master, com o executor revisado.
+O bootstrap admite **somente** PR #30, merge
+`90a100377fa8c1e0e1b30174d4e611c545ed0ac4`, seus nove nomes e os alvos:
 
-O antigo input `expected_sha` foi removido e é rejeitado explicitamente, sem
-fallback. Dispatches antigos não devem ser reutilizados.
+- auth/security `0.2.0`;
+- access/audit/config/db/email/observability/tenant `0.1.2`.
 
-O job audit tem somente leitura de packages. Aceita repositório público ou
-privado e verifica identidade exata retornada pela API (`full_name`, nome e
-proprietário `t00ls-dev/foundation`) e base `master`, evento/ref/SHA,
-estado/base/head/autor do PR gerado, commit do bot, registro revisado,
-changesets consumidos e hashes no SHA base. Confere o checkout, instalação
-congelada, CI aprovada do `execution_sha`, ausência de changesets ativos,
-allowlist dos nove nomes, demais workspaces privados, MIT e registry. O registry
-é consultado autenticadamente; erros não são interpretados como versões
-ausentes. Versões inesperadas, downgrade, pacote inacessível ou alvo já
-publicado falham.
+`oldVersion: 0.1.1` no record permanece como história do GitHub Packages, não
+como uma versão fictícia existente no npm. Não edite o record, não publique
+versões intermediárias e não crie bumps artificiais para recuperar esse estado.
 
-Release consulta a API de Actions com `actions: read` em cada validação de
-contexto, inclusive imediatamente antes e após a publicação. A evidência exige
-repositório e origem `t00ls-dev/foundation`, identidade e path do workflow
-`.github/workflows/ci.yml`, evento `push`, branch `master`, SHA exato, run
-concluído com `success` e exatamente um job `checks` concluído com `success`,
-vinculado ao mesmo run, SHA e tentativa. O run mais recente de push/master desse
-SHA é usado sem fallback para aprovação antiga; uma reexecução pendente ou com
-falha, dados incompletos e erros da API bloqueiam a operação. IDs e tentativa
-são registrados nos logs. A evidência permanece válida enquanto esses requisitos
-forem verificáveis; uma nova tentativa invalida a aprovação anterior até passar.
+O audit bootstrap propõe um **snapshot novo**, mantendo a proveniência original.
+As mudanças posteriores, inclusive manifests, dependências, lockfile, docs e
+executor, são listadas em `reviewed-changes.json` por path/mode/type/blob OID.
+`changes_digest` vincula a lista completa e os SHAs histórico/novo, incluindo as
+seis exceções de infraestrutura. O owner deve revisar esses deltas e os bytes
+dos tarballs antes de emitir a aprovação separada.
 
-Audit compila os packages no próprio runner antes de empacotar. Preflight e
-publisher não recompilam nem reempacotam os tarballs autorizados. Não se baixam
-artifacts de CI/PR nem se reutilizam caches de PR como código confiável: o cache
-pnpm usa o escopo de master do GitHub, sem importação de caches de refs de PR. O
-gate completo continua na CI de PR e de master, incluindo integrações, E2E,
-distribuição e contratos de release. Reexecuções explícitas da CI ainda repetem
-o gate, mas Release não o duplica.
+Ausência pública observada por 404/`Not found` é apenas um fato do inventário.
+Ela não autoriza criação. Bootstrap publicável exige o plano exato, snapshot,
+CI, aprovação do owner e artifacts. Package já existente com outras versões é
+divergência, não onboarding automático. Após o bootstrap, releases normais
+exigem predecessor e `latest` realmente existentes no npm.
 
-Esta mudança exige nova base revisada: CI e o validador compartilhado são inputs
-protegidos. A allowlist de infraestrutura abaixo não foi ampliada para
-reaproveitar releases ou autorizações anteriores.
+## Contexto, conteúdo e CI
 
-### Conteúdo aprovado e executor autorizado
+Release continua exclusivamente `workflow_dispatch` em master. Os inputs são:
 
-Exige-se `release_pr.merge_commit_sha == release_sha` e, separadamente,
-`execution_sha == github.sha == master remoto == HEAD do checkout`. A API deve
-comprovar que release_sha é ancestral de execution_sha. As árvores Git completas
-e identificadas por commits/tree OIDs imutáveis são comparadas pela projeção
-ordenada de cada entrada final: path, mode, type e object/blob ID. Trees pais
-agregadas não entram na projeção, pois mudam quando uma folha de infraestrutura
-permitida muda. API incompleta/truncada, identidade de objeto divergente e
-entradas ausentes/duplicadas interrompem o fluxo.
+- `mode`: `audit`, `approve`, `publish` ou `resume`;
+- `release_pr` e `release_sha`: PR Version Packages e seu merge imutável;
+- `execution_sha`: snapshot/executor exato, igual ao workflow, checkout e
+  master;
+- `distribution`: `release` por padrão ou `bootstrap` explícito;
+- `audit_run`, `plan_digest`, `changes_digest`: obrigatórios fora do audit;
+- `approval_run`: obrigatório em publish/resume;
+- `confirmation`: confirmação específica de aprovação ou publicação.
 
-TODO o repository é protegido por padrão, com exceção apenas destes arquivos:
+`expected_sha` antigo não é aceito. A API precisa comprovar ancestralidade e
+identidades completas de commits/trees, sem truncamento, symlinks/gitlinks,
+paths duplicados ou entradas incompletas.
 
-- `.github/workflows/release.yml`
-- `.github/scripts/release-core.mjs`
-- `.github/scripts/release.mjs`
-- `.github/scripts/release-planning.mjs`
-- `.github/scripts/release.test.mjs`
-- `docs/runbooks/packages.md`
+`validateProtectedInputs` permanece integral: path/mode/type/blob OID de todo o
+repositório, com **somente** as seis exceções nominais existentes:
 
-Não há exceções por diretório. Manifests, versões, changelogs, release-plan,
-fontes, READMEs dos packages, tooling, scripts/configs de build, lockfile e
-dependências permanecem idênticos ao conteúdo aprovado. A projeção também é
-conferida entre o head do Release PR e seu merge commit. Adição, remoção,
-rename, bytes, mode ou tipo divergente em inputs protegidos falham. Symlinks e
-gitlinks não são inputs de release suportados, inclusive nos arquivos de
-infraestrutura permitidos. A integridade do workspace rastreado e dos arquivos
-não ignorados é revalidada após preparar os artifacts e antes da tentativa.
+- `.github/workflows/release.yml`;
+- `.github/scripts/release-core.mjs`;
+- `.github/scripts/release.mjs`;
+- `.github/scripts/release-planning.mjs`;
+- `.github/scripts/release.test.mjs`;
+- `docs/runbooks/packages.md`.
 
-O executor continua parte da base de confiança: os scripts/workflow do
-execution_sha precisam de revisão e autorização explícitas. Igualdade dos inputs
-não promete reprodução bit a bit nem protege contra executor malicioso aprovado.
-O audit gera os artifacts e a autorização vincula seus bytes exatos.
+Em release normal, conteúdo histórico e executor devem corresponder nessa
+projeção. No bootstrap #30, o novo snapshot auditado é uma proposta até a
+aprovação do owner. Depois dela, **o SHA inteiro** de
+audit/approve/publish/resume deve permanecer igual; não se aceita trocar
+executor nem mesmo alterando somente uma exceção. O head bot continua sendo
+comparado ao merge histórico.
 
-O inventário consulta diretamente os packuments completos dos nove nomes em
-`npm.pkg.github.com` com `GITHUB_TOKEN` (`NODE_AUTH_TOKEN`), sem enumerar
-packages pela REST API de usuário. Exige HTTP 200, identidade exata, versões,
-`latest`, identidade de cada versão, `dist.integrity` SHA-512 e URLs de tarball
-do registry com nome/versão coerentes. A versão anterior aprovada deve existir.
-A ausência do alvo só é aceita dentro desse documento válido. HTTP 401/403/404,
-falha de rede/timeout, 5xx, JSON inválido ou campos obrigatórios ausentes
-interrompem o fluxo. Um 404 do package significa ausente ou inacessível e
-**nunca** autoriza onboarding implícito. A consulta usa o documento do package,
-não um endpoint `/package/versão` nem um `E404` isolado de `npm view`.
+A CI aprovada precisa pertencer ao Foundation, workflow/path exatos, evento
+push/master, SHA exato, run mais recente concluído com success e um único job
+checks aprovado na mesma tentativa. Erros de API, reexecução pendente/falha,
+skip/cancelamento e evidência incompleta bloqueiam; não há fallback para CI
+antiga. Release não repete o gate nem baixa artifacts/caches de PR como código
+confiável.
 
-A identidade de autor Git sozinha não comprova geração automática. O único
-commit precisa ser o `head.sha` do PR, ter exatamente um parent igual ao SHA
-base e possuir assinatura verificada (`verified: true`, `reason: valid`), autor
-`github-actions[bot]` e committer `web-flow`, compatíveis com o caminho API da
-Changesets Action utilizado aqui. Não use commits manuais ou o modo de push via
-Git CLI para esse PR de versionamento.
+## Audit: não autoriza publicação
 
-Após instalar as dependências congeladas, os gates recuperam pela API os
-manifests, configuração de workspaces/Changesets e changesets do SHA base. Em
-diretório temporário isolado, as bibliotecas do CLI instalado recalculam o
-release plan sem executar versionamento ou publicação. O record inteiro deve
-corresponder ao resultado, incluindo packages, versões, bumps, hashes e bumps
-derivados de dependências internas. Falhas de consulta, árvore truncada ou
-inputs obrigatórios ausentes interrompem o fluxo.
+Execute somente mediante autorização operacional com `mode=audit`, os inputs
+históricos/executor e a distribuição desejada. Audit compila e empacota no
+runner autorizado; inspeciona nove manifests, allowlist, exports, dependências,
+arquivos, LICENSE MIT e hashes SHA-256/SHA-512. Tarballs não admitem links,
+protocolos locais, tooling privado ou overrides de publicação adicionais. Paths
+derivam exatamente de nome/versão, sem traversal.
 
-O plano calculado por Changesets precisa corresponder exatamente ao registro
-aprovado ainda ausente no registry. Só esses packages são empacotados pelo CLI;
-metadata, exports e arquivos são inspecionados. Cada tarball contém `LICENSE`
-idêntico ao texto raiz aprovado, além de manifest MIT. O resultado inclui hashes
-SHA-256/SHA-512 e um `plan_digest` SHA-256 do envelope canônico contendo PR,
-repository, release PR, release_sha, execution_sha, protectedInputsDigest,
-registro, audit_run e artifacts. Anote também o ID `audit_run`.
+O inventário npm é público/anônimo: não envie GITHUB_TOKEN ao npm. Packuments
+precisam ter nomes/versões/latest/integridade e URLs HTTPS npm coerentes.
+Somente bootstrap admite ausência inicial observada; 401/403/5xx, falhas de
+rede, JSON inválido, destino errado ou metadata incompleta falham fechados.
 
-O envelope `authorization.json` usa `format: 2`; o release-plan continua em
-`format: 1`, sem modificar o record aprovado. Envelopes antigos são rejeitados e
-exigem novo audit. O protectedInputsDigest é SHA-256 da projeção canônica de
-inputs protegidos; não substitui os hashes dos tarballs.
+O envelope `authorization.json` **format 3** vincula registry/public,
+`user:t00ls-dev`, distribuição, #30/record quando aplicável, snapshot/executor,
+protectedInputsDigest, changesDigest, audit_run e os artifacts exatos. Envelopes
+GitHub antigos, inclusive format 2, são rejeitados. Adicionar um campo solto a
+um envelope antigo não concede autoridade nova.
 
-Audit e preflight compartilham a validação do caminho exato do tarball derivado
-de nome e versão, como `packages/t00ls-dev-access-0.1.1.tgz`; nomes arbitrários,
-traversal, subdiretórios e artifacts fora do plano são rejeitados.
+Revise o artifact `foundation-release-<plan_digest>`, seu summary e a lista de
+mudanças. Registre audit_run, plan_digest e changes_digest. O digest autoriza os
+bytes, não apenas números de versão. Audit nunca chama publisher.
 
-Revise o summary e o artifact `foundation-release-<plan_digest>` da execução
-bem-sucedida. O digest cobre os **bytes** dos tarballs, não apenas os números de
-versão. Guarde esse resultado: audit não autoriza automaticamente um publish.
+## Aprovação separada e autoridade verificável
 
-## Publish manual explicitamente autorizado
+O aprovador é **t00ls-dev, usuário GitHub ID 14156701**, com permissão admin
+**atual** no Foundation, revalidada pela API. Não inferimos titularidade npm
+desse ID; isso é um pré-requisito administrativo separado.
 
-Em uma execução separada, Release em `master` exige:
+Após revisar a proposta, o owner faz um dispatch separado `mode=approve`, com os
+mesmos SHAs/distribuição/audit_run e os dois digests exatos, usando
+`confirmation=APPROVE_PUBLIC_FOUNDATION_SNAPSHOT`. O workflow verifica:
 
-- `mode=publish`;
-- mesmos `release_pr`, `release_sha` e `execution_sha` do audit;
-- `confirmation=PUBLISH_PRIVATE_FOUNDATION_PACKAGES`;
-- `plan_digest` exato revisado;
-- `audit_run`: ID do audit bem-sucedido que possui os artifacts.
+- actor e triggering_actor reais do run por API, login/ID imutável, tipo User;
+- permissão admin atual e identidade do workflow/repo/origem/SHA;
+- tentativa 1, CI/master atuais e todos os bytes/inputs do audit;
+- correspondência do changes_digest revisado com a árvore histórica/novo
+  snapshot.
 
-Um preflight só-leitura revalida a CI do SHA exato e master/PR/registro,
-proveniência da execução audit, digest, tarballs e registry. Não reempacota os
-artifacts autorizados. Um job separado com `packages: write` repete os gates
-imediatamente antes da tentativa. Autenticação usa exclusivamente
-`GITHUB_TOKEN`.
+Gera `approval.json`, artifact `foundation-approval-<plan_digest>`, vinculando
+identidade, approval_run, destino, snapshot, proveniência, plano e digest de
+artifacts. Não é input booleano, label ou texto autodeclarado. A API deve
+comprovar que o job approve dessa execução concluiu com success. O certificado é
+revalidado no preflight e no publisher, inclusive após obter jobs/permissões.
+Re-runs não autorizam operação: use um dispatch novo. Não há exigência de um
+segundo aprovador; o controle é a autorização explícita do owner existente.
 
-O audit_run deve pertencer ao workflow Release, ter audit bem-sucedido em master
-e `head_sha == execution_sha`. PR, ambos os SHAs, fingerprint, record,
-audit_run, digest e artifacts devem coincidir integralmente. O publisher
-reconsulta master imediatamente antes e após a tentativa, além do registry.
+Esse mecanismo comprova **quem autorizou os hashes exatos**. A revisão humana
+efetiva dos deltas/bytes permanece responsabilidade do owner; código não prova
+que uma pessoa leu um diff. Quem pode aprovar/alterar executor continua parte da
+base de confiança. Não tratar CI ou correspondência com HEAD como aprovação.
 
-A publicação utiliza os artifacts preservados e o plano restante validado:
+## Publicação e OIDC
 
-```sh
-pnpm exec changeset publish --from-pack-dir <diretório-validado> --no-git-tag
+Publicação requer autorização operacional separada. Use `mode=publish`, os
+mesmos inputs e `approval_run` bem-sucedido, com
+`confirmation=PUBLISH_PUBLIC_FOUNDATION_PACKAGES`. Preflight recupera artifacts
+originais e certificado; publisher repete gates imediatamente antes da
+tentativa. Não recompila/reempacota os bytes autorizados, nem faz retry
+automático.
+
+Somente publisher possui `id-token: write`; não há `packages: write`, token npm
+persistente ou envio de GITHUB_TOKEN ao registry. npm **11.5.1**,
+pin/integridade no lockfile, é tooling privado necessário ao OIDC. pnpm
+**10.15.1** e Changesets **3.0.3** são preservados. O caminho é:
+
+```text
+Changesets --from-pack-dir → pnpm publish <tarball> → npm 11.5.1 <tarball>
 ```
 
-Não há GitHub Releases nem tags Git automáticas. O plano preserva os grupos de
-dependências calculados pelo Changesets. As operações e o job de versionamento
-da CI têm concurrency global e não cancelam uma publicação em andamento. Não
-existe retry automático.
+`npm_config_npm_path` aponta explicitamente para o npm instalado pelo lockfile.
+Publisher exige contexto OIDC e rejeita fallback por NODE_AUTH_TOKEN/NPM_TOKEN.
+O teste local usa Changesets/pnpm reais e um npm recorder sem rede, verificando
+path/bytes/public/latest e encaminhamento do contexto. **Não comprova OIDC
+remoto.**
+
+Antes de operar, confirmar a conta npm `t00ls-dev`, controle dos nomes e trusted
+publisher de cada package para `t00ls-dev/foundation`, `release.yml` e operação
+publish. Primeiro registro OIDC-only de nomes ausentes ainda depende de caminho
+administrativo comprovado/autorizado; não presumir que configure publishers
+antes da existência dos packages. Não criar organização, placeholders ou tokens
+como parte desta preparação. `npm stage publish` registra placeholder em nome
+novo e não é um teste inofensivo. Se o bootstrap remoto precisar de outro
+método, interromper para desenho/autorização próprios, sem pipeline paralelo ou
+fallback.
 
 ## Reconciliação e resume
 
-Após qualquer tentativa, inclusive falha parcial, consulte/revise
-`private-release-result`, `reconciliation.json` e o summary. Cada alvo é
-classificado como publicado, ausente ou divergente. Um alvo publicado só é
-aceito se a integridade e `latest` correspondem ao artifact autorizado e sua
-identidade corresponde ao nome autorizado. Erro de consulta pós-publicação
-produz estado não verificado/divergente, nunca sucesso silencioso.
+Após tentativa, revisar `npm-release-result`, reconciliation.json e summary.
+Published requer integridade e latest dos artifacts aprovados; absent é restante
+observado; divergência de identidade/versões/bytes/latest impede nova tentativa.
+Bootstrap parcial mantém o mesmo plano, mesmo que packages restantes ainda
+retornem 404. Release normal nunca transforma um package ausente em bootstrap.
 
-Não refaça a publicação cegamente e não crie uma versão artificial para
-recuperar uma release parcial. Após análise e nova autorização, use
-`mode=resume` com os mesmos PR/release_sha/execution_sha/digest/audit_run e a
-mesma confirmação. O restante é o plano original menos as versões confirmadas no
-registry; nenhuma delas é sobrescrita. Se tudo já chegou, resume apenas
-reconcilia. Divergência de SHA, versões, integridade, identidade, provenance ou
-`latest` impede qualquer nova tentativa.
+Resume exige autorização separada, `mode=resume` e os mesmos
+PR/release_sha/execution_sha/distribuição/digests/audit_run/approval_run.
+Publica somente o restante; se tudo chegou, só reconcilia. Não sobrescreve
+versões, reempacota artifacts ou fabrica bumps.
 
-Master deve permanecer no execution_sha auditado até concluir publish/resume. Se
-avançar após o audit, a autorização falha fechada mesmo que apenas a
-infraestrutura tenha mudado: não se reutiliza o digest antigo. Antes de uma
-primeira publicação, exige-se novo audit e nova autorização do executor atual.
-Após publicação parcial, um avanço de master exige recuperação e reautorização
-explícitas dos mesmos artifacts, revisadas separadamente; não reempacote, não
-crie versão artificial e não reescreva master. A consulta não é transação
-atômica: avanço durante a tentativa pode produzir estado publicado/parcial; o
-relatório registra falha de verificação e o workflow não faz retry.
+Master fica congelada desde audit até publicação/resume completos. Avanço depois
+do audit requer novo audit e nova aprovação antes da primeira tentativa. Após
+falha parcial, avanço/exclusão/expiração de artifacts exige recuperação
+explícita dos mesmos bytes, não regeneração. Retenção é 30 dias. Consultas de
+master e registry não são transação atômica; avanço durante tentativa pode
+resultar em publicação parcial e falha de verificação, nunca sucesso silencioso.
 
-Artifacts expiram em 30 dias. Se expirarem após uma falha parcial, não
-reempacote e não relaxe o digest: pare para planejar recuperação explícita.
-Novos packages, prereleases/snapshots e upgrade de formato do Changesets
-requerem mudanças revisadas: este fluxo normal admite os nove nomes já
-existentes e SemVer estável.
+## Consumo
 
-## Permissões e limitações
+Após a primeira publicação efetivamente confirmada, os nove nomes são
+instaláveis anonimamente no npm. Consumidores usam versões e lockfile próprios,
+com atualizações revisadas/testadas; não recebem alterações de arquivos copiados
+do template automaticamente. Remover mapping antigo de scope GitHub é decisão do
+consumidor, sem alterar packages históricos.
 
-- Versionamento: contents/pull-requests write, sem packages write.
-- Audit: contents/pull-requests/packages/actions read.
-- Preflight: contents/pull-requests/packages/actions read; recupera o artifact
-  do audit.
-- Publish/resume: contents/pull-requests/actions read e packages write; sem PAT,
-  contents write, aprovação automática de PR, OIDC npmjs ou criação de Releases.
-
-### Invariantes administrativas de onboarding
-
-Para os nove packages existentes, devem permanecer estabelecidos no onboarding:
-
-- **visibility private** no GitHub Packages;
-- associação administrativa a **`t00ls-dev/foundation`**;
-- **Manage Actions access** ou herança aplicável concedendo ao Foundation acesso
-  de leitura e, para o publisher, escrita.
-
-Essas propriedades são verificadas e mantidas pelos administradores do package.
-Mudança de visibilidade, associação, acesso, exclusão ou recriação exige nova
-revisão administrativa antes de continuar releases. Novos packages continuam
-exigindo onboarding separado e revisado.
-
-O runtime não comprova essas propriedades pelo registry: `repository` no
-packument é metadata publicada; acesso autenticado e `access: restricted` não
-provam visibility private nem associação administrativa. A REST API de metadata
-de packages do usuário não suporta o token de instalação usado pelo workflow;
-essa dependência causou a falha do primeiro audit
-[36693989133](https://github.com/t00ls-dev/foundation/actions/runs/36693989133).
-Não se introduz PAT nem se fabricam campos de visibilidade/associação no
-inventário. **Risco residual:** deriva administrativa externa não é detectada
-necessariamente pelo workflow de release. Os gates de runtime continuam
-verificando identidade/namespace, versões, tags e integridade, com reconsulta
-antes da publicação e reconciliação posterior.
-
-Na verificação de 11/10/2026, o repositório é público e `master` possui proteção
-clássica com pull request obrigatório e status check `checks` do GitHub Actions.
-Não há aprovação humana obrigatória; administradores podem contornar as regras.
-O Environment `dev` restringe deployments à `master`, sem required reviewers ou
-wait timer, mantendo o ciclo DEV automático. Quem pode alterar workflows ainda
-pode alterar gates: revisão humana, controle dos acessos e verificação do SHA
-continuam essenciais. Consultar SHA e registry não é uma transação atômica;
-alterações externas concorrentes podem causar falha parcial, que deve ser
-reconciliada.
-
-## Consumo privado
-
-Configure no consumidor `.npmrc`:
-
-```ini
-@t00ls-dev:registry=https://npm.pkg.github.com
-```
-
-Em desenvolvimento local, use token de ambiente com `read:packages` em um
-`.npmrc` pessoal fora do repo. Em Actions, conceda acesso de leitura ao
-repositório consumidor em Manage Actions access e use `GITHUB_TOKEN` com
-`packages: read`, `actions/setup-node` e `NODE_AUTH_TOKEN` via ambiente. Acesso
-depende das permissões GitHub Packages; nunca grave tokens no Git.
-
-Veja [validação da distribuição](package-distribution.md) para os perfis D1,
-limitações de declarações externas e testes isolados de artifacts.
+Até lá, use workspace/tarballs para desenvolvimento/testes: não afirmar que as
+versões preparadas já estão disponíveis no npm. Veja
+[Distribuição](package-distribution.md) para os 18 exports/perfis TypeScript e
+[Criação de apps](creating-an-app.md) para o gerador existente.

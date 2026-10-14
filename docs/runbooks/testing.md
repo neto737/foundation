@@ -19,11 +19,11 @@ Em Actions, o gate completo é dividido entre `static`, `tests`, quatro shards
 `e2e` (com Chromium e ambiente próprios) e duas instalações `distribution`. O
 agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
 todas as entradas das matrizes; falha, cancelamento ou skip bloqueiam o gate.
-Version Packages depende desse job; Release manual valida pela API a CI aprovada
-do `execution_sha` exato, sem repetir a suíte. Não se substituem testes por
-cache de resultados. Reexecuções explícitas da CI e SHAs distintos (PR/merge)
-continuam sendo validados integralmente. Veja [Pacotes](packages.md) para os
-requisitos da evidência reutilizada.
+Version Packages depende desse job; Release manual e sua aprovação separada do
+owner validam pela API a CI aprovada do `execution_sha` exato, sem repetir a
+suíte. Não se substituem testes por cache de resultados. Reexecuções explícitas
+da CI e SHAs distintos (PR/merge) continuam sendo validados integralmente. Veja
+[Pacotes](packages.md) para os requisitos da evidência reutilizada.
 
 ### Resumos no GitHub Actions
 
