@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import {
   mkdtempSync,
   mkdirSync,
@@ -66,6 +67,7 @@ import {
 import { distributionAttempts } from "../../tests/distribution-attempts.mjs";
 import "./ci-reporting.test.mjs";
 import "./release-consumer.test.mjs";
+import { loadNpmConfiguration } from "./release-consumer.mjs";
 
 const sha = "a".repeat(40);
 const record = () => ({
@@ -506,6 +508,120 @@ test("snapshot review covers complete historical differences including executor 
   approved.tree.find((f) => f.path === "packages/access/package.json").sha =
     "d".repeat(40);
   assert.throws(() => validateProtectedInputs(after, approved));
+});
+
+test("B01 real workspace registry and Release environment agree; legacy scope remains rejected", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "foundation-registry-config-"));
+  try {
+    const workflow = parse(
+      readFileSync(".github/workflows/release.yml", "utf8"),
+    );
+    assert.equal(workflow.env.NPM_CONFIG_REGISTRY, officialRegistry);
+    const userConfig = join(temp, "user.npmrc"),
+      globalConfig = join(temp, "global.npmrc");
+    writeFileSync(userConfig, "");
+    writeFileSync(globalConfig, "");
+    const env = {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key]) => !/^npm_config_|^(?:NODE_AUTH_TOKEN|NPM_TOKEN)$/i.test(key),
+        ),
+      ),
+      NPM_CONFIG_USERCONFIG: userConfig,
+      NPM_CONFIG_GLOBALCONFIG: globalConfig,
+    };
+    const source = readFileSync(".github/scripts/release.mjs", "utf8");
+    const start = source.indexOf("  const scopeRegistry = run(");
+    const end = source.indexOf(
+      '  assert(\n    !readdirSync(".changeset")',
+      start,
+    );
+    assert(
+      start >= 0 && end > start,
+      "Actual sourceGates registry guard required",
+    );
+    const registryGuard = source.slice(start, end);
+    const configGet = (cwd, env, key) =>
+      execFileSync("pnpm", ["config", "get", key], {
+        cwd,
+        env,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    const checkGuard = (cwd, env) =>
+      runInNewContext(registryGuard, {
+        assert,
+        registry: officialRegistry,
+        run: (command, args) => {
+          assert.equal(command, "pnpm");
+          assert.deepEqual(Array.from(args.slice(0, 2)), ["config", "get"]);
+          return configGet(cwd, env, args[2]);
+        },
+      });
+    const npmRequire = createRequire(
+      createRequire(import.meta.url).resolve("npm/package.json"),
+    );
+    checkGuard(resolve("."), { ...env, ...workflow.env });
+    for (const runtime of [env, { ...env, ...workflow.env }]) {
+      // No scope override in env: pnpm must read the versioned project mapping.
+      assert.equal(
+        configGet(resolve("."), runtime, "@t00ls-dev:registry"),
+        officialRegistry,
+      );
+      const packageScope = configGet(
+        resolve("packages/access"),
+        runtime,
+        "@t00ls-dev:registry",
+      );
+      const packageRegistry =
+        packageScope === "undefined"
+          ? configGet(resolve("packages/access"), runtime, "registry")
+          : packageScope;
+      assert.equal(new URL(packageRegistry).origin, officialRegistry);
+      const config = await loadNpmConfiguration({
+        cwd: resolve("."),
+        env: runtime,
+      });
+      const options = {
+        "registry": config.get("registry"),
+        "@t00ls-dev:registry": config.get("@t00ls-dev:registry"),
+      };
+      for (const name of names) {
+        assert.equal(
+          npmRequire("npm-registry-fetch").pickRegistry(
+            npmRequire("npm-package-arg")(name),
+            options,
+          ),
+          officialRegistry,
+        );
+        assert.equal(
+          JSON.parse(
+            readFileSync(`packages/${name.split("/")[1]}/package.json`, "utf8"),
+          ).publishConfig.registry,
+          officialRegistry,
+        );
+      }
+    }
+    const legacy = join(temp, "legacy");
+    mkdirSync(legacy);
+    writeFileSync(
+      join(legacy, "package.json"),
+      JSON.stringify({ private: true, packageManager: "pnpm@10.15.1" }),
+    );
+    writeFileSync(
+      join(legacy, ".npmrc"),
+      readFileSync(".npmrc", "utf8").replace(
+        /^@t00ls-dev:registry=.*$/m,
+        "@t00ls-dev:registry=https://npm.pkg.github.com",
+      ),
+    );
+    assert.throws(
+      () => checkGuard(legacy, { ...env, ...workflow.env }),
+      /Unexpected scoped registry configuration/,
+    );
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test("OIDC requires the pinned npm and rejects missing context or token fallback", () => {
