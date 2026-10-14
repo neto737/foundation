@@ -8,7 +8,7 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   authenticatedJson,
   canonical,
@@ -37,7 +37,12 @@ import {
   releaseOwner,
   validatePublisherEnvironment,
   validateReviewEvidence,
+  authenticationMethod,
 } from "./release-core.mjs";
+import {
+  loadNpmConfiguration,
+  validateNpmConfiguration,
+} from "./release-consumer.mjs";
 import {
   recordFromBase,
   contentBinding,
@@ -413,6 +418,7 @@ function summarize(value, packet, states) {
     registry: packet.registry,
     access: packet.access,
     distribution: packet.distribution,
+    authentication: packet.authentication,
     changesDigest: packet.changesDigest,
     approvalRun: value.approvalRun || null,
     protectedInputsDigest: packet.protectedInputsDigest,
@@ -500,12 +506,13 @@ async function prepare(directory) {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
     packet = {
-      format: 3,
+      format: 4,
       repository,
       registry,
       access: "public",
       scopeOwner: "user:t00ls-dev",
       distribution: value.distribution,
+      authentication: authenticationMethod(value.distribution),
       snapshotSha: value.executionSha,
       changesDigest,
       releasePr: value.releasePr,
@@ -613,10 +620,14 @@ async function publish(directory) {
   );
   sourceGates(record);
   await context();
-  validatePublisherEnvironment(
-    process.env,
-    require("npm/package.json").version,
-  );
+  if (remaining.length) {
+    validatePublisherEnvironment(
+      process.env,
+      require("npm/package.json").version,
+      value.distribution,
+    );
+    validateNpmConfiguration(await loadNpmConfiguration());
+  }
   let exitCode = 0;
   if (remaining.length)
     exitCode =
@@ -634,11 +645,13 @@ async function publish(directory) {
           stdio: "inherit",
           env: {
             ...process.env,
-            npm_config_npm_path: join(
-              dirname(require.resolve("npm/package.json")),
-              "bin/npm-cli.js",
+            npm_config_npm_path: resolve(
+              ".github/scripts/release-consumer.mjs",
             ),
             npm_config_registry: registry,
+            FOUNDATION_APPROVED_PACKET: join(directory, "authorization.json"),
+            FOUNDATION_APPROVAL_CERT: join(directory, "approval.json"),
+            FOUNDATION_PACK_DIRECTORY: join(directory, "packed"),
           },
         },
       ).status ?? 1;

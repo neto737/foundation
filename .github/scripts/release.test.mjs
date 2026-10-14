@@ -65,6 +65,7 @@ import {
 } from "./ci-evidence.mjs";
 import { distributionAttempts } from "../../tests/distribution-attempts.mjs";
 import "./ci-reporting.test.mjs";
+import "./release-consumer.test.mjs";
 
 const sha = "a".repeat(40);
 const record = () => ({
@@ -128,12 +129,13 @@ const artifacts = () => [
   },
 ];
 const packet = () => ({
-  format: 3,
+  format: 4,
   repository: "t00ls-dev/foundation",
   registry: officialRegistry,
   access: "public",
   scopeOwner: "user:t00ls-dev",
   distribution: "release",
+  authentication: "oidc",
   snapshotSha: sha,
   changesDigest: "d".repeat(64),
   releasePr: 25,
@@ -439,6 +441,7 @@ test("new envelope binds destination and rejects every old envelope and unapprov
   for (const change of [
     { format: 1 },
     { format: 2 },
+    { format: 3 },
     { registry: "https://npm.pkg.github.com" },
     { access: "restricted" },
     { scopeOwner: "org:t00ls-dev" },
@@ -2071,6 +2074,20 @@ test("workflow separates audit/owner approval/publication; only publisher has OI
   assert.equal(workflow.jobs.audit.permissions["id-token"], undefined);
   assert.equal(workflow.jobs.approve.permissions["id-token"], undefined);
   assert.equal(workflow.jobs.preflight.permissions["id-token"], undefined);
+  for (const [name, job] of Object.entries(workflow.jobs)) {
+    const references = JSON.stringify(job).includes(
+      "secrets.NPM_BOOTSTRAP_TOKEN",
+    );
+    assert.equal(references, name === "publish");
+  }
+  const bootstrapSecret = workflow.jobs.publish.steps.find(
+    (step) => step.env?.NPM_BOOTSTRAP_TOKEN,
+  )?.env.NPM_BOOTSTRAP_TOKEN;
+  assert.equal(
+    bootstrapSecret,
+    "${{ inputs.distribution == 'bootstrap' && secrets.NPM_BOOTSTRAP_TOKEN || '' }}",
+  );
+  assert.equal(workflow.env.NPM_BOOTSTRAP_TOKEN, undefined);
   assert.deepEqual(
     Object.entries(workflow.jobs)
       .filter(([, job]) => job.permissions?.["id-token"] === "write")

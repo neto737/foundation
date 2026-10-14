@@ -8,6 +8,13 @@ export const approvalConfirmation = "APPROVE_PUBLIC_FOUNDATION_SNAPSHOT";
 export const npmVersion = "11.5.1";
 export const releaseOwner = { login: "t00ls-dev", id: 14156701 };
 export const bootstrapSha = "90a100377fa8c1e0e1b30174d4e611c545ed0ac4";
+export function authenticationMethod(distribution) {
+  assert(
+    ["release", "bootstrap"].includes(distribution),
+    "Unknown authentication distribution",
+  );
+  return distribution === "bootstrap" ? "bootstrap-token" : "oidc";
+}
 export const names = [
   "access",
   "audit",
@@ -207,11 +214,12 @@ export function validateReleaseActor(run, workflow, permission, context) {
 
 export function approvalCertificate(packet, actor, runId) {
   return {
-    format: 1,
+    format: 2,
     domain: "foundation-npm-snapshot-approval",
     registry,
     access: "public",
     distribution: packet.distribution,
+    authentication: packet.authentication,
     releasePr: packet.releasePr,
     releaseSha: packet.releaseSha,
     snapshotSha: packet.snapshotSha,
@@ -261,20 +269,44 @@ export function validateApproval(
   );
 }
 
-export function validatePublisherEnvironment(env, actualNpmVersion) {
+export function validatePublisherEnvironment(
+  env,
+  actualNpmVersion,
+  distribution = "release",
+) {
   assert.equal(
     actualNpmVersion,
     npmVersion,
     "Pinned OIDC-compatible npm required",
   );
   assert(
-    env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-    "OIDC publisher context required",
-  );
-  assert(
     !env.NODE_AUTH_TOKEN && !env.NPM_TOKEN && !env.NPM_CONFIG_TOKEN,
     "Token fallback is forbidden",
   );
+  for (const key of Object.keys(env)) {
+    assert(
+      !/^npm_config_.*(?:auth|password|username|certfile|keyfile|tokenhelper)/i.test(
+        key,
+      ),
+      "Ambient npm authentication is forbidden",
+    );
+  }
+  if (authenticationMethod(distribution) === "bootstrap-token") {
+    assert(
+      typeof env.NPM_BOOTSTRAP_TOKEN === "string" &&
+        env.NPM_BOOTSTRAP_TOKEN.trim().length > 0,
+      "Bootstrap publication credential required",
+    );
+  } else {
+    assert(
+      !env.NPM_BOOTSTRAP_TOKEN && !env.NPM_ID_TOKEN,
+      "Traditional or injected identity fallback is forbidden",
+    );
+    assert(
+      env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+      "OIDC publisher context required",
+    );
+  }
 }
 
 export function validateAncestry(comparison, releaseSha, executionSha) {
@@ -821,6 +853,7 @@ export function envelopeDigest(packet) {
     access: packet.access,
     scopeOwner: packet.scopeOwner,
     distribution: packet.distribution,
+    authentication: packet.authentication,
     snapshotSha: packet.snapshotSha,
     changesDigest: packet.changesDigest,
     releasePr: packet.releasePr,
@@ -856,7 +889,7 @@ export function validatePublishPlan(plan, approved) {
 export function validatePacket(packet, context, record) {
   assert.equal(
     packet.format,
-    3,
+    4,
     "Legacy/unknown authorization envelope; new audit required",
   );
   assert.equal(packet.repository, repository);
@@ -864,6 +897,11 @@ export function validatePacket(packet, context, record) {
   assert.equal(packet.access, "public", "Public authorization required");
   assert.equal(packet.scopeOwner, "user:t00ls-dev");
   assert.equal(packet.distribution, context.distribution);
+  assert.equal(
+    packet.authentication,
+    authenticationMethod(context.distribution),
+    "Authorization authentication mismatch",
+  );
   validateDistribution(context, record);
   assert.equal(
     packet.snapshotSha,

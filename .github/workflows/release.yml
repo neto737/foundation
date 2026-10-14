@@ -202,10 +202,13 @@ jobs:
         with:
           name: verified-npm-release
           path: ${{ runner.temp }}/npm-release
-      - name: Final gates and OIDC artifact-only publisher, then reconcile
+      - name: Final gates and authenticated buffer-only consumer, then reconcile
         run: node .github/scripts/release.mjs publish "$RUNNER_TEMP/npm-release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_BOOTSTRAP_TOKEN:
+            ${{ inputs.distribution == 'bootstrap' &&
+            secrets.NPM_BOOTSTRAP_TOKEN || '' }}
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:

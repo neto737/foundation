@@ -113,11 +113,12 @@ precisam ter nomes/versões/latest/integridade e URLs HTTPS npm coerentes.
 Somente bootstrap admite ausência inicial observada; 401/403/5xx, falhas de
 rede, JSON inválido, destino errado ou metadata incompleta falham fechados.
 
-O envelope `authorization.json` **format 3** vincula registry/public,
-`user:t00ls-dev`, distribuição, #30/record quando aplicável, snapshot/executor,
-protectedInputsDigest, changesDigest, audit_run e os artifacts exatos. Envelopes
-GitHub antigos, inclusive format 2, são rejeitados. Adicionar um campo solto a
-um envelope antigo não concede autoridade nova.
+O envelope `authorization.json` **format 4** vincula registry/public,
+`user:t00ls-dev`, distribuição e método de autenticação, #30/record quando
+aplicável, snapshot/executor, protectedInputsDigest, changesDigest, audit_run e
+os artifacts exatos. Envelopes GitHub antigos e envelopes npm format 3 são
+rejeitados. Adicionar um campo solto a um envelope antigo não concede autoridade
+nova.
 
 Revise o artifact `foundation-release-<plan_digest>`, seu summary e a lista de
 mudanças. Registre audit_run, plan_digest e changes_digest. O digest autoriza os
@@ -140,19 +141,20 @@ mesmos SHAs/distribuição/audit_run e os dois digests exatos, usando
   snapshot.
 
 Gera `approval.json`, artifact `foundation-approval-<plan_digest>`, vinculando
-identidade, approval_run, destino, snapshot, proveniência, plano e digest de
-artifacts. Não é input booleano, label ou texto autodeclarado. A API deve
-comprovar que o job approve dessa execução concluiu com success. O certificado é
-revalidado no preflight e no publisher, inclusive após obter jobs/permissões.
-Re-runs não autorizam operação: use um dispatch novo. Não há exigência de um
-segundo aprovador; o controle é a autorização explícita do owner existente.
+identidade, approval_run, destino, autenticação, snapshot, proveniência, plano e
+digest de artifacts. Não é input booleano, label ou texto autodeclarado. A API
+deve comprovar que o job approve dessa execução concluiu com success. O
+certificado é revalidado no preflight e no publisher, inclusive após obter
+jobs/permissões. Re-runs não autorizam operação: use um dispatch novo. Não há
+exigência de um segundo aprovador; o controle é a autorização explícita do owner
+existente.
 
 Esse mecanismo comprova **quem autorizou os hashes exatos**. A revisão humana
 efetiva dos deltas/bytes permanece responsabilidade do owner; código não prova
 que uma pessoa leu um diff. Quem pode aprovar/alterar executor continua parte da
 base de confiança. Não tratar CI ou correspondência com HEAD como aprovação.
 
-## Publicação e OIDC
+## Publicação, bootstrap temporário e OIDC
 
 Publicação requer autorização operacional separada. Use `mode=publish`, os
 mesmos inputs e `approval_run` bem-sucedido, com
@@ -162,29 +164,61 @@ tentativa. Não recompila/reempacota os bytes autorizados, nem faz retry
 automático.
 
 Somente publisher possui `id-token: write`; não há `packages: write`, token npm
-persistente ou envio de GITHUB_TOKEN ao registry. npm **11.5.1**,
+persistente como padrão ou envio de GITHUB_TOKEN ao registry. npm **11.5.1**,
 pin/integridade no lockfile, é tooling privado necessário ao OIDC. pnpm
 **10.15.1** e Changesets **3.0.3** são preservados. O caminho é:
 
 ```text
-Changesets --from-pack-dir → pnpm publish <tarball> → npm 11.5.1 <tarball>
+Changesets --from-pack-dir → pnpm → consumidor protegido → libnpmpublish do npm 11.5.1
 ```
 
-`npm_config_npm_path` aponta explicitamente para o npm instalado pelo lockfile.
-Publisher exige contexto OIDC e rejeita fallback por NODE_AUTH_TOKEN/NPM_TOKEN.
-O teste local usa Changesets/pnpm reais e um npm recorder sem rede, verificando
-path/bytes/public/latest e encaminhamento do contexto. **Não comprova OIDC
-remoto.**
+`npm_config_npm_path` aponta para `release-consumer.mjs`, único consumidor final
+do mesmo fluxo. Ele revalida envelope/certificado, owner/executor, master/CI e
+identidade da aprovação; não oferece um workflow/publisher paralelo. Lê cada
+tarball uma vez em buffer privado, confere os três hashes aprovados e extrai o
+manifest desse mesmo buffer. A biblioteca oficial do npm recebe exatamente os
+bytes conferidos, sem reabrir o path nem reempacotar. Mutação antes da captura
+bloqueia; mudança do arquivo durante autenticação/provenance não altera o
+buffer. Reconciliação pós-envio permanece necessária, não substitui essa
+verificação.
+
+Os métodos são derivados da distribuição e entram no envelope e no certificado:
+
+- **bootstrap-token:** somente #30 e seus nove targets. O secret temporário
+  `NPM_BOOTSTRAP_TOKEN` é referenciado somente no step publisher quando a
+  distribuição é bootstrap. Ausência bloqueia antes da tentativa. O consumidor
+  consulta whoami com essa credencial e exige usuário npm `t00ls-dev`. Audit,
+  approve, preflight, PRs e releases normais não recebem a credencial.
+- **oidc:** release ordinária. Token bootstrap, tokens tradicionais/injetados e
+  credenciais de config são rejeitados. O consumidor solicita identidade GitHub
+  para npm, confere repo/ref/snapshot, exige exchange npm bem-sucedido, tipo
+  OIDC e validade. Falha não ativa o fallback opcional da CLI npm.
+
+Configuração npm efetiva é carregada pela biblioteca instalada, incluindo
+project/user/global/env/cli/builtin. O guard examina apenas nomes de chaves,
+inclusive fontes shadowed, sem acessar/logar valores de autenticação; auth,
+password, username, cert/key e tokenHelper não são aceitos. A configuração não é
+flattened para as opções de upload. Somente a credencial explicitamente
+estabelecida vai para a biblioteca npm. Erros do consumidor são sanitizados, sem
+serializar erros/config/response bodies. Não escrever credenciais em artifacts.
+
+Testes usam buffers/transportes e identidades sintéticas, além de parsing real
+de tarball e biblioteca npm com transporte sem rede. **Não comprovam
+autenticação remota nem primeira publicação.**
 
 Antes de operar, confirmar a conta npm `t00ls-dev`, controle dos nomes e trusted
 publisher de cada package para `t00ls-dev/foundation`, `release.yml` e operação
-publish. Primeiro registro OIDC-only de nomes ausentes ainda depende de caminho
-administrativo comprovado/autorizado; não presumir que configure publishers
-antes da existência dos packages. Não criar organização, placeholders ou tokens
-como parte desta preparação. `npm stage publish` registra placeholder em nome
-novo e não é um teste inofensivo. Se o bootstrap remoto precisar de outro
-método, interromper para desenho/autorização próprios, sem pipeline paralelo ou
-fallback.
+publish para releases posteriores. Primeiro registro de nomes inexistentes usa o
+bootstrap-token expressamente autorizado: o mantenedor cria um GAT temporário
+com o menor scope/write necessário, bypass2FA quando exigido para automação e a
+menor validade disponível; provisionamento do secret e publicação requerem
+autorizações separadas. Revogar/remover a credencial após reconciliação
+completa. Isso não foi feito na preparação. Não criar organização, placeholders
+ou tokens sem autorização administrativa. `npm stage publish` registra
+placeholder em nome novo e não é um teste inofensivo. Configurar trusted
+publishers somente quando os packages existirem e uma release legítima estiver
+pronta para validar a configuração na janela oficial. Não fabricar bumps para
+testar OIDC.
 
 ## Reconciliação e resume
 
