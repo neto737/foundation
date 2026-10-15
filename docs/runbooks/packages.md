@@ -9,11 +9,13 @@ e tooling, incluindo create-app/doctor, continuam privados para publicação.
 **Estado operacional:** os nove targets do bootstrap #30 estão públicos no npm,
 com integridade e `latest` confirmados. A tentativa foi encerrada por decisão
 excepcional do mantenedor, conforme o registro abaixo; o workflow permanece em
-failure e OIDC remoto não está comprovado por essa publicação. As versões
-históricas `0.1.0`/`0.1.1` permanecem privadas no GitHub Packages. Não as
-exclua, altere ou publique novamente como preparação. MIT/notices seguem
-[Licenças](licensing.md). O deploy continua DEV-only e o gerador `basic-d1` não
-é alterado por esta correção.
+failure e OIDC remoto não está comprovado por essa publicação. Os nove pacotes
+privados duplicados do GitHub Packages, que continham as versões históricas
+`0.1.0`/`0.1.1`, foram excluídos em **15/10/2026**. Os nove pacotes oficiais
+permanecem publicados no npmjs.com. A exclusão não alterou os workflows nem o
+fluxo de publicação; não republique as versões históricas como preparação.
+MIT/notices seguem [Licenças](licensing.md). O deploy continua DEV-only e o
+gerador `basic-d1` não é alterado por esta correção.
 
 ## Desenvolvimento e Version Packages
 
