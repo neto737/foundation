@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 export const repository = "t00ls-dev/foundation";
 export const registry = "https://registry.npmjs.org";
@@ -433,6 +434,122 @@ export async function authenticatedJson(
   return response.json();
 }
 
+// Only the nine holding tarballs inspected on 2026-10-15 are recognized.
+// This is an observation allowlist, never approval of a publishable version.
+const stageVersion = "0.0.0-stage";
+const stageDescription = "Temporary package placeholder for staged publishing";
+const observedStageDistributions = {
+  access: [
+    "sha512-C1kObSGOdTFnaxpe1UQpmiViTeuzcorWxMUZjTLD4+n2FnpNXhvWenTlGz/sNdC8Of4mEdlhijAeissgejaRCA==",
+    "83a9bb9f1af89e147ac8e0c1353f7155bb85fed0",
+    339,
+  ],
+  audit: [
+    "sha512-XiZAFUpUTBSwjq2IbsB5GF1ppSlX+jvW6vJii4dR4RsY/VClqcmmQjs+50HFNjdi+V7AMC5dYIGXUnpS4TVH4A==",
+    "b2a9b3ff501f7c26a67287fd40410e5e36bce26b",
+    338,
+  ],
+  auth: [
+    "sha512-vygCBOpuYq3EUlPkhKFR+9EKBf4l9zQpUikfH9XzdeIuOF/8Fz86RCLX2QX4yJUJdrxA0lIqXa2pC/mROJ6y/g==",
+    "8cbd3d382b729a8c584aa186c3144b50419e913b",
+    337,
+  ],
+  config: [
+    "sha512-aU2xBT5D5wLZPfVuKX3RqHMz7leYi9N0jVHIFhBVUclUUuy2o7FEzrqkuYYSvSb15FUJu9x+zG3iQGMwcw7SxA==",
+    "8b51ac8446655fbc763c93e9c0487581004999d1",
+    339,
+  ],
+  db: [
+    "sha512-XKSaLkxO4IBG3i7YP3MbVSJRLJ3T14eDJfvPxxAkS3V9BfK8+plrNqZb4cvbmXYdK33obyOdngMpRA02wETB1w==",
+    "6a92b8c55d17869abd79ade7695f171ef8364b1b",
+    335,
+  ],
+  email: [
+    "sha512-UBE8gtZYXWha+X15EyHS5sS5B7rjERSJVoGfPmdgOOCC+MlAh5f4PCpo81Vbs5s9IAeaO4KllcVcfv9vNWCfuQ==",
+    "ef8bc44c0403894bdb569c7fc25be8cbead951fb",
+    338,
+  ],
+  observability: [
+    "sha512-8QtoXDdsheMVevFPzE5aoSBeFYAURYoylC+8o0oJahjNNA8oVUThePvgmTN8zYYzzkykOcvmvFd+ZLwp64sSsg==",
+    "6030c12edd95850c0be045eda3043dde37836b86",
+    346,
+  ],
+  security: [
+    "sha512-eteEVbapQoGxfntpLOgxF38dxUgFO1GuhUpnqJ7GjgwQdHg4xpU2r4LQYTGLo3MnaQ0PBQuX/wim27dERrpERg==",
+    "fbfb48de86ce05770ee2b102b4ff5b053288999a",
+    341,
+  ],
+  tenant: [
+    "sha512-LkZd92YYDBh235RzDU0ileAuMFgEvpqWtwPTbQGLF6TrPIUvOjVU8olu0xHA33hozjLOYzuftims6rQQ+rUiUA==",
+    "64d4b41bd442a99f57c65a32e5e116e377233450",
+    339,
+  ],
+};
+
+function stageObservation(name) {
+  return {
+    version: stageVersion,
+    integrity: observedStageDistributions[name.split("/")[1]][0],
+    tarball: `${registry}/${name}/-/${name.split("/")[1]}-${stageVersion}.tgz`,
+  };
+}
+
+function validateStagePlaceholder(pkg, name) {
+  assert.deepEqual(
+    Object.keys(pkg).sort(),
+    [
+      "name",
+      "version",
+      "_id",
+      "stub",
+      "maintainers",
+      "dist",
+      "_npmUser",
+      "description",
+      "directories",
+    ].sort(),
+    "Unexpected staging placeholder fields",
+  );
+  assert.equal(pkg._id, `${name}@${stageVersion}`);
+  assert.equal(pkg.stub, true, "Invalid staging placeholder marker");
+  assert.equal(pkg.description, stageDescription);
+  assert.deepEqual(pkg.directories, {});
+  assert.equal(pkg._npmUser?.name, "t00ls-dev");
+  assert.equal(typeof pkg._npmUser.email, "string");
+  assert(pkg._npmUser.email.length > 0);
+  assert.deepEqual(Object.keys(pkg._npmUser).sort(), ["email", "name"]);
+  assert.deepEqual(pkg.maintainers, [pkg._npmUser]);
+  assert.deepEqual(
+    Object.keys(pkg.dist).sort(),
+    [
+      "shasum",
+      "tarball",
+      "fileCount",
+      "integrity",
+      "signatures",
+      "unpackedSize",
+    ].sort(),
+  );
+  const [integrity, shasum, unpackedSize] =
+    observedStageDistributions[name.split("/")[1]];
+  assert.equal(
+    pkg.dist.integrity,
+    integrity,
+    "Unknown staging placeholder bytes",
+  );
+  assert.equal(pkg.dist.shasum, shasum);
+  assert.equal(pkg.dist.fileCount, 2);
+  assert.equal(pkg.dist.unpackedSize, unpackedSize);
+  assert(Array.isArray(pkg.dist.signatures) && pkg.dist.signatures.length > 0);
+  for (const signature of pkg.dist.signatures) {
+    assert.deepEqual(Object.keys(signature).sort(), ["keyid", "sig"]);
+    assert.equal(typeof signature.keyid, "string");
+    assert.equal(typeof signature.sig, "string");
+    assert(/^SHA256:[A-Za-z0-9+/]+={0,2}$/.test(signature.keyid));
+    assert(/^[A-Za-z0-9+/]+={0,2}$/.test(signature.sig));
+  }
+}
+
 export function validatePackument(packument, name) {
   const object = (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value);
@@ -449,8 +566,9 @@ export function validatePackument(packument, name) {
     "Registry latest must identify an existing version",
   );
   const integrities = {};
+  const placeholders = [];
   for (const version of versions) {
-    compareVersions(version, version);
+    if (version !== stageVersion) compareVersions(version, version);
     const pkg = packument.versions[version];
     assert(object(pkg), "Malformed registry version");
     assert.equal(pkg.name, name, "Registry version package identity mismatch");
@@ -476,14 +594,32 @@ export function validatePackument(packument, name) {
       `/${name}/-/${name.split("/")[1]}-${version}.tgz`,
       "Registry tarball package/version mismatch",
     );
-    integrities[version] = pkg.dist.integrity;
+    if (version === stageVersion) {
+      validateStagePlaceholder(pkg, name);
+      assert.notEqual(
+        latest,
+        stageVersion,
+        "Registry latest cannot be a placeholder",
+      );
+      placeholders.push(stageObservation(name));
+    } else {
+      assert(!pkg.stub, "Stable registry version cannot be a placeholder");
+      integrities[version] = pkg.dist.integrity;
+    }
   }
-  return { name, versions, latest, integrities };
+  return {
+    name,
+    versions: versions.filter((version) => version !== stageVersion),
+    latest,
+    integrities,
+    ...(placeholders.length ? { placeholders } : {}),
+  };
 }
 
 export async function registryInventory(
   distribution = "release",
   fetcher = fetch,
+  { signal, revalidate = false } = {},
 ) {
   assert(
     ["release", "bootstrap"].includes(distribution),
@@ -491,9 +627,16 @@ export async function registryInventory(
   );
   const result = {};
   for (const name of names) {
+    signal?.throwIfAborted();
     const response = await fetcher(`${registry}/${name.replace("/", "%2F")}`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(30000),
+      headers: {
+        Accept: "application/json",
+        ...(revalidate ? { "Cache-Control": "no-cache" } : {}),
+      },
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+        : AbortSignal.timeout(30000),
+      ...(revalidate ? { cache: "no-store" } : {}),
       redirect: "error",
     });
     if (response.status === 404 && distribution === "bootstrap") {
@@ -781,6 +924,13 @@ export function reconcile(
       `Registry inaccessible/identity mismatch: ${item.name}`,
     );
     assert(Array.isArray(pkg.versions));
+    for (const version of pkg.versions) compareVersions(version, version);
+    if (pkg.placeholders !== undefined)
+      assert.deepEqual(
+        pkg.placeholders,
+        [stageObservation(item.name)],
+        "Unrecognized registry placeholder observation",
+      );
     if (context.distribution === "bootstrap")
       assert(
         pkg.versions.every((v) => v === item.version),
@@ -810,9 +960,70 @@ export function reconcile(
         (context.distribution === "bootstrap" ? null : item.oldVersion)
     )
       state = "divergent";
-    states.push({ name: item.name, version: item.version, state });
+    states.push({
+      name: item.name,
+      version: item.version,
+      state,
+      ...(pkg.placeholders ? { placeholders: pkg.placeholders } : {}),
+    });
   }
   return states;
+}
+
+export const publicationObservationLimits = Object.freeze({
+  maxAttempts: 12,
+  maxDurationMs: 360000,
+  intervalMs: 30000,
+});
+
+// No upload callback: retries are observations only, after accepted uploads.
+export async function observePublication(
+  record,
+  artifacts,
+  context,
+  {
+    retryAbsent = false,
+    fetcher = fetch,
+    now = () => performance.now(),
+    sleep = (ms, signal) => delay(ms, undefined, { signal }),
+  } = {},
+) {
+  const { maxAttempts, maxDurationMs, intervalMs } =
+    publicationObservationLimits;
+  const started = now();
+  const signal = AbortSignal.timeout(maxDurationMs);
+  let states;
+  let attempts = 0;
+  while (attempts < maxAttempts && now() - started < maxDurationMs) {
+    states = reconcile(
+      record,
+      await registryInventory(context.distribution, fetcher, {
+        signal,
+        revalidate: retryAbsent,
+      }),
+      artifacts,
+      context,
+    );
+    attempts++;
+    const elapsedMs = now() - started;
+    assert(
+      elapsedMs < maxDurationMs,
+      "Post-publication observation deadline exceeded",
+    );
+    if (
+      !retryAbsent ||
+      states.some((item) => item.state === "divergent") ||
+      states.every((item) => item.state === "published")
+    )
+      return { states, observation: { attempts, elapsedMs, exhausted: false } };
+    if (attempts < maxAttempts)
+      await sleep(Math.min(intervalMs, maxDurationMs - elapsedMs), signal);
+  }
+  assert(states, "Post-publication observation deadline exceeded");
+  return {
+    states,
+    observation: { attempts, elapsedMs: now() - started, exhausted: true },
+  };
 }
 
 export function remainingPlan(record, states, mode) {

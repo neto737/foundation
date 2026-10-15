@@ -38,6 +38,7 @@ import {
   validatePublisherEnvironment,
   validateReviewEvidence,
   authenticationMethod,
+  observePublication,
 } from "./release-core.mjs";
 import {
   loadNpmConfiguration,
@@ -657,8 +658,14 @@ async function publish(directory) {
       ).status ?? 1;
   // Always reconcile after an attempted publish, even when only some succeeded.
   let final;
+  let observation;
   try {
-    final = reconcile(record, await inventory(value), packet.artifacts, value);
+    ({ states: final, observation } = await observePublication(
+      record,
+      packet.artifacts,
+      value,
+      { retryAbsent: exitCode === 0 && remaining.length > 0 },
+    ));
     await context();
   } catch (error) {
     final = record.packages.map((item) => ({
@@ -676,7 +683,11 @@ async function publish(directory) {
     summarize(value, packet, final);
     throw error;
   }
-  write(join(directory, "reconciliation.json"), { exitCode, states: final });
+  write(join(directory, "reconciliation.json"), {
+    exitCode,
+    states: final,
+    observation,
+  });
   summarize(value, packet, final);
   assert(
     exitCode === 0 && final.every((item) => item.state === "published"),
