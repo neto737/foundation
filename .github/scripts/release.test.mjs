@@ -53,6 +53,8 @@ import {
   validatePublisherEnvironment,
   canonical,
   validateReviewEvidence,
+  observePublication,
+  publicationObservationLimits,
 } from "./release-core.mjs";
 import {
   recordFromBase,
@@ -1300,6 +1302,478 @@ const packument = (
     ]),
   ),
 });
+
+// Public metadata collected 2026-10-15. Email and signature values are synthetic;
+// the nine identities, distribution hashes and sizes are the observed values.
+const observedStages = [
+  [
+    "access",
+    "sha512-C1kObSGOdTFnaxpe1UQpmiViTeuzcorWxMUZjTLD4+n2FnpNXhvWenTlGz/sNdC8Of4mEdlhijAeissgejaRCA==",
+    "83a9bb9f1af89e147ac8e0c1353f7155bb85fed0",
+    339,
+  ],
+  [
+    "audit",
+    "sha512-XiZAFUpUTBSwjq2IbsB5GF1ppSlX+jvW6vJii4dR4RsY/VClqcmmQjs+50HFNjdi+V7AMC5dYIGXUnpS4TVH4A==",
+    "b2a9b3ff501f7c26a67287fd40410e5e36bce26b",
+    338,
+  ],
+  [
+    "auth",
+    "sha512-vygCBOpuYq3EUlPkhKFR+9EKBf4l9zQpUikfH9XzdeIuOF/8Fz86RCLX2QX4yJUJdrxA0lIqXa2pC/mROJ6y/g==",
+    "8cbd3d382b729a8c584aa186c3144b50419e913b",
+    337,
+  ],
+  [
+    "config",
+    "sha512-aU2xBT5D5wLZPfVuKX3RqHMz7leYi9N0jVHIFhBVUclUUuy2o7FEzrqkuYYSvSb15FUJu9x+zG3iQGMwcw7SxA==",
+    "8b51ac8446655fbc763c93e9c0487581004999d1",
+    339,
+  ],
+  [
+    "db",
+    "sha512-XKSaLkxO4IBG3i7YP3MbVSJRLJ3T14eDJfvPxxAkS3V9BfK8+plrNqZb4cvbmXYdK33obyOdngMpRA02wETB1w==",
+    "6a92b8c55d17869abd79ade7695f171ef8364b1b",
+    335,
+  ],
+  [
+    "email",
+    "sha512-UBE8gtZYXWha+X15EyHS5sS5B7rjERSJVoGfPmdgOOCC+MlAh5f4PCpo81Vbs5s9IAeaO4KllcVcfv9vNWCfuQ==",
+    "ef8bc44c0403894bdb569c7fc25be8cbead951fb",
+    338,
+  ],
+  [
+    "observability",
+    "sha512-8QtoXDdsheMVevFPzE5aoSBeFYAURYoylC+8o0oJahjNNA8oVUThePvgmTN8zYYzzkykOcvmvFd+ZLwp64sSsg==",
+    "6030c12edd95850c0be045eda3043dde37836b86",
+    346,
+  ],
+  [
+    "security",
+    "sha512-eteEVbapQoGxfntpLOgxF38dxUgFO1GuhUpnqJ7GjgwQdHg4xpU2r4LQYTGLo3MnaQ0PBQuX/wim27dERrpERg==",
+    "fbfb48de86ce05770ee2b102b4ff5b053288999a",
+    341,
+  ],
+  [
+    "tenant",
+    "sha512-LkZd92YYDBh235RzDU0ileAuMFgEvpqWtwPTbQGLF6TrPIUvOjVU8olu0xHA33hozjLOYzuftims6rQQ+rUiUA==",
+    "64d4b41bd442a99f57c65a32e5e116e377233450",
+    339,
+  ],
+];
+const stagePackument = (name = names[0], versions = ["0.1.2"]) => {
+  const [, integrity, shasum, unpackedSize] = observedStages.find(
+    ([short]) => name === `@t00ls-dev/${short}`,
+  );
+  const result = packument(name, versions);
+  result.versions["0.0.0-stage"] = {
+    name,
+    version: "0.0.0-stage",
+    _id: `${name}@0.0.0-stage`,
+    stub: true,
+    maintainers: [{ name: "t00ls-dev", email: "fixture@example.invalid" }],
+    dist: {
+      shasum,
+      tarball: `${officialRegistry}/${name}/-/${name.split("/")[1]}-0.0.0-stage.tgz`,
+      fileCount: 2,
+      integrity,
+      signatures: [{ sig: "Zml4dHVyZQ==", keyid: "SHA256:Zml4dHVyZQ==" }],
+      unpackedSize,
+    },
+    _npmUser: { name: "t00ls-dev", email: "fixture@example.invalid" },
+    description: "Temporary package placeholder for staged publishing",
+    directories: {},
+  };
+  return result;
+};
+
+for (const [short, integrity] of observedStages)
+  test(`observed ${short} placeholder is retained separately, never a stable version`, () => {
+    const name = `@t00ls-dev/${short}`;
+    const version = ["auth", "security"].includes(short) ? "0.2.0" : "0.1.2";
+    const result = validatePackument(stagePackument(name, [version]), name);
+    assert.deepEqual(result.versions, [version]);
+    assert.equal(result.latest, version);
+    assert.deepEqual(result.placeholders, [
+      {
+        version: "0.0.0-stage",
+        integrity,
+        tarball: `${officialRegistry}/${name}/-/${short}-0.0.0-stage.tgz`,
+      },
+    ]);
+    assert(!("0.0.0-stage" in result.integrities));
+  });
+
+for (const [label, mutate] of [
+  ["name", (p) => (p.name = names[1])],
+  ["version", (p) => (p.version = "0.0.1")],
+  ["id", (p) => (p._id = `${names[1]}@0.0.0-stage`)],
+  ["marker", (p) => (p.stub = false)],
+  ["description", (p) => (p.description = "not a holding version")],
+  ["publisher", (p) => (p._npmUser.name = "other")],
+  ["maintainer", (p) => (p.maintainers = [])],
+  ["directories", (p) => (p.directories = { lib: "dist" })],
+  ["script", (p) => (p.scripts = { install: "unexpected" })],
+  ["main", (p) => (p.main = "index.js")],
+  ["dependencies", (p) => (p.dependencies = { unexpected: "*" })],
+  ["unknown integrity", (p) => (p.dist.integrity = sri("other bytes"))],
+  ["other package integrity", (p) => (p.dist.integrity = observedStages[1][1])],
+  ["shasum", (p) => (p.dist.shasum = "0".repeat(40))],
+  ["file count", (p) => (p.dist.fileCount = 3)],
+  ["unpacked size", (p) => p.dist.unpackedSize++],
+  ["tarball", (p) => (p.dist.tarball += "?override=1")],
+  [
+    "signature shape",
+    (p) => (p.dist.signatures = [{ sig: "bad!", keyid: "x" }]),
+  ],
+  ["signature type", (p) => (p.dist.signatures[0].sig = null)],
+])
+  test(`staging placeholder rejects inconsistent ${label}`, () => {
+    const p = stagePackument();
+    mutate(p.versions["0.0.0-stage"]);
+    assert.throws(() => validatePackument(p, names[0]));
+  });
+
+test("placeholder cannot be latest or authorize a prerelease or stable stub", () => {
+  const latest = stagePackument();
+  latest["dist-tags"].latest = "0.0.0-stage";
+  assert.throws(() => validatePackument(latest, names[0]), /latest/);
+  const arbitrary = stagePackument();
+  arbitrary.versions["0.0.0-other"] = arbitrary.versions["0.0.0-stage"];
+  assert.throws(() => validatePackument(arbitrary, names[0]), /stable SemVer/);
+  const stable = stagePackument();
+  stable.versions["0.1.2"].stub = true;
+  assert.throws(
+    () => validatePackument(stable, names[0]),
+    /cannot be a placeholder/,
+  );
+});
+
+const publishedBootstrap = () => {
+  const r = bootstrapRecord();
+  const state = Object.fromEntries(
+    r.packages.map((p) => [
+      p.name,
+      validatePackument(stagePackument(p.name, [p.version]), p.name),
+    ]),
+  );
+  const a = r.packages.map((p) => ({
+    name: p.name,
+    integrity: state[p.name].integrities[p.version],
+  }));
+  return { r, state, a, c: bootstrapContext() };
+};
+
+test("bootstrap reconciles nine targets plus known placeholders, without authorizing reupload", () => {
+  const { r, state, a, c } = publishedBootstrap();
+  const states = reconcile(r, state, a, c);
+  assert(
+    states.every((p) => p.state === "published" && p.placeholders.length === 1),
+  );
+  assert.deepEqual(remainingPlan(r, states, "resume"), []);
+  assert.throws(() => remainingPlan(r, states, "publish"), /explicit resume/);
+  const next = record();
+  next.packages[0] = {
+    ...next.packages[0],
+    oldVersion: "0.1.2",
+    version: "0.1.3",
+  };
+  assert.equal(reconcile(next, state)[0].state, "absent");
+  next.packages[0].oldVersion = "0.0.0-stage";
+  assert.throws(() => reconcile(next, state));
+});
+
+test("known placeholders never hide target divergence or unexpected versions", () => {
+  for (const mutate of [
+    (state, r) =>
+      (state[names[0]].integrities[r.packages[0].version] = sri("changed")),
+    (state) => (state[names[0]].latest = "0.0.0-stage"),
+    (state) => state[names[0]].versions.push("9.0.0"),
+    (state) => state[names[0]].versions.push("0.1.1"),
+    (state) => state[names[0]].versions.push("0.2.0-beta.1"),
+    (state) => (state[names[0]].placeholders[0].integrity = sri("changed")),
+  ]) {
+    const { r, state, a, c } = publishedBootstrap();
+    mutate(state, r);
+    assert.throws(() => remainingPlan(r, reconcile(r, state, a, c), "resume"));
+  }
+});
+
+function observationHarness({
+  missingRounds = 1,
+  distribution = "bootstrap",
+  retryAbsent = true,
+} = {}) {
+  const { r, state, a, c } = publishedBootstrap();
+  if (distribution === "release") {
+    r.packages = [{ ...r.packages[0], oldVersion: "0.1.2", version: "0.1.3" }];
+    a[0].integrity = sri(`${names[0]}@0.1.3`);
+  }
+  let clock = 0;
+  let reads = 0;
+  const sleeps = [];
+  const fetcher = async (url, options) => {
+    assert.equal(options.method ?? "GET", "GET");
+    assert.equal(options.body, undefined);
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(
+      options.headers["Cache-Control"],
+      retryAbsent ? "no-cache" : undefined,
+    );
+    assert.equal(options.cache, retryAbsent ? "no-store" : undefined);
+    assert.equal(options.redirect, "error");
+    assert(options.signal instanceof AbortSignal);
+    const round = Math.floor(reads++ / names.length);
+    if (distribution === "bootstrap" && round < missingRounds)
+      return { status: 404, json: async () => ({ error: "Not found" }) };
+    const name = decodeURIComponent(new URL(url).pathname.slice(1));
+    const versions =
+      distribution === "release" && name === names[0]
+        ? round < missingRounds
+          ? ["0.1.2"]
+          : ["0.1.2", "0.1.3"]
+        : state[name].versions;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => stagePackument(name, versions),
+    };
+  };
+  return {
+    r,
+    a,
+    c: { ...c, distribution },
+    options: {
+      retryAbsent,
+      fetcher,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    },
+    sleeps,
+    reads: () => reads,
+    advance: (ms) => (clock += ms),
+  };
+}
+
+for (const distribution of ["bootstrap", "release"])
+  test(`${distribution} observes transient absence then confirms, GET-only`, async () => {
+    const h = observationHarness({ distribution });
+    const result = await observePublication(h.r, h.a, h.c, h.options);
+    assert(result.states.every((p) => p.state === "published"));
+    assert.equal(result.observation.attempts, 2);
+    assert.equal(result.observation.exhausted, false);
+    assert.equal(h.reads(), 18);
+    assert.deepEqual(h.sleeps, [30000]);
+  });
+
+test("persistent absence stops at the attempt limit, never success", async () => {
+  const h = observationHarness({ missingRounds: Infinity });
+  const result = await observePublication(h.r, h.a, h.c, h.options);
+  assert(result.states.every((p) => p.state === "absent"));
+  assert.equal(result.observation.exhausted, true);
+  assert.equal(
+    result.observation.attempts,
+    publicationObservationLimits.maxAttempts,
+  );
+  assert.equal(h.sleeps.length, publicationObservationLimits.maxAttempts - 1);
+  assert.equal(
+    h.reads(),
+    publicationObservationLimits.maxAttempts * names.length,
+  );
+});
+
+test("duration limit includes reads; late publication is not accepted", async () => {
+  const h = observationHarness({ missingRounds: Infinity });
+  const fetcher = h.options.fetcher;
+  h.options.fetcher = async (...args) => {
+    h.advance(10000);
+    return fetcher(...args);
+  };
+  const exhausted = await observePublication(h.r, h.a, h.c, h.options);
+  assert.equal(exhausted.observation.exhausted, true);
+  assert(exhausted.states.every((p) => p.state === "absent"));
+  assert(h.reads() < publicationObservationLimits.maxAttempts * names.length);
+  const late = observationHarness({ missingRounds: 0 });
+  const accepted = late.options.fetcher;
+  late.options.fetcher = async (...args) => {
+    late.advance(publicationObservationLimits.maxDurationMs);
+    return accepted(...args);
+  };
+  await assert.rejects(
+    observePublication(late.r, late.a, late.c, late.options),
+    /deadline/,
+  );
+});
+
+test("sleep cannot cause another read beyond the observation duration", async () => {
+  const h = observationHarness({ missingRounds: Infinity });
+  h.options.sleep = async () =>
+    h.advance(publicationObservationLimits.maxDurationMs);
+  const result = await observePublication(h.r, h.a, h.c, h.options);
+  assert.equal(result.observation.attempts, 1);
+  assert.equal(result.observation.exhausted, true);
+  assert(result.states.every((p) => p.state === "absent"));
+});
+
+test("unaccepted uploads and already-complete observations never poll", async () => {
+  for (const retryAbsent of [false, true]) {
+    const h = observationHarness({
+      missingRounds: retryAbsent ? 0 : Infinity,
+      retryAbsent,
+    });
+    const result = await observePublication(h.r, h.a, h.c, h.options);
+    assert.equal(result.observation.attempts, 1);
+    assert.deepEqual(h.sleeps, []);
+  }
+});
+
+test("concrete target divergence stops observation immediately", async () => {
+  const h = observationHarness({ missingRounds: 0 });
+  h.a[0].integrity = sri("not approved");
+  const result = await observePublication(h.r, h.a, h.c, h.options);
+  assert.equal(result.states[0].state, "divergent");
+  assert.equal(result.observation.attempts, 1);
+  assert.deepEqual(h.sleeps, []);
+});
+
+for (const status of [401, 403, 404, 429, 500, 503, 206])
+  test(`observation fails closed without retry on HTTP ${status}`, async () => {
+    const h = observationHarness({ distribution: "release" });
+    let calls = 0;
+    h.options.fetcher = async () => {
+      calls++;
+      return { status, ok: false };
+    };
+    await assert.rejects(
+      observePublication(h.r, h.a, h.c, h.options),
+      /Registry request failed/,
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(h.sleeps, []);
+  });
+
+test("observation never treats network, malformed JSON or ambiguous 404 as absence", async () => {
+  for (const response of [
+    async () => {
+      throw new Error("network unavailable");
+    },
+    async () => {
+      throw new DOMException("timeout", "TimeoutError");
+    },
+    async () => ({
+      status: 404,
+      json: async () => ({ error: "unauthorized" }),
+    }),
+    async () => ({
+      status: 200,
+      ok: true,
+      json: async () => {
+        throw new SyntaxError("JSON");
+      },
+    }),
+    async () => ({ status: 200, ok: true, json: async () => ({}) }),
+  ]) {
+    const h = observationHarness();
+    await assert.rejects(
+      observePublication(h.r, h.a, h.c, { ...h.options, fetcher: response }),
+    );
+    assert.deepEqual(h.sleeps, []);
+  }
+});
+
+test("actual publisher uploads once; polling only observes and preserves final authority gates", async () => {
+  const source = readFileSync(".github/scripts/release.mjs", "utf8");
+  const start = source.indexOf("async function publish(directory)");
+  const publisher = source.slice(start, source.indexOf("\ntry {", start));
+  for (const { exitCode, missingRounds, authorityFailure } of [
+    { exitCode: 0, missingRounds: 1 },
+    { exitCode: 0, missingRounds: Infinity },
+    { exitCode: 1, missingRounds: Infinity },
+    { exitCode: 0, missingRounds: 1, authorityFailure: true },
+  ]) {
+    const h = observationHarness({
+      missingRounds,
+      retryAbsent: exitCode === 0,
+    });
+    let uploads = 0;
+    let authorityChecks = 0;
+    const writes = new Map();
+    const publish = runInNewContext(`${publisher}; publish`, {
+      assert,
+      join,
+      resolve,
+      context: async () => {
+        authorityChecks++;
+        if (authorityFailure && authorityChecks === 3)
+          throw new Error("authority changed");
+        return { ...h.c, mode: "publish" };
+      },
+      prepare: async () => ({
+        value: { ...h.c, mode: "publish" },
+        record: h.r,
+        packet: { artifacts: h.a },
+      }),
+      inventory: () =>
+        registryInventory("bootstrap", async () => ({
+          status: 404,
+          json: async () => ({ error: "Not found" }),
+        })),
+      unchangedPackages: () => {},
+      remainingPlan,
+      reconcile,
+      changesetsPlan: () => ({ plan: {} }),
+      packPlan: () => ({}),
+      sourceGates: () => {},
+      validatePublisherEnvironment: () => {},
+      validateNpmConfiguration: () => {},
+      loadNpmConfiguration: async () => ({}),
+      require: () => ({ version: npmVersion }),
+      process: { env: {} },
+      registry: officialRegistry,
+      spawnSync: () => {
+        uploads++;
+        return { status: exitCode };
+      },
+      write: (path, value) => writes.set(path, value),
+      summarize: () => {},
+      observePublication: (r, a, c, options) =>
+        observePublication(r, a, c, { ...h.options, ...options }),
+    });
+    if (exitCode === 0 && missingRounds === 1 && !authorityFailure)
+      await publish("/synthetic-release");
+    else
+      await assert.rejects(
+        publish("/synthetic-release"),
+        /Partial\/failed|authority changed/,
+      );
+    assert.equal(uploads, 1);
+    assert.equal(authorityChecks, 3);
+    const result = writes.get("/synthetic-release/reconciliation.json");
+    assert.equal(result.exitCode, exitCode);
+    if (authorityFailure) {
+      assert(result.states.every((p) => p.state === "divergent"));
+      assert.equal(result.error, "authority changed");
+    } else {
+      assert.equal(
+        result.observation.attempts,
+        exitCode !== 0
+          ? 1
+          : missingRounds === 1
+            ? 2
+            : publicationObservationLimits.maxAttempts,
+      );
+      assert(
+        result.states.every(
+          (p) => p.state === (missingRounds === 1 ? "published" : "absent"),
+        ),
+      );
+    }
+  }
+});
+
 test("valid packument yields only observed registry facts, no administrative claims", () => {
   const result = validatePackument(packument(), names[0]);
   assert.deepEqual(result, {

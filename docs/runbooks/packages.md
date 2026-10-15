@@ -6,11 +6,14 @@ registry é `https://registry.npmjs.org`; os manifests e Changesets usam
 `public`. Cada package mantém sua versão independente. Raiz, UI, examples, tests
 e tooling, incluindo create-app/doctor, continuam privados para publicação.
 
-**Estado operacional:** o fluxo está preparado localmente; isso não comprova
-primeira publicação nem OIDC remoto. As versões históricas `0.1.0`/`0.1.1`
-permanecem privadas no GitHub Packages. Não as exclua, altere ou publique
-novamente como preparação. MIT/notices seguem [Licenças](licensing.md). O deploy
-continua DEV-only e o gerador `basic-d1` não é alterado por esta preparação.
+**Estado operacional:** os nove targets do bootstrap #30 estão públicos no npm,
+com integridade e `latest` confirmados. A tentativa foi encerrada por decisão
+excepcional do mantenedor, conforme o registro abaixo; o workflow permanece em
+failure e OIDC remoto não está comprovado por essa publicação. As versões
+históricas `0.1.0`/`0.1.1` permanecem privadas no GitHub Packages. Não as
+exclua, altere ou publique novamente como preparação. MIT/notices seguem
+[Licenças](licensing.md). O deploy continua DEV-only e o gerador `basic-d1` não
+é alterado por esta correção.
 
 ## Desenvolvimento e Version Packages
 
@@ -112,6 +115,15 @@ O inventário npm é público/anônimo: não envie GITHUB_TOKEN ao npm. Packumen
 precisam ter nomes/versões/latest/integridade e URLs HTTPS npm coerentes.
 Somente bootstrap admite ausência inicial observada; 401/403/5xx, falhas de
 rede, JSON inválido, destino errado ou metadata incompleta falham fechados.
+
+O inventário reconhece separadamente **somente os nove placeholders
+`0.0.0-stage` inspecionados em 15/10/2026**, com identidade, estrutura e hashes
+de distribuição fixados no leitor. Registros alterados, novos formatos ou outras
+prereleases bloqueiam e exigem revisão explícita. Os placeholders permanecem em
+`placeholders` no inventário e na reconciliação, fora das versões estáveis e das
+integridades dos targets. Não são versão aprovada/publicável, não podem ser
+`latest` e não servem de predecessor. A identificação do formato não comprova a
+causa interna de sua criação no npm.
 
 O envelope `authorization.json` **format 4** vincula registry/public,
 `user:t00ls-dev`, distribuição e método de autenticação, #30/record quando
@@ -226,7 +238,28 @@ Após tentativa, revisar `npm-release-result`, reconciliation.json e summary.
 Published requer integridade e latest dos artifacts aprovados; absent é restante
 observado; divergência de identidade/versões/bytes/latest impede nova tentativa.
 Bootstrap parcial mantém o mesmo plano, mesmo que packages restantes ainda
-retornem 404. Release normal nunca transforma um package ausente em bootstrap.
+retornem 404. Release normal nunca transforma um package ausente em bootstrap. O
+placeholder conhecido adicional não substitui o target: bootstrap continua
+rejeitando qualquer outra versão estável existente; release normal continua
+exigindo o predecessor real. Integridade/latest divergentes e versões superiores
+permanecem bloqueantes.
+
+Após uploads aceitos (subprocesso exit 0 e plano restante não vazio), o
+publisher observa novamente o inventário **sem reenviar packages** quando algum
+target continua ausente. Limites: **12 observações, intervalo de 30 segundos e
+duração total máxima de 6 minutos**, incluindo leituras; cada GET mantém o
+timeout de 30 segundos, limitado também pelo prazo global. As releituras são
+anônimas, solicitam revalidação de cache e não usam corpo nem credenciais. Isso
+não garante que o registry elimine caches intermediários. Divergência concreta,
+erro HTTP, falha de rede, timeout, JSON ou metadata inválidos interrompem a
+espera. Somente o 404/`Not found` bootstrap continua sendo ausência observável.
+
+Ausência persistente não vira sucesso: `reconciliation.json` registra estados,
+tentativas, duração e esgotamento, e o gate final continua exigindo exit 0 e
+todos os targets `published`, após revalidar contexto/autoridade. Upload com
+falha e resume sem restante mantêm uma única observação final. Não há retry de
+upload. Esse comportamento vale para execuções futuras autorizadas, não
+reinterpreta o run `38674028260`, que terminou em failure.
 
 Resume exige autorização separada, `mode=resume` e os mesmos
 PR/release_sha/execution_sha/distribuição/digests/audit_run/approval_run.
@@ -240,6 +273,37 @@ explícita dos mesmos bytes, não regeneração. Retenção é 30 dias. Consulta
 master e registry não são transação atômica; avanço durante tentativa pode
 resultar em publicação parcial e falha de verificação, nunca sucesso silencioso.
 
+### Encerramento excepcional do bootstrap #30 — 15/10/2026
+
+Por autorização expressa do mantenedor em 15/10/2026, a primeira tentativa de
+publicação npm está **operacionalmente encerrada**, com fundamento na
+confirmação externa dos nove targets acima, seus bytes aprovados e `latest`
+corretos. Não há target pendente: nenhum upload restante é necessário ou
+autorizado para essa tentativa.
+
+O registro refere-se exclusivamente ao snapshot
+`a538235fb03acce48b721d31621c39da02d94db5`, ao
+[audit 38598859943](https://github.com/t00ls-dev/foundation/actions/runs/38598859943),
+à
+[aprovação 38608503662](https://github.com/t00ls-dev/foundation/actions/runs/38608503662)
+e ao
+[publish 38674028260](https://github.com/t00ls-dev/foundation/actions/runs/38674028260).
+O resultado histórico deste último permanece **failure**. Os nove registros
+adicionais `0.0.0-stage` permanecem divergências fora do plano, sem aprovação
+retroativa; a causa interna exata de sua criação não foi determinada.
+
+Essa decisão excepcional encerra o freeze dessa tentativa **somente para
+desenvolvimento e integração de código**, sujeitos à revisão e aos gates
+normais. Não autoriza publish, resume, rerun, novo bootstrap ou alteração dos
+packages publicados. Artifacts, digests, certificados e records históricos
+permanecem preservados, sem regeneração; nenhuma autorização antiga pode ser
+reutilizada para outro snapshot ou executor.
+
+Futuras releases exigem o fluxo normal de proveniência, CI, audit, aprovação e
+autorização operacional próprios. Este registro é específico ao incidente e não
+cria dispensa geral da regra de freeze ou dos requisitos de recuperação para
+outras tentativas.
+
 ## Consumo
 
 Após a primeira publicação efetivamente confirmada, os nove nomes são
@@ -248,7 +312,6 @@ com atualizações revisadas/testadas; não recebem alterações de arquivos cop
 do template automaticamente. Remover mapping antigo de scope GitHub é decisão do
 consumidor, sem alterar packages históricos.
 
-Até lá, use workspace/tarballs para desenvolvimento/testes: não afirmar que as
-versões preparadas já estão disponíveis no npm. Veja
+Workspace/tarballs continuam disponíveis para desenvolvimento/testes. Veja
 [Distribuição](package-distribution.md) para os 18 exports/perfis TypeScript e
 [Criação de apps](creating-an-app.md) para o gerador existente.
