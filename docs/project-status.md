@@ -63,13 +63,13 @@ da primeira entrega.
 | `@t00ls-dev/observability` | Logging JSON estruturado com contexto de request, usuário e tenant.                                                                                                 |
 | `@t00ls-dev/audit`         | Eventos append-only para D1/PostgreSQL, com validação recursiva que rejeita chaves sensíveis na metadata.                                                           |
 
-Os nove pacotes possuem versões históricas `0.1.0` e `0.1.1` privadas no GitHub
-Packages; internamente são consumidos com `workspace:*`. A distribuição oficial
-é preparada para npmjs.com público no scope do usuário `t00ls-dev`, sem
-organização/publicação dupla. Os alvos #30 (`auth`/`security` `0.2.0`, demais
-`0.1.2`) exigem novo audit e aprovação integral do owner; não estão publicados
-no npm por efeito desta preparação. OIDC remoto e primeiro registro ainda
-dependem de pré-requisitos operacionais. Release permanece manual e
+Os nove pacotes tiveram as versões históricas `0.1.0` e `0.1.1` privadas no
+GitHub Packages; esses pacotes duplicados foram excluídos em **15/10/2026**.
+Internamente são consumidos com `workspace:*`. Os nove pacotes oficiais
+permanecem públicos no npmjs.com, no scope do usuário `t00ls-dev`, sem
+organização/publicação dupla: `auth`/`security` `0.2.0`, demais `0.1.2`. A
+exclusão não alterou os workflows nem o fluxo de publicação. OIDC remoto ainda
+depende de validação operacional autorizada. Release permanece manual e
 explicitamente autorizado. Código-fonte público não torna automaticamente os
 pacotes públicos; seu acesso depende das permissões e da herança
 administrativas. Os demais workspaces com `private: true` não são publicados no
@@ -297,9 +297,10 @@ Changesets prepara releases independentes dos nove pacotes reutilizáveis em
 Version Packages da CI de push/master cria ou atualiza o PR de versionamento;
 não publica pacotes. Release é manual e requer CI aprovada do SHA exato, audit,
 aprovação do owner por identidade/permissão verificadas na API, preflight e
-autorização explícita. As versões `0.1.0` e `0.1.1` já foram publicadas;
-abertura do código não autoriza uma nova publicação. Veja o
-[runbook de pacotes](runbooks/packages.md). Nesse fluxo:
+autorização explícita. As versões `0.1.0` e `0.1.1` pertencem ao histórico dos
+pacotes privados excluídos do GitHub Packages; abertura do código não autoriza
+uma nova publicação. Veja o [runbook de pacotes](runbooks/packages.md). Nesse
+fluxo:
 
 - APIs podem amadurecer sem releases artificiais;
 - cada pacote mantém versão própria;
