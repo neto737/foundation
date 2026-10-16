@@ -124,8 +124,12 @@ Na v0.1, exemplos e tooling consomem pacotes com o protocolo `workspace:`. Os
 nove pacotes oficiais em `packages/*` estão publicados no npmjs.com público no
 scope do usuário `t00ls-dev`, com Changesets e versões independentes. Os pacotes
 privados duplicados do GitHub Packages foram excluídos em 15/10/2026; não há
-publicação dupla. OIDC remoto ainda depende de validação operacional autorizada;
-a publicação existente não comprova esse fluxo. Veja o
+publicação dupla. Os registros adicionais `0.0.0-stage` são placeholders de
+staging do npm, mantidos por não haver impacto operacional demonstrado; não
+representam staging da aplicação, e a operação exata que os criou não foi
+determinada. A configuração externa do Trusted Publishing e a validação remota
+de OIDC permanecem pendentes para a próxima release legítima, sem ativação ou
+teste antecipado; a publicação existente não comprova esse fluxo. Veja o
 [runbook de pacotes](../runbooks/packages.md).
 
 ## Ambientes e entrega

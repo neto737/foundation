@@ -127,6 +127,24 @@ integridades dos targets. Não são versão aprovada/publicável, não podem ser
 `latest` e não servem de predecessor. A identificação do formato não comprova a
 causa interna de sua criação no npm.
 
+Na investigação de **16/10/2026**, o conteúdo mínimo, `stub: true` e o README
+padronizado confirmaram a natureza desses nove registros como placeholders de
+[staging do npm](https://docs.npmjs.com/staged-publishing), sem código,
+dependências ou scripts do Foundation. Não representam um ambiente de staging da
+aplicação. A coincidência temporal com o bootstrap não identifica
+definitivamente a operação que os criou; o README estático também não comprova
+uma aprovação de staging ainda pendente.
+
+A decisão é **manter os nove placeholders como estão**, pois não há impacto
+operacional demonstrado no consumo normal ou no inventário atual. `latest`
+aponta para as versões operacionais; um pin explícito em `0.0.0-stage` seleciona
+um stub sem a API Foundation. Não há necessidade de excluir, depreciar, alterar
+dist-tags ou criar uma release corretiva. Depreciar acrescentaria `deprecated` e
+bloquearia o leitor estrito atual; remover seria irreversível, sem benefício
+funcional demonstrado. Reavaliar somente diante de evidência nova, como um
+consumidor afetado ou bloqueio de uma release legítima. Essa decisão não aprova
+retroativamente os registros fora do plano histórico.
+
 O envelope `authorization.json` **format 4** vincula registry/public,
 `user:t00ls-dev`, distribuição e método de autenticação, #30/record quando
 aplicável, snapshot/executor, protectedInputsDigest, changesDigest, audit_run e
@@ -233,6 +251,13 @@ placeholder em nome novo e não é um teste inofensivo. Configurar trusted
 publishers somente quando os packages existirem e uma release legítima estiver
 pronta para validar a configuração na janela oficial. Não fabricar bumps para
 testar OIDC.
+
+**Pendência atual:** a configuração externa do Trusted Publishing nos nove
+pacotes e a validação remota de OIDC permanecem reservadas para a próxima
+release legítima, na janela oficial. A publicação do bootstrap usou
+`bootstrap-token`; sua proveniência não comprova autenticação de upload por
+OIDC. Não configurar nem testar Trusted Publishing antecipadamente, nem criar
+versões apenas para essa validação.
 
 ## Reconciliação e resume
 
