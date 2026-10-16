@@ -68,12 +68,20 @@ GitHub Packages; esses pacotes duplicados foram excluídos em **15/10/2026**.
 Internamente são consumidos com `workspace:*`. Os nove pacotes oficiais
 permanecem públicos no npmjs.com, no scope do usuário `t00ls-dev`, sem
 organização/publicação dupla: `auth`/`security` `0.2.0`, demais `0.1.2`. A
-exclusão não alterou os workflows nem o fluxo de publicação. OIDC remoto ainda
-depende de validação operacional autorizada. Release permanece manual e
-explicitamente autorizado. Código-fonte público não torna automaticamente os
-pacotes públicos; seu acesso depende das permissões e da herança
-administrativas. Os demais workspaces com `private: true` não são publicados no
-registry, embora seu código esteja público.
+exclusão não alterou os workflows nem o fluxo de publicação. A configuração
+externa do Trusted Publishing e a validação remota de OIDC permanecem pendentes,
+reservadas para a próxima release legítima, sem ativação ou teste antecipado.
+Release permanece manual e explicitamente autorizado. Código-fonte público não
+torna automaticamente os pacotes públicos; seu acesso depende das permissões e
+da herança administrativas. Os demais workspaces com `private: true` não são
+publicados no registry, embora seu código esteja público.
+
+Os nove registros adicionais `0.0.0-stage` são placeholders de staging do npm,
+sem a API operacional Foundation. A decisão de 16/10/2026 é mantê-los, sem
+impacto operacional demonstrado no consumo normal ou no inventário atual;
+`latest` continua nas versões oficiais. A operação exata que os criou não foi
+determinada. Veja a decisão e seus limites no
+[runbook de pacotes](runbooks/packages.md#audit-não-autoriza-publicação).
 
 ### Aplicação de referência
 
