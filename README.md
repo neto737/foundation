@@ -1,80 +1,185 @@
-# t00ls-dev/foundation
+<h1 align="center">Foundation</h1>
 
-Fundação técnica reutilizável para aplicações web, com autenticação, segurança,
-isolamento de tenants, banco de dados, e-mail e observabilidade. O projeto é
-Cloudflare-first e inclui `examples/links` como aplicação de referência, sem
-regras de negócio específicas de produtos.
+<p align="center">
+  Base modular em TypeScript para aplicações web Cloudflare-first da t00ls-dev.<br>
+  Autenticação, dados, isolamento por tenant e segurança em pacotes reutilizáveis.
+</p>
 
-## Estado
+<p align="center">
+  <a href="https://github.com/t00ls-dev/foundation/actions/workflows/ci.yml"><img src="https://github.com/t00ls-dev/foundation/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI da branch master"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/Node.js-%3E%3D22.22.0-339933" alt="Node.js 22.22.0 ou superior"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-MIT-blue" alt="Licença MIT"></a>
+</p>
 
-O repositório é público. A branch `master` possui proteção com pull request
-obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
-obrigatória e com possibilidade de bypass administrativo.
+<p align="center">
+  <a href="#pacotes-oficiais">Pacotes</a> ·
+  <a href="#início-rápido">Início rápido</a> ·
+  <a href="#documentação">Documentação</a> ·
+  <a href="CONTRIBUTING.md">Contribuição</a>
+</p>
 
-A v0.1 possui um caminho local completo, CI e deploy automático do exemplo em
-DEV. O Foundation não possui ambiente PROD; aplicações consumidoras são donas
-dos seus ambientes. Na verificação de 11/10/2026, `Deploy DEV` está habilitado,
-mas a primeira execução automática após a reativação ainda aguarda observação.
-Consulte [`docs/project-status.md`](docs/project-status.md) para entregas,
-validações, pendências priorizadas e itens deliberadamente adiados.
+---
+
+O Foundation reúne infraestrutura de aplicação sem regras de negócio de um
+produto específico. Combina **React SPA e API Hono no mesmo Cloudflare Worker**,
+com D1 como preset inicial e suporte a PostgreSQL via Drizzle.
+
+Os **nove pacotes oficiais estão publicados no npm**. O repositório inclui
+[Links](examples/links/README.md), uma biblioteca privada de bookmarks que
+demonstra a integração dos pacotes. O projeto está em evolução; consulte o
+[estado atual](docs/project-status.md) para entregas e pendências. O exemplo
+possui deploy automático somente em DEV; aplicações consumidoras definem seus
+próprios ambientes.
+
+## Principais funcionalidades
+
+- **Autenticação self-hosted:** Better Auth com senha, verificação de e-mail,
+  recuperação, magic link e Google OAuth opcional.
+- **Multi-tenancy e autorização:** contexto de tenant, memberships e convites,
+  com permissões separadas da autenticação.
+- **Dados com limites explícitos:** adapters Drizzle para D1 e PostgreSQL,
+  migrations sob responsabilidade de cada aplicação e testes reais de banco.
+- **Segurança configurável:** headers, CSP, CORS, CSRF, Turnstile e rate
+  limiting.
+- **E-mail, logs e auditoria:** integração Resend, logging JSON contextual e
+  eventos de auditoria append-only.
+- **Qualidade automatizada:** TypeScript strict, Vitest, Miniflare,
+  Testcontainers e Playwright, incluindo cenários desktop e mobile.
+- **Ferramentas no workspace:** gerador `basic-d1`, diagnóstico read-only com
+  Doctor e base UI compartilhada usada pelo exemplo Links.
+
+## Pacotes oficiais
+
+Disponíveis publicamente no [npm](https://www.npmjs.com/~t00ls-dev), no scope
+`@t00ls-dev`, com versões independentes:
+
+- [**@t00ls-dev/config**](https://www.npmjs.com/package/@t00ls-dev/config) —
+  configuração tipada de ambiente, bancos e capabilities.
+- [**@t00ls-dev/db**](https://www.npmjs.com/package/@t00ls-dev/db) — factories
+  Drizzle para D1 e PostgreSQL e consulta do journal PostgreSQL.
+- [**@t00ls-dev/auth**](https://www.npmjs.com/package/@t00ls-dev/auth) —
+  integração Better Auth e resolução tipada de sessão no servidor.
+- [**@t00ls-dev/tenant**](https://www.npmjs.com/package/@t00ls-dev/tenant) —
+  isolamento por tenant, memberships, troca de tenant ativo e convites.
+- [**@t00ls-dev/access**](https://www.npmjs.com/package/@t00ls-dev/access) —
+  autorização por permissões e roles configuráveis.
+- [**@t00ls-dev/security**](https://www.npmjs.com/package/@t00ls-dev/security) —
+  proteções HTTP, Turnstile e rate limiting com storage injetável.
+- [**@t00ls-dev/email**](https://www.npmjs.com/package/@t00ls-dev/email) —
+  contrato substituível de envio de e-mail com implementação Resend.
+- [**@t00ls-dev/observability**](https://www.npmjs.com/package/@t00ls-dev/observability)
+  — logs JSON estruturados com contexto de request, usuário e tenant.
+- [**@t00ls-dev/audit**](https://www.npmjs.com/package/@t00ls-dev/audit) —
+  eventos append-only em D1/PostgreSQL, com rejeição de chaves sensíveis na
+  metadata.
+
+Os antigos pacotes privados do GitHub Packages foram removidos; **npmjs.com é o
+registry oficial**, sem publicação dupla. UI, create-app, Doctor e demais
+workspaces privados não são publicados. Detalhes de consumo e publicação estão
+no [runbook de pacotes](docs/runbooks/packages.md).
+
+## Requisitos
+
+Para desenvolver neste repositório:
+
+- **Node.js 22.23.3**, patch validado pelo projeto; o mínimo declarado é
+  `>=22.22.0`.
+- **Corepack e pnpm 10.15.1**, fixado no `package.json`.
+- **Docker**, para os testes PostgreSQL com Testcontainers.
+- **Chromium e dependências de sistema**, para os testes E2E com Playwright.
+
+## Instalação
+
+### Consumir um pacote
+
+Em uma aplicação existente, instale os pacotes necessários. Por exemplo:
+
+```bash
+pnpm add @t00ls-dev/config
+```
+
+Consulte os READMEs em [`packages/`](packages) para as APIs e requisitos de cada
+pacote e o [guia de criação de aplicações](docs/runbooks/creating-an-app.md)
+para montar um projeto consumidor.
+
+### Preparar o repositório
+
+```bash
+git clone https://github.com/t00ls-dev/foundation.git
+cd foundation
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+O desenvolvimento local usa dependências `workspace:*` e não requer token
+privado de registry.
 
 ## Início rápido
 
-Requisitos: Node.js **22.23.3** (patch validado), Corepack, pnpm **10.15.1** e
-Docker disponível para os testes PostgreSQL. A suíte E2E requer Chromium e suas
-dependências de sistema.
+Com as dependências instaladas e compiladas, copie a configuração do exemplo:
 
 ```bash
-corepack enable
-pnpm install --frozen-lockfile
-pnpm --filter @t00ls-dev/example-links exec playwright install --with-deps chromium
-pnpm check
+cp examples/links/.dev.vars.example examples/links/.dev.vars
 ```
 
-Veja [`docs/architecture/overview.md`](docs/architecture/overview.md) para a
-arquitetura, [`docs/decisions`](docs/decisions) para as decisões vigentes e
-[`docs/runbooks/cache.md`](docs/runbooks/cache.md) para a regra obrigatória de
-bypass de cache nos domínios Cloudflare.
+Edite `.dev.vars`: substitua `AUTH_SECRET` por um segredo local aleatório de
+pelo menos 32 caracteres e ajuste `BASE_URL` para a origem usada pelo servidor.
+Configure `EMAIL_FROM` e `RESEND_API_KEY` próprios para os fluxos de e-mail;
+Google OAuth é opcional. Não versione esse arquivo nem use credenciais de DEV
+nos testes.
 
-O [runbook de pacotes e Release](docs/runbooks/packages.md) descreve Changesets,
-Release PRs, aprovação de snapshots e preparação da distribuição pública npm.
-
-Runbooks operacionais adicionais cobrem
-[ambientes](docs/runbooks/environments.md),
-[deploy](docs/runbooks/deployment.md), [segurança](docs/runbooks/security.md),
-[testes](docs/runbooks/testing.md), [LGPD](docs/runbooks/lgpd.md) e
-[criação de aplicações](docs/runbooks/creating-an-app.md).
-
-## Posicionamento
-
-O destino oficial dos nove pacotes é npmjs.com público, no scope do usuário
-`t00ls-dev`. A primeira publicação ainda precisa de autorização e pré-requisitos
-operacionais; as versões privadas históricas GitHub permanecem intactas.
-
-O desenvolvimento a partir do código usa dependências workspace e não requer
-token privado do registry. Para o exemplo Links, copie
-`examples/links/.dev.vars.example` para `examples/links/.dev.vars`, substitua
-`AUTH_SECRET` por um segredo local. Prepare o banco local e inicie o exemplo:
+Prepare o D1 local e inicie Links:
 
 ```bash
 pnpm --filter @t00ls-dev/example-links db:migrate:local
 pnpm dev
 ```
 
-E-mail e login Google requerem configuração própria se usados manualmente; veja
-os exemplos de variáveis locais. Não use credenciais de DEV para testes; os
-testes automatizados têm harness e bancos descartáveis próprios.
+Abra a URL informada pelo servidor. A verificação de e-mail é obrigatória para
+acessar a área privada. Veja o
+[guia do exemplo](examples/links/README.md#desenvolvimento-local) para
+configuração de origem, HMR e fluxos de autenticação.
 
-## Licença e contribuição
+Para executar o gate completo, com Docker disponível:
 
-O código próprio é licenciado sob MIT, com o aviso
-`Copyright (c) 2026 t00ls-dev` confirmado pelo mantenedor; veja
-[LICENSE](LICENSE) e [licenças e distribuição](docs/runbooks/licensing.md).
-Licenças de terceiros permanecem vigentes. Código-fonte público não autoriza
-publicação nem comprova a primeira entrega no npmjs.com. Workspaces com
-`private: true` não são publicados no registry, embora seu código esteja
-público. Código, licença, autorização de publicação e acesso ao registry são
-decisões separadas.
+```bash
+pnpm --filter @t00ls-dev/example-links exec playwright install --with-deps chromium
+pnpm check
+```
 
-Veja [CONTRIBUTING.md](CONTRIBUTING.md) para contribuir e
-[SECURITY.md](SECURITY.md) para divulgação responsável de vulnerabilidades.
+Os testes usam bancos descartáveis e e-mails capturados, sem credenciais de
+deploy ou envio real. O [runbook de testes](docs/runbooks/testing.md) descreve
+as suítes e os checks focados.
+
+## Documentação
+
+- **Visão do projeto:** [arquitetura](docs/architecture/overview.md),
+  [decisões técnicas](docs/decisions) e [estado atual](docs/project-status.md).
+- **Construir aplicações:** [criação de apps](docs/runbooks/creating-an-app.md),
+  [exemplo Links](examples/links/README.md) e
+  [pacotes e releases](docs/runbooks/packages.md).
+- **Desenvolver e operar:** [testes](docs/runbooks/testing.md),
+  [ambientes](docs/runbooks/environments.md),
+  [deploy](docs/runbooks/deployment.md) e
+  [migrations](docs/runbooks/migrations.md).
+- **Proteção de dados:** [segurança](docs/runbooks/security.md),
+  [bypass de cache obrigatório](docs/runbooks/cache.md) e
+  [LGPD](docs/runbooks/lgpd.md).
+
+## Contribuição
+
+Issues e pull requests focados são bem-vindos. Leia
+[CONTRIBUTING.md](CONTRIBUTING.md) para os padrões de contribuição, validação e
+integração. Mudanças em pacotes distribuídos seguem o fluxo de Changesets.
+
+## Segurança
+
+Para comunicar vulnerabilidades, siga [SECURITY.md](SECURITY.md). Não exponha
+detalhes exploráveis, credenciais ou dados pessoais em issues públicas.
+
+## Licença
+
+O código próprio é distribuído sob a [licença MIT](LICENSE), com copyright de
+2026 da t00ls-dev. Licenças e avisos de terceiros permanecem vigentes; consulte
+[licenças e distribuição](docs/runbooks/licensing.md).

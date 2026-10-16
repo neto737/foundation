@@ -5,7 +5,7 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão do estado de publicação e automação: 11 de outubro de 2026.
+Última revisão do estado de publicação e automação: 16 de outubro de 2026.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
@@ -209,9 +209,12 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
   Migration DEV é workflow reutilizável; deploy não aplica SQL e verifica
   `/health` com SHA/D1 obrigatórios. Verifica evento push/master, repositório de
   origem, identidade do workflow e job aprovado na mesma tentativa. Não repete a
-  suíte de testes. Na verificação de 11/10/2026, o workflow está habilitado após
-  a reativação; a primeira execução automática posterior ainda aguarda
-  observação.
+  suíte de testes. Na verificação de 16/10/2026, a execução automática
+  [38788787384](https://github.com/t00ls-dev/foundation/actions/runs/38788787384)
+  concluiu com sucesso para o SHA `abe0483d8ef6366b81e5b8d0da0dcd086559451e`,
+  após a
+  [CI aprovada](https://github.com/t00ls-dev/foundation/actions/runs/38788305767)
+  do mesmo SHA.
 - O Foundation não possui ambiente ou workflow PROD. Aplicações consumidoras
   definem seus próprios ambientes e processos de deploy.
 - Operações D1/recuperação compartilham serialização sem cancelar mutation

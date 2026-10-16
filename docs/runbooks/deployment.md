@@ -5,9 +5,13 @@ usando `examples/links`.
 
 ## DEV automático
 
-Na verificação de 11/10/2026, o workflow `Deploy DEV` está habilitado após sua
-reativação. A primeira execução automática pós-reativação ainda aguarda
-observação; uma CI ou um deploy anterior não comprova essa validação.
+Na verificação de 16/10/2026, o workflow `Deploy DEV` está habilitado e a
+execução automática pós-reativação foi confirmada: o
+[run 38788787384](https://github.com/t00ls-dev/foundation/actions/runs/38788787384)
+concluiu com sucesso para o SHA `abe0483d8ef6366b81e5b8d0da0dcd086559451e`, após
+a
+[CI aprovada](https://github.com/t00ls-dev/foundation/actions/runs/38788305767)
+do mesmo SHA. Esse registro não substitui os gates de execuções futuras.
 
 Um push em `master` executa a CI completa. O workflow `Deploy DEV` recebe o SHA
 validado e coordena expand/deploy/backfill/contract em jobs independentes. O job
