@@ -1,0 +1,181 @@
+# Decisões do MVP
+
+**Referência vigente em 2026-10-16.** O MVP ainda não está implementado. Este
+documento registra o escopo aprovado e suas invariantes; não autoriza execução de
+desenvolvimento ou operação.
+
+## Precedência e estado
+
+Esta é a fonte de decisões do Levi, consolidada a partir das decisões aprovadas
+na preparação do repositório e reafirmadas no alinhamento com o Foundation, em
+2026-10-16. O [README](../README.md) apresenta um resumo; o
+[AGENTS.md](../AGENTS.md) orienta o trabalho no repositório.
+
+Decisões posteriores explicitamente aprovadas prevalecem e devem ser incorporadas
+aqui. Fatos técnicos descrevem capacidades e limites; recomendações não se tornam
+requisitos por repetição. Relatórios históricos permanecem como evidência de suas
+execuções e não são necessários para compreender ou definir o escopo atual.
+
+| Classificação | Estado |
+| --- | --- |
+| Aprovado | Regras das seções seguintes, ainda por implementar. |
+| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização. |
+| Implementado | Apenas documentação e preparação mínima do repositório; nenhuma funcionalidade do MVP. |
+
+## Organização, acesso e identidade
+
+- Organização é o tenant e pode conter várias igrejas. Não há tenant por igreja
+  nem limite de uma igreja por organização.
+- O MVP tem somente administradores organizacionais, com acesso às operações
+  disponíveis de todas as igrejas da organização em que possuem vínculo atual.
+  Não há operadores locais, concessões por igreja ou matriz dinâmica de permissões.
+- Administrar uma organização não autoriza acesso a outra, à infraestrutura, a
+  credenciais ou à edição arbitrária de auditoria. Vínculos em mais de uma
+  organização exigem contextos explicitamente validados e isolados.
+- Usuário autenticado e membro eclesiástico são independentes. Um membro não
+  precisa de login; coincidência de e-mail/telefone não associa entidades.
+- Membro pertence à organização e mantém exatamente uma igreja atual, inclusive
+  quando Inativo. Seu UUID permanece estável em alterações, retornos e
+  transferências internas; não há vínculos atuais simultâneos.
+
+## Cadastro e consultas
+
+| Campo pessoal | Regra aprovada |
+| --- | --- |
+| Nome | Obrigatório e não vazio. |
+| Nascimento | Opcional; data civil conhecida ou ausência. |
+| Telefone e e-mail de contato | Opcionais e compartilháveis; não são credenciais. |
+| Ingresso conhecido | Opcional; não confundir com criação do registro no sistema. |
+| Endereço | Opcional. |
+| Data de batismo | Opcional; ausência não significa “não batizado”. |
+| Função na igreja | Opcional; não determina permissão administrativa. |
+
+A organização e a igreja atual são obrigatórias no registro e validadas pelo
+servidor, assim como os metadados gerados pelo sistema. Campos pessoais opcionais
+não podem tornar-se obrigatórios por efeito do formulário, API ou banco. Não
+inventar datas para preencher lacunas.
+
+As situações aprovadas são **Ativo** e **Inativo**. Situação não é estado civil,
+inativação não é exclusão e transferência não cria uma terceira situação.
+
+O escopo inclui cadastro, consulta e alteração de membros, busca/listagem,
+aniversariantes e indicadores simples. Os recortes ainda não definidos estão em
+[Pendências reais](#pendências-reais). Homônimos e contatos compartilhados são
+legítimos; não há identidade automática ou fusão baseada nesses atributos.
+
+CPF, gênero, estado civil, profissão, escolaridade, conversão, filiação, cônjuge,
+casamentos, quantidade de filhos e observações livres não possuem aprovação neste
+recorte. Não entram por herança do legado nem por campos livres genéricos.
+
+## Histórico, transferências e exclusões
+
+- Manter histórico cadastral, de situação e de transferências internas.
+- Transferência ocorre somente entre igrejas da mesma organização, mantendo o
+  membro e seu UUID e registrando origem/destino. Não inclui cópia entre tenants,
+  solicitação/aceite local ou saga entre organizações.
+- Exclusão definitiva do membro elimina a ficha e seu histórico pessoal. A
+  auditoria técnica conserva somente o mínimo justificado, sem perfil ou diffs
+  pessoais; identificadores técnicos continuam sujeitos a retenção e proteção.
+- Igreja só pode ser excluída sem membros atuais, incluindo os Inativos.
+  Nomes institucionais registrados no histórico devem permanecer após a exclusão
+  legítima da igreja vazia.
+- Exclusão de organização é excepcional e fica fora da interface do MVP.
+
+## Onboarding
+
+1. Verificar o e-mail, comprovando seu controle.
+2. Permitir definição de senha após a verificação.
+3. Criar a organização com a primeira igreja e o vínculo de administrador
+   organizacional.
+
+O envio de e-mail não equivale à verificação. A primeira igreja não é opcional no
+provisionamento inicial. Esse fluxo não cria automaticamente um membro para o
+administrador. Conta verificada com senha pode existir antes do provisionamento
+da organização; não prometer uma transação única incluindo interação humana e
+envio externo de e-mail.
+
+## Dados e operação
+
+- PostgreSQL principal compartilhado; IDs de entidades em UUID gerados no
+  servidor. Tokens e identificadores externos preservam seus contratos próprios.
+- Operações relacionadas devem ser atômicas, incluindo negócio, histórico,
+  auditoria e resultado idempotente quando aplicável. Referências devem impedir
+  cruzamentos entre organizações.
+- Datas civis usam `DATE`; instantes usam `TIMESTAMPTZ`, com apresentação no fuso
+  do dispositivo. Não persistir idade calculada ou deslocar datas civis via UTC.
+- Schema composto e migrations são responsabilidade do Levi, versionados e com
+  execução independente de inicialização, CI e deploy. Validação em banco
+  descartável não equivale a aplicar migrations em banco persistente.
+- Backups automáticos e recuperação isolada são requisitos futuros, ainda sem
+  operação comprovada. Avaliar RLS como defesa adicional, sem adoção automática.
+- Histórico pessoal, auditoria, logs e backups têm finalidades e retenções
+  distintas. Definir governança LGPD antes de dados reais, incluindo a natureza
+  sensível dos dados religiosos e eventual tratamento de dados de menores.
+
+## Integração com o Foundation
+
+O [Foundation](https://github.com/t00ls-dev/foundation) fornece mecanismos
+genéricos; organização/igrejas, membros, histórico e políticas do produto ficam no
+Levi. Reutilizar os contratos públicos necessários dos nove pacotes oficiais:
+`config`, `db`, `auth`, `tenant`, `access`, `security`, `email`, `observability` e
+`audit`, no scope `@t00ls-dev` do npmjs.com.
+
+**Fatos técnicos da referência examinada:** Foundation em
+`20de16281bb8b31346e018b5a1e71c0d52ada36b`. Seu exemplo Links usa D1 e não demonstra
+o domínio multi-tenant do Levi; o gerador tem somente o preset `basic-d1`. UI e
+ferramentas de workspace são privadas para publicação. A disponibilidade de um
+pacote não obriga usar todos os seus recursos, como convites e plugins de auth.
+
+**Direção técnica planejada:** composição modular em TypeScript, separando
+interface, contratos, domínio e persistência, com React/Hono como referência do
+Foundation. A topologia Workers e a conexão PostgreSQL/Hyperdrive continuam
+sujeitas a prova; não são infraestrutura entregue ou provedor já escolhido.
+
+**Verificações de engenharia futuras:**
+
+- Compatibilizar UUID com o wrapper de auth, que não expõe a opção de geração de
+  IDs; provar o onboarding e-mail-primeiro, retomada e tratamento de conta existente.
+- Compor sessão e contexto de tenant com vínculo atual e autorização estática no
+  servidor. Os pacotes não filtram automaticamente as consultas do domínio.
+- Compatibilizar schema do consumidor, FKs e contratos dos adapters; garantir a
+  mesma transação para negócio, histórico e auditoria. O adapter PostgreSQL de
+  audit recebe `Sql`, o que não comprova uso transacional tipado na composição.
+- Verificar isolamento, concorrência, repetição de tentativas, exclusões e
+  recuperação com dados sintéticos em ambiente isolado.
+- Confirmar consumo suportado de UI, textos em português brasileiro, runtime,
+  pooling e eventual RLS, sem alterar decisões de produto para acomodar exemplos.
+
+Rechecagem assistida de duplicidades, coordenação de escritas e recibos de
+idempotência são recomendações técnicas de composição, não novos módulos
+aprovados. Nomes físicos de tabelas, protocolo de locks, índices e distribuição
+de UI continuam decisões de engenharia; este documento não é um schema.
+
+## Fora da implementação inicial
+
+- Financeiro, cobrança, planos, assinaturas, comercialização, quotas ou bloqueios
+  comerciais, incluindo o limite histórico proposto de 50 membros.
+- Migração real do CEPEG, importadores, sincronização e estruturas preparatórias
+  de correspondência com o legado.
+- Operadores/administradores locais por igreja, conjuntos Secretaria/Consulta,
+  concessões locais e editor de permissões.
+- Pessoa global, vínculos eclesiásticos atuais simultâneos, transferências entre
+  organizações e fusão automática de cadastros.
+- Hierarquias denominacionais, catálogos ministeriais, workflows e módulos sem
+  requisito concreto aprovado.
+
+O legado `t00ls-dev/Levi.old` é preservado em repositório separado. Propostas de
+relatórios anteriores não reativam essas funcionalidades.
+
+## Pendências reais
+
+| Tema | O que falta definir |
+| --- | --- |
+| Consultas | Inclusão de Inativos nos aniversariantes, tratamento de 29/02, exibição de idade/ano e recorte dos indicadores simples. |
+| Datas de negócio | Correção retroativa e apresentação de saída/retorno com data desconhecida. |
+| Administração adicional | Quem pode adicionar/revogar administrador organizacional, convite ou vínculo a conta existente e recuperação do último administrador. Não altera o primeiro onboarding. |
+| Operação | Volume/latência esperados, responsáveis, RPO/RTO, retenção e custo de backup/recuperação. |
+| Dados reais | Agentes de tratamento, finalidades/bases legais, retenção por categoria, atendimento a titulares, menores e eventual evidência de representação. |
+
+Essas pendências não reabrem organização como tenant, PostgreSQL, campos opcionais,
+Ativo/Inativo, administradores exclusivamente organizacionais ou a sequência de
+onboarding aprovada.
