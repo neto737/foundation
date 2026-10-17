@@ -335,7 +335,16 @@ try {
       imports(nonD1Entrypoints) +
         envProbe +
         `
-import type { FoundationAuth, FoundationSession } from "@t00ls-dev/auth";
+import type { FoundationAuth, FoundationAuthOptions, FoundationSession } from "@t00ls-dev/auth";
+import { createFoundationAuth } from "@t00ls-dev/auth";
+export function uuidAuth(options: FoundationAuthOptions) {
+  createFoundationAuth({ ...options, generateId: "uuid" });
+  createFoundationAuth(options);
+  // @ts-expect-error Only the native UUID opt-in is exposed.
+  createFoundationAuth({ ...options, generateId: "serial" });
+  // @ts-expect-error Custom generators are not part of the public contract.
+  createFoundationAuth({ ...options, generateId: () => "custom" });
+}
 import type { Client } from "pg";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";

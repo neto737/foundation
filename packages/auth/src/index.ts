@@ -1,4 +1,8 @@
-import { betterAuth, type Auth } from "better-auth";
+import {
+  betterAuth,
+  type Auth,
+  type BetterAuthAdvancedOptions,
+} from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { magicLink, twoFactor } from "better-auth/plugins";
 import {
@@ -26,6 +30,11 @@ export interface FoundationAuthOptions {
   email: FoundationEmail;
   google?: { clientId: string; clientSecret: string };
   secret: string;
+  /** Native UUID IDs; PostgreSQL adapters may require database-generated defaults. */
+  generateId?: Extract<
+    NonNullable<BetterAuthAdvancedOptions["database"]>["generateId"],
+    "uuid"
+  >;
   /** TOTP for password login only; enrollment requires a separate explicit opt-in. */
   totp?: { issuer: string; enrollmentEnabled?: boolean };
   /** Opt-in protection of the four public credential/email requests only. */
@@ -83,6 +92,9 @@ export function createFoundationAuth(
     // Keep the same protection in tests and deployed applications.
     advanced: {
       disableOriginCheck: false,
+      ...(options.generateId !== undefined
+        ? { database: { generateId: options.generateId } }
+        : {}),
       ...(options.rateLimit?.ipAddressHeaders
         ? {
             ipAddress: { ipAddressHeaders: options.rateLimit.ipAddressHeaders },
