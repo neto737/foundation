@@ -78,6 +78,35 @@ Antes de enviar uma mudança, execute `pnpm check` e `pnpm format:check`.
 Mocks não substituem os testes de banco existentes. Testes E2E não devem
 depender de providers externos para permanecer deterministas.
 
+## PostgreSQL (`pg`)
+
+```bash
+pnpm --filter @t00ls-dev/integration-tests test:integration
+```
+
+`postgres/database.test.ts` usa PostgreSQL 17 em Testcontainers e cobre o Client
+conectado compartilhado com Drizzle, tipos de dados, parametrização,
+encerramento e falha de conexão, migration/status/seed e reaplicação pelo
+histórico existente. Também valida isolamento de tenant, concorrência e falha
+standalone de convites, commit/rollback conjunto de domínio/convites/auditoria e
+triggers append-only.
+
+Better Auth é exercitado com fixture PostgreSQL de IDs textuais, verificação de
+e-mail, login/sessão/logout, reset e magic link. Os e-mails são capturados em
+memória, sem envio real ou alteração dos defaults de autenticação.
+
+O Worker sintético é compilado em memória com a condição `workerd` (necessária
+para `pg-cloudflare`) e executado em Miniflare com a data de compatibilidade
+`2025-09-01` e `nodejs_compat`, como Links. Invocações distintas criam conexões
+próprias, executam queries raw/Drizzle e testam commit/rollback de audit. O
+binding Hyperdrive local aponta somente ao container descartável: não exercita o
+pooling/cache do serviço nem comprova compatibilidade remota com Hyperdrive.
+
+As fixtures de auth e o SQL audit existente são aplicados somente no container;
+nenhuma migration de banco persistente é executada por esse harness. Os testes
+de distribuição validam o novo contrato assíncrono e tipos públicos `pg` em
+tarballs isolados, sem instalar Postgres.js como dependência do consumidor.
+
 ## Links (`examples/links`)
 
 ```bash

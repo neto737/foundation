@@ -4,6 +4,28 @@ Este runbook define a proteção de cache obrigatória para os domínios Cloudfl
 do exemplo em DEV. O objetivo é impedir que autenticação, dados personalizados,
 webhooks e sinais operacionais sejam servidos a partir de uma resposta obsoleta.
 
+## PostgreSQL e query cache do Hyperdrive
+
+Quando PostgreSQL for usado em Workers, a recomendação inicial é **um único
+binding Hyperdrive com query caching desabilitado** para auth, sessões,
+revogação/logout, permissões, memberships, convites e leituras após escrita.
+Desabilitar query cache mantém o pooling de conexões de origem.
+
+O cache do Hyperdrive é habilitado por padrão e escritas não invalidam SELECTs
+anteriores. Headers HTTP `private, no-store`, bypass da CDN e desativação de
+cookie cache no Better Auth **não desabilitam esse cache de consultas**. Quando
+ORM/auth gera o SQL, entregue à biblioteca o Client do binding sem cache. Não
+use comentários SQL, opções de prepared statements ou `NOW()` incidental como
+controle de frescor. Filtros por tenant são necessários para isolamento, mas não
+evitam permissões obsoletas.
+
+Uma configuração adicional com cache só deve surgir para leitura comprovadamente
+tolerante a dados antigos e com benefício medido. A configuração pertence ao
+consumidor/ambiente e exige operação de infraestrutura autorizada; não existe
+binding remoto PostgreSQL provisionado pelo Foundation. Consulte a
+[documentação oficial de query caching](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/).
+Miniflare com conexão local direta não valida o cache/pooling desse serviço.
+
 ## Regra Cloudflare
 
 Crie uma Cache Rule no zoneamento de cada domínio com ação `Bypass cache`. A

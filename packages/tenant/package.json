@@ -42,8 +42,9 @@
   },
   "dependencies": {
     "@cloudflare/workers-types": "^5.20261010.1",
+    "@types/pg": "^8.23.1",
     "drizzle-orm": "^0.45.4",
-    "postgres": "^3.4.7"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "vitest": "^5.0.3"

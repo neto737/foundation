@@ -294,10 +294,11 @@ try {
         `Workspace leak: ${entry}`,
       );
     assert.throws(() => require.resolve("@t00ls-dev/typescript-config"));
+    assert.throws(() => require.resolve("postgres"));
 
     // Pure controls have no Foundation imports and no Cloudflare injection.
     const externalNonD1 = [
-      "drizzle-orm/postgres-js",
+      "drizzle-orm/node-postgres",
       "drizzle-orm/sqlite-core",
       "drizzle-orm/pg-core",
       "better-auth",
@@ -335,6 +336,39 @@ try {
         envProbe +
         `
 import type { FoundationAuth, FoundationSession } from "@t00ls-dev/auth";
+import type { Client } from "pg";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
+import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
+import { getPostgresMigrationStatus } from "@t00ls-dev/db/postgres-migrations";
+import { createPostgresAuditStore } from "@t00ls-dev/audit/postgres";
+import { createPostgresInvitationRepository, createPostgresTenantRepository, createPostgresTenantSessionStore } from "@t00ls-dev/tenant/postgres";
+export async function postgresCalls(url: string) {
+  const { client, db } = await createPostgresDatabase(url);
+  const same: Client = db.$client;
+  const orm: NodePgDatabase = db;
+  try {
+    await orm.transaction(async (tx) => {
+      await tx.execute(sql.raw("SELECT 1"));
+      return {
+        audit: createPostgresAuditStore(same),
+        invitations: createPostgresInvitationRepository<"member">(same),
+        tenants: createPostgresTenantRepository<"member">(same),
+        sessions: createPostgresTenantSessionStore(same),
+      };
+    });
+    await getPostgresMigrationStatus(same, "/migrations");
+    // @ts-expect-error The obsolete Postgres.js API is not available.
+    client.begin;
+    // @ts-expect-error pg requires a query-capable executor.
+    createPostgresAuditStore({});
+    // @ts-expect-error Connection setup is asynchronous.
+    const legacy: { client: Client } = createPostgresDatabase(url);
+    return legacy;
+  } finally {
+    await client.end();
+  }
+}
 export async function resolveAuth(auth: FoundationAuth, headers: Headers) {
   const result = await auth.resolveSession(headers);
   const data: FoundationSession | null = result.data;
@@ -400,7 +434,7 @@ export async function resolveAuth(auth: FoundationAuth, headers: Headers) {
     );
     assert.equal(
       mixed.processEnvType,
-      "any",
+      "ProcessEnv",
       "Revisit documented mixed-profile limitation",
     );
     assert(
@@ -436,7 +470,7 @@ export async function resolveAuth(auth: FoundationAuth, headers: Headers) {
       `Workers contract: ${JSON.stringify(countsByCategory(workers))}; zero additional Foundation diagnostics versus native Workers Drizzle; skipLibCheck:false`,
     );
     console.log(
-      `UNSUPPORTED mixed Node/DOM/Workers: ${mixedGlobals.length} integration-induced global conflicts; process.env becomes any; ${JSON.stringify(mixedCounts)} (NOT upstream-only)`,
+      `UNSUPPORTED mixed Node/DOM/Workers: ${mixedGlobals.length} integration-induced global conflicts; pg's Node type reference preserves process.env as ProcessEnv in this import order; ${JSON.stringify(mixedCounts)} (NOT upstream-only)`,
     );
 
     // Emit/run all imports as a separate runtime check, not a claim that the
