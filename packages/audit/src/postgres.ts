@@ -1,9 +1,11 @@
-import type { Sql } from "postgres";
+import type { Client } from "pg";
 
 import type { AuditStore } from "./index.js";
 import { serializeAuditMetadata } from "./index.js";
 
-export function createPostgresAuditStore(database: Sql): AuditStore {
+export function createPostgresAuditStore(
+  database: Pick<Client, "query">,
+): AuditStore {
   return {
     async append(event) {
       const timestamp = event.timestamp.getTime();
@@ -12,7 +14,19 @@ export function createPostgresAuditStore(database: Sql): AuditStore {
       const timestampIso = event.timestamp.toISOString();
       const metadata = serializeAuditMetadata(event.metadata);
 
-      await database`INSERT INTO audit_events (actor, action, target, tenant, timestamp, metadata, request_id, result) VALUES (${event.actor}, ${event.action}, ${event.target}, ${event.tenant}, ${timestampIso}::timestamptz, ${metadata}::jsonb, ${event.requestId}, ${event.result})`;
+      await database.query(
+        "INSERT INTO audit_events (actor, action, target, tenant, timestamp, metadata, request_id, result) VALUES ($1, $2, $3, $4, $5::timestamptz, $6::jsonb, $7, $8)",
+        [
+          event.actor,
+          event.action,
+          event.target,
+          event.tenant,
+          timestampIso,
+          metadata,
+          event.requestId,
+          event.result,
+        ],
+      );
     },
   };
 }

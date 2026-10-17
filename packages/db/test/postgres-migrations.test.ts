@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import type { Sql } from "postgres";
-import { describe, expect, it, vi } from "vitest";
+import { Client } from "pg";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getPostgresMigrationStatus } from "../src/postgres-migrations.js";
 
@@ -14,55 +14,50 @@ const journal = JSON.stringify({
 });
 
 describe("getPostgresMigrationStatus", () => {
-  it("classifies journal entries using applied migration timestamps", async () => {
-    vi.mocked(readFile).mockResolvedValue(journal);
-    const client = vi.fn().mockResolvedValue([{ created_at: "1000" }]);
+  afterEach(() => vi.restoreAllMocks());
 
-    await expect(
-      getPostgresMigrationStatus(client as unknown as Sql, "/migrations"),
-    ).resolves.toEqual({
-      applied: ["0001_users"],
-      pending: ["0002_sessions"],
-    });
-    expect(readFile).toHaveBeenCalledWith(
-      "/migrations/meta/_journal.json",
-      "utf8",
-    );
-    expect(client).toHaveBeenCalledOnce();
-  });
+  // The successful query/result contract is exercised against real PostgreSQL.
+  it.each(["3F000", "42P01"])(
+    "treats missing schema/table (%s) as no applied migrations",
+    async (code) => {
+      vi.mocked(readFile).mockResolvedValue(journal);
+      const missingTable = Object.assign(new Error("missing table"), {
+        code,
+      });
+      const client = new Client();
+      const query = vi.spyOn(client, "query").mockRejectedValue(missingTable);
 
-  it("treats a missing migration table as no applied migrations", async () => {
-    vi.mocked(readFile).mockResolvedValue(journal);
-    const missingTable = Object.assign(new Error("missing table"), {
-      code: "42P01",
-    });
-    const client = vi.fn().mockRejectedValue(missingTable);
-
-    await expect(
-      getPostgresMigrationStatus(client as unknown as Sql, "/migrations"),
-    ).resolves.toEqual({
-      applied: [],
-      pending: ["0001_users", "0002_sessions"],
-    });
-  });
+      await expect(
+        getPostgresMigrationStatus(client, "/migrations"),
+      ).resolves.toEqual({
+        applied: [],
+        pending: ["0001_users", "0002_sessions"],
+      });
+      expect(readFile).toHaveBeenCalledWith(
+        "/migrations/meta/_journal.json",
+        "utf8",
+      );
+      expect(query).toHaveBeenCalledExactlyOnceWith(
+        "SELECT created_at FROM drizzle.__drizzle_migrations",
+      );
+    },
+  );
 
   it("rejects malformed journals and unexpected database failures", async () => {
     vi.mocked(readFile).mockResolvedValue('{"entries":[{"tag":"0001"}]}');
-    const client = vi.fn();
+    const client = new Client();
+    const query = vi.spyOn(client, "query");
 
     await expect(
-      getPostgresMigrationStatus(client as unknown as Sql, "/migrations"),
+      getPostgresMigrationStatus(client, "/migrations"),
     ).rejects.toThrow("Invalid Drizzle migration journal");
-    expect(client).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
 
     vi.mocked(readFile).mockResolvedValue(journal);
     const databaseError = new Error("connection lost");
-    const failingClient = vi.fn().mockRejectedValue(databaseError);
+    query.mockRejectedValue(databaseError);
     await expect(
-      getPostgresMigrationStatus(
-        failingClient as unknown as Sql,
-        "/migrations",
-      ),
+      getPostgresMigrationStatus(client, "/migrations"),
     ).rejects.toBe(databaseError);
   });
 });

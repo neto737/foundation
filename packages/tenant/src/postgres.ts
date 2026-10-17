@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Client } from "pg";
 import type { InvitationRepository, TenantInvitation } from "./invitation.js";
 import type {
   Membership,
@@ -23,56 +23,81 @@ interface InvitationRow {
 }
 
 export function createPostgresTenantRepository<TRole extends string>(
-  database: Sql,
+  database: Pick<Client, "query">,
 ): TenantRepository<TRole> & {
   listMemberships(userId: string): Promise<Membership<TRole>[]>;
 } {
   return {
     async findMembership(userId, tenantId) {
-      const rows = await database<
-        MembershipRow[]
-      >`SELECT id, tenant_id, user_id, role FROM tenant_memberships WHERE user_id = ${userId} AND tenant_id = ${tenantId}`;
+      const { rows } = await database.query<MembershipRow>(
+        "SELECT id, tenant_id, user_id, role FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2",
+        [userId, tenantId],
+      );
       return rows[0] ? mapMembership<TRole>(rows[0]) : null;
     },
     async listMemberships(userId) {
-      const rows = await database<
-        MembershipRow[]
-      >`SELECT id, tenant_id, user_id, role FROM tenant_memberships WHERE user_id = ${userId} ORDER BY created_at`;
+      const { rows } = await database.query<MembershipRow>(
+        "SELECT id, tenant_id, user_id, role FROM tenant_memberships WHERE user_id = $1 ORDER BY created_at",
+        [userId],
+      );
       return rows.map(mapMembership<TRole>);
     },
   };
 }
 
 export function createPostgresTenantSessionStore(
-  database: Sql,
+  database: Pick<Client, "query">,
 ): TenantSessionStore {
   return {
     async setActiveTenant(sessionId, tenantId) {
-      await database`INSERT INTO tenant_sessions (session_id, active_tenant_id, updated_at) VALUES (${sessionId}, ${tenantId}, NOW()) ON CONFLICT (session_id) DO UPDATE SET active_tenant_id = excluded.active_tenant_id, updated_at = excluded.updated_at`;
+      await database.query(
+        "INSERT INTO tenant_sessions (session_id, active_tenant_id, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (session_id) DO UPDATE SET active_tenant_id = excluded.active_tenant_id, updated_at = excluded.updated_at",
+        [sessionId, tenantId],
+      );
     },
   };
 }
 
 export function createPostgresInvitationRepository<TRole extends string>(
-  database: Sql,
+  database: Pick<Client, "query">,
 ): InvitationRepository<TRole> {
   return {
     async create(invitation) {
       const expiresAt = invitation.expiresAt.toISOString();
-      await database`INSERT INTO tenant_invitations (id, tenant_id, email, role, token_hash, expires_at, accepted_at, created_at) VALUES (${invitation.id}, ${invitation.tenantId}, ${invitation.email}, ${invitation.role}, ${invitation.tokenHash}, ${expiresAt}::timestamptz, NULL, NOW())`;
+      await database.query(
+        "INSERT INTO tenant_invitations (id, tenant_id, email, role, token_hash, expires_at, accepted_at, created_at) VALUES ($1, $2, $3, $4, $5, $6::timestamptz, NULL, NOW())",
+        [
+          invitation.id,
+          invitation.tenantId,
+          invitation.email,
+          invitation.role,
+          invitation.tokenHash,
+          expiresAt,
+        ],
+      );
     },
     async consume(input) {
-      return database.begin(async (transaction) => {
-        const now = input.now.toISOString();
-        const rows = await transaction<
-          InvitationRow[]
-        >`SELECT id, tenant_id, email, role, token_hash, expires_at, accepted_at FROM tenant_invitations WHERE email = ${input.email} AND token_hash = ${input.tokenHash} AND accepted_at IS NULL AND expires_at > ${now}::timestamptz FOR UPDATE`;
-        const row = rows[0];
-        if (!row) return null;
-        await transaction`UPDATE tenant_invitations SET accepted_at = ${now}::timestamptz WHERE id = ${row.id}`;
-        await transaction`INSERT INTO tenant_memberships (id, tenant_id, user_id, role, created_at) VALUES (${crypto.randomUUID()}, ${row.tenant_id}, ${input.userId}, ${row.role}, ${now}::timestamptz) ON CONFLICT (tenant_id, user_id) DO NOTHING`;
-        return mapInvitation<TRole>({ ...row, accepted_at: input.now });
-      });
+      // UPDATE locks the matching row and rechecks its predicate after waiting.
+      // One statement is atomic standalone and never commits an outer transaction.
+      const { rows } = await database.query<InvitationRow>(
+        `WITH consumed AS (
+          UPDATE tenant_invitations SET accepted_at = $3::timestamptz
+          WHERE email = $1 AND token_hash = $2 AND accepted_at IS NULL AND expires_at > $3::timestamptz
+          RETURNING id, tenant_id, email, role, token_hash, expires_at, accepted_at
+        ), membership AS (
+          INSERT INTO tenant_memberships (id, tenant_id, user_id, role, created_at)
+          SELECT $4, tenant_id, $5, role, $3::timestamptz FROM consumed
+          ON CONFLICT (tenant_id, user_id) DO NOTHING
+        ) SELECT * FROM consumed`,
+        [
+          input.email,
+          input.tokenHash,
+          input.now.toISOString(),
+          crypto.randomUUID(),
+          input.userId,
+        ],
+      );
+      return rows[0] ? mapInvitation<TRole>(rows[0]) : null;
     },
   };
 }

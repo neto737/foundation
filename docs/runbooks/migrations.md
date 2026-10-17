@@ -74,6 +74,12 @@ node --experimental-strip-types postgres/status.ts
 node --experimental-strip-types postgres/seed.ts
 ```
 
+O acesso usa `pg` e o migrator `drizzle-orm/node-postgres`; Drizzle Kit detecta
+`pg` nas dependências do app. Migrate/seed/status rodam em Node pela conexão
+direta do banco, não pela inicialização do Worker ou por Hyperdrive. A troca de
+driver não muda schemas, SQLs, snapshots ou journals existentes. O helper de
+status continua read-only e depende do journal no filesystem do app.
+
 `tests/integration` contém schema composto, migration, seed idempotente e testes
 contra PostgreSQL 17 descartável. Não há PostgreSQL persistente em DEV; o driver
 coordenado entregue é D1. Outro driver precisa de testes próprios de

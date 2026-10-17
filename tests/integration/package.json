@@ -15,18 +15,23 @@
   },
   "dependencies": {
     "@t00ls-dev/access": "workspace:*",
+    "@t00ls-dev/audit": "workspace:*",
+    "@t00ls-dev/auth": "workspace:*",
     "@t00ls-dev/db": "workspace:*",
     "@t00ls-dev/tenant": "workspace:*",
+    "better-auth": "^1.7.7",
     "drizzle-orm": "^0.45.4",
     "miniflare": "^4.20250906.0",
-    "postgres": "^3.4.7",
+    "pg": "^8.23.1",
     "testcontainers": "^12.2.0",
     "vitest": "^5.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
     "@cloudflare/workers-types": "^5.20261010.1",
     "@t00ls-dev/typescript-config": "workspace:*",
-    "drizzle-kit": "^0.31.11"
+    "drizzle-kit": "^0.31.11",
+    "esbuild": "0.28.2"
   }
 }

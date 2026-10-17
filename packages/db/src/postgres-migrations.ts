@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { Sql } from "postgres";
+import type { Client } from "pg";
 
 import type { MigrationStatus } from "./index.js";
 
@@ -22,7 +22,7 @@ function isMissingMigrationTable(error: unknown): boolean {
 }
 
 export async function getPostgresMigrationStatus(
-  client: Sql,
+  client: Pick<Client, "query">,
   migrationsFolder: string,
 ): Promise<MigrationStatus> {
   const journalPath = resolve(migrationsFolder, "meta/_journal.json");
@@ -53,9 +53,10 @@ export async function getPostgresMigrationStatus(
   const journal = { entries } as MigrationJournal;
   let rows: { created_at: string | null }[] = [];
   try {
-    rows = await client<
-      { created_at: string | null }[]
-    >`SELECT created_at FROM drizzle.__drizzle_migrations`;
+    const result = await client.query<{ created_at: string | null }>(
+      "SELECT created_at FROM drizzle.__drizzle_migrations",
+    );
+    rows = result.rows;
   } catch (error) {
     if (!isMissingMigrationTable(error)) throw error;
   }

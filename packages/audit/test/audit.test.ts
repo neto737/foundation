@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Client } from "pg";
 
 import { createD1AuditStore } from "../src/d1.js";
 import {
@@ -141,23 +142,27 @@ describe("createD1AuditStore", () => {
 
 describe("createPostgresAuditStore", () => {
   it("only exposes append and parameterizes every canonical field", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-    const store = createPostgresAuditStore(query as never);
+    const client = new Client();
+    const query = vi.spyOn(client, "query").mockReturnValue(undefined);
+    const store = createPostgresAuditStore(client);
 
     await store.append(event);
 
     expect(Object.keys(store)).toEqual(["append"]);
     expect(query).toHaveBeenCalledOnce();
-    const values = query.mock.calls[0]?.slice(1);
-    expect(values).toEqual([
-      event.actor,
-      event.action,
-      event.target,
-      event.tenant,
-      event.timestamp.toISOString(),
-      serializeAuditMetadata(event.metadata),
-      event.requestId,
-      event.result,
-    ]);
+    expect(query).toHaveBeenCalledWith(
+      "INSERT INTO audit_events (actor, action, target, tenant, timestamp, metadata, request_id, result) VALUES ($1, $2, $3, $4, $5::timestamptz, $6::jsonb, $7, $8)",
+      [
+        event.actor,
+        event.action,
+        event.target,
+        event.tenant,
+        event.timestamp.toISOString(),
+        serializeAuditMetadata(event.metadata),
+        event.requestId,
+        event.result,
+      ],
+    );
+    query.mockRestore();
   });
 });

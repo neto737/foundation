@@ -54,7 +54,7 @@ da primeira entrega.
 | Pacote                     | Estado atual                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@t00ls-dev/config`        | Configuração tipada para ambiente, D1/PostgreSQL, Better Auth, tenancy e flags de telemetria.                                                                       |
-| `@t00ls-dev/db`            | Factories Drizzle para D1 e PostgreSQL e status read-only do journal PostgreSQL, sem esconder recursos específicos dos bancos.                                      |
+| `@t00ls-dev/db`            | Factories Drizzle para D1 e PostgreSQL via `pg.Client` conectado e status read-only do journal PostgreSQL, sem esconder recursos específicos dos bancos.            |
 | `@t00ls-dev/auth`          | Configuração Better Auth para senha, verificação de e-mail, recuperação, magic link e Google OAuth opcional. Emite JavaScript e declarações TypeScript consumíveis. |
 | `@t00ls-dev/tenant`        | Contexto de tenant, memberships, troca de tenant ativo, convites e repositories D1/PostgreSQL.                                                                      |
 | `@t00ls-dev/access`        | Roles configuráveis como conjuntos de permissões, separadas da autenticação.                                                                                        |
@@ -194,8 +194,11 @@ A cobertura atual inclui:
   convites;
 - D1 real local por Miniflare;
 - PostgreSQL 17 real por Testcontainers;
-- 14 testes de integração Foundation mais 11 de Links, incluindo migration e
-  seed PostgreSQL pelo histórico Drizzle e isolamento por usuário em D1;
+- integração PostgreSQL com `pg`, migrations/seed pelo histórico Drizzle,
+  isolamento, concorrência de convites e rollback conjunto com audit;
+- Better Auth PostgreSQL com IDs textuais e e-mails capturados, mais execução
+  `pg`/Drizzle/audit em Workers local; Hyperdrive remoto não comprovado;
+- integrações de Links com isolamento por usuário em D1;
 - nove cenários Playwright em desktop e mobile, totalizando 18 execuções;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
@@ -280,7 +283,8 @@ Estes itens dependem de necessidade concreta ou de um segundo preset/consumidor:
 - ampliação de `t00ls.config.ts` para email, audit, storage, images e billing;
 - diagnóstico Doctor para PostgreSQL/Hyperdrive, R2, Images, providers, backups
   e endpoints remotos;
-- adapter e teste real de Hyperdrive;
+- validação remota real de Hyperdrive (o harness local usa conexão direta, sem
+  testar pooling/cache do serviço);
 - alternativa de autenticação por Cloudflare Access;
 - contratos compartilhados de request/response preparados para futura adoção de
   OpenAPI;
