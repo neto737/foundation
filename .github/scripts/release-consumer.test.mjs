@@ -17,6 +17,8 @@ import {
   envelopeDigest,
   hash,
   npmVersion,
+  validateRecord,
+  validateDistribution,
   registry,
 } from "./release-core.mjs";
 import {
@@ -54,7 +56,16 @@ function fixture(
   bytes = Buffer.from("synthetic approved bytes"),
 ) {
   const record = JSON.parse(
-    readFileSync(".changeset/release-plan.json", "utf8"),
+    readFileSync(
+      new URL("./fixtures/release/bootstrap-record.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  // Validate the historical baseline before any negative scenario mutates it.
+  validateRecord(record);
+  validateDistribution(
+    { distribution: "bootstrap", releasePr: 30, releaseSha: bootstrapSha },
+    record,
   );
   const artifacts = record.packages.map((p) => ({
     name: p.name,
@@ -103,6 +114,22 @@ function fixture(
     credential: async () => "synthetic",
   };
 }
+
+test("consumer fixture preserves historical bytes and independent records", () => {
+  assert.equal(
+    hash(
+      readFileSync(
+        new URL("./fixtures/release/bootstrap-record.json", import.meta.url),
+      ),
+    ),
+    "8986855d4038c2135031b8f045255bda5896d46aca737ef23fcf4c1fe62857c4",
+  );
+  const original = fixture().packet.record;
+  const changed = fixture().packet.record;
+  changed.packages[0].dependencies.push({ name: "mutated" });
+  changed.changesets[0].hash = "0".repeat(64);
+  assert.deepEqual(fixture().packet.record, original);
+});
 
 test("S01 bootstrap has its own required credential and authentication-bound approval", () => {
   validatePublisherEnvironment(bootstrapEnv(), npmVersion, "bootstrap");
