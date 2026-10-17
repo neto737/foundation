@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { runInNewContext } from "node:vm";
 import {
   authenticationMethod,
   bootstrapSha,
@@ -23,6 +24,7 @@ import {
 } from "./release-core.mjs";
 import {
   consumeApprovedArtifact,
+  createConsumerDiagnostics,
   loadNpmConfiguration,
   manifestFromBuffer,
   publicationCredential,
@@ -51,6 +53,148 @@ const emptyConfig = () => ({
   ]),
 });
 const bootstrapEnv = () => ({ NPM_BOOTSTRAP_TOKEN: "synthetic" });
+
+test("consumer CLI reports only fixed diagnostics and exits blocked at each outer gate", async () => {
+  const source = readFileSync(
+    new URL("./release-consumer.mjs", import.meta.url),
+    "utf8",
+  );
+  // Exercise the actual entry point without GitHub, configuration or publish IO.
+  const entry = source
+    .slice(source.indexOf("async function main("))
+    .replace("import.meta.url", '"file:///consumer.mjs"')
+    .replace(
+      "main(diagnostics).catch",
+      "globalThis.completion = main(diagnostics).catch",
+    );
+  for (const [gate, category] of [
+    ["arguments", "input"],
+    ["files", "file-access"],
+    ["authority", "authorization"],
+    ["checkout", "snapshot"],
+    ["npm-config", "configuration"],
+  ]) {
+    const secret =
+      "JWT.secret Authorization:Bearer secret https://secret/?token=secret";
+    const fail = () => {
+      throw new Error(secret, { cause: { token: secret } });
+    };
+    let uploads = 0;
+    const output = [];
+    const sandbox = {
+      assert,
+      JSON,
+      createConsumerDiagnostics,
+      process: { argv: ["node", "/consumer.mjs"], env: {} },
+      pathToFileURL: () => ({ href: "file:///consumer.mjs" }),
+      parseConsumerArguments: () =>
+        gate === "arguments" ? fail() : "/package.tgz",
+      readFile: async () => (gate === "files" ? fail() : "{}"),
+      validateConsumerAuthority: async () =>
+        gate === "authority" ? fail() : { executionSha: sha },
+      spawnSync: () => (gate === "checkout" ? fail() : { stdout: sha }),
+      loadNpmConfiguration: async () =>
+        gate === "npm-config" ? fail() : emptyConfig(),
+      consumeApprovedArtifact: async () => {
+        uploads++;
+      },
+      console: {
+        error: (value) => output.push(value),
+        log: (value) => output.push(value),
+      },
+    };
+    runInNewContext(entry, sandbox);
+    await sandbox.completion;
+    assert.equal(uploads, 0);
+    assert.equal(sandbox.process.exitCode, 1);
+    assert.equal(output.length, 1);
+    const { error } = JSON.parse(output[0]);
+    assert.equal(error.code, "FOUNDATION_PUBLISH_BLOCKED");
+    assert.equal(error.stage, gate);
+    assert.equal(error.category, category);
+    assert.equal(
+      error.message,
+      "Foundation consumer blocked publication; verify approved metadata, authentication and bytes",
+    );
+    assert.deepEqual(Object.keys(error).sort(), [
+      "category",
+      "code",
+      "message",
+      "stage",
+    ]);
+    assert(!output[0].includes("secret"));
+  }
+});
+
+test("consumer diagnostics isolate invocations and reject unlisted stage values", () => {
+  const first = createConsumerDiagnostics();
+  const second = createConsumerDiagnostics();
+  first.enter("npm-exchange");
+  assert.throws(() => first.enter("token=secret"));
+  assert.equal(first.failure().error.stage, "npm-exchange");
+  assert.equal(second.failure().error.stage, "arguments");
+});
+
+test("consumer inner failures retain safe categories and stop before later operations", async () => {
+  for (const [gate, category] of [
+    ["npm-config", "configuration"],
+    ["artifacts", "integrity"],
+    ["bootstrap-identity", "authentication"],
+    ["oidc-broker", "authentication"],
+    ["npm-exchange", "authentication"],
+    ["provenance-transport", "publication"],
+  ]) {
+    const diagnostics = createConsumerDiagnostics();
+    const f = fixture();
+    const fail = () => {
+      throw new Error("secret-token HTTP body stack");
+    };
+    let uploads = 0;
+    let requests = 0;
+    const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+    if (gate === "npm-config")
+      f.config.data.set("user", { raw: { _authToken: "secret" } });
+    if (gate === "artifacts") f.readBytes = fail;
+    if (["bootstrap-identity", "oidc-broker", "npm-exchange"].includes(gate)) {
+      f.credential = (_env, _distribution, name, _request, trace) =>
+        publicationCredential(
+          gate === "bootstrap-identity" ? bootstrapEnv() : oidcEnv(),
+          gate === "bootstrap-identity" ? "bootstrap" : "release",
+          name,
+          async () => {
+            requests++;
+            if (gate !== "npm-exchange" || requests === 2) fail();
+            return { status: 200, json: async () => ({ value: identity }) };
+          },
+          trace,
+        );
+    }
+    await assert.rejects(
+      consumeApprovedArtifact({
+        ...f,
+        diagnostics,
+        publishBuffer: async () => {
+          uploads++;
+          fail();
+        },
+      }),
+    );
+    assert.equal(uploads, gate === "provenance-transport" ? 1 : 0);
+    assert.equal(
+      requests,
+      gate === "npm-exchange"
+        ? 2
+        : ["oidc-broker", "bootstrap-identity"].includes(gate)
+          ? 1
+          : 0,
+    );
+    const result = diagnostics.failure();
+    assert.equal(result.error.stage, gate);
+    assert.equal(result.error.category, category);
+    assert.equal(result.error.code, "FOUNDATION_PUBLISH_BLOCKED");
+    assert(!JSON.stringify(result).includes("secret"));
+  }
+});
 function fixture(
   distribution = "bootstrap",
   bytes = Buffer.from("synthetic approved bytes"),
