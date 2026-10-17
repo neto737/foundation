@@ -161,7 +161,12 @@ const registry = (versions = ["0.1.0"], latest = versions.at(-1)) => ({
 const invalid = (name, fn) => test(name, () => assert.throws(fn));
 
 const bootstrapRecord = () =>
-  JSON.parse(readFileSync(".changeset/release-plan.json", "utf8"));
+  JSON.parse(
+    readFileSync(
+      new URL("./fixtures/release/bootstrap-record.json", import.meta.url),
+      "utf8",
+    ),
+  );
 const bootstrapContext = () => ({
   ...context(),
   distribution: "bootstrap",
@@ -199,6 +204,26 @@ const approvalJobs = () => [
     conclusion: "success",
   },
 ];
+
+// Exact bytes recovered from bootstrap commit 90a100377fa8c1e0e1b30174d4e611c545ed0ac4.
+test("historical bootstrap fixture retains provenance and independent nested state", () => {
+  const bytes = readFileSync(
+    new URL("./fixtures/release/bootstrap-record.json", import.meta.url),
+  );
+  assert.equal(
+    hash(bytes),
+    "8986855d4038c2135031b8f045255bda5896d46aca737ef23fcf4c1fe62857c4",
+  );
+  const original = bootstrapRecord();
+  validateRecord(original);
+  validateDistribution(bootstrapContext(), original);
+  assert.equal(original.baseSha, "79dec4983d45fb9deb7459850965ce496a24a2cb");
+  const changed = bootstrapRecord();
+  changed.packages[0].version = "99.0.0";
+  changed.packages[0].dependencies.push({ name: "mutated" });
+  changed.changesets[0].hash = "0".repeat(64);
+  assert.deepEqual(bootstrapRecord(), original);
+});
 
 test("bootstrap observation is not permission to publish; exact historical plan is required", async () => {
   const r = bootstrapRecord(),
