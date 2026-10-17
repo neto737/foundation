@@ -25,6 +25,42 @@ const require = createRequire(import.meta.url);
 const npmRoot = dirname(require.resolve("npm/package.json"));
 const npmRequire = createRequire(join(npmRoot, "package.json"));
 
+const failureCategories = Object.freeze({
+  "arguments": "input",
+  "files": "file-access",
+  "authority": "authorization",
+  "checkout": "snapshot",
+  "npm-config": "configuration",
+  "artifacts": "integrity",
+  "bootstrap-identity": "authentication",
+  "oidc-broker": "authentication",
+  "npm-exchange": "authentication",
+  "provenance-transport": "publication",
+});
+
+export function createConsumerDiagnostics() {
+  let stage = "arguments";
+  return {
+    enter(next) {
+      assert(Object.hasOwn(failureCategories, next));
+      stage = next;
+    },
+    failure() {
+      // Deliberately accepts no exception: messages, causes and server responses
+      // must never reach the public diagnostic, even for unexpected failures.
+      return {
+        error: {
+          code: "FOUNDATION_PUBLISH_BLOCKED",
+          message:
+            "Foundation consumer blocked publication; verify approved metadata, authentication and bytes",
+          stage,
+          category: failureCategories[stage],
+        },
+      };
+    },
+  };
+}
+
 // Inspect key names only, including shadowed configuration sources. Never
 // call getCredentialsByURI, flatten authentication, or report config values.
 export function validateNpmConfiguration(config) {
@@ -81,10 +117,13 @@ export async function publicationCredential(
   distribution,
   name,
   request = fetch,
+  diagnostics = createConsumerDiagnostics(),
 ) {
+  diagnostics.enter("npm-config");
   validatePublisherEnvironment(env, npmVersion, distribution);
   const method = authenticationMethod(distribution);
   if (method === "bootstrap-token") {
+    diagnostics.enter("bootstrap-identity");
     const identity = await responseJson(
       await request(`${registry}/-/whoami`, {
         headers: {
@@ -105,6 +144,7 @@ export async function publicationCredential(
     return env.NPM_BOOTSTRAP_TOKEN;
   }
 
+  diagnostics.enter("oidc-broker");
   const url = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   assert.equal(url.protocol, "https:", "Invalid OIDC broker protocol");
   assert(
@@ -139,6 +179,7 @@ export async function publicationCredential(
   assert.equal(claims.repository, repository, "OIDC repository mismatch");
   assert.equal(claims.ref, "refs/heads/master", "OIDC ref mismatch");
   assert.equal(claims.sha, env.EXECUTION_SHA, "OIDC snapshot mismatch");
+  diagnostics.enter("npm-exchange");
   const exchanged = await responseJson(
     await request(
       `${registry}/-/npm/v1/oidc/token/exchange/package/${encodeURIComponent(name)}`,
@@ -222,14 +263,18 @@ export async function consumeApprovedArtifact({
   credential = publicationCredential,
   manifest = manifestFromBuffer,
   publishBuffer,
+  diagnostics = createConsumerDiagnostics(),
 }) {
+  diagnostics.enter("artifacts");
   validatePacket(packet, context, packet.record);
+  diagnostics.enter("npm-config");
   validatePublisherEnvironment(
     env,
     npmRequire("./package.json").version,
     context.distribution,
   );
   validateNpmConfiguration(config);
+  diagnostics.enter("artifacts");
   const artifact = packet.artifacts.find(
     (a) => resolve(packDirectory, a.path) === resolve(path),
   );
@@ -239,8 +284,16 @@ export async function consumeApprovedArtifact({
   const bytes = Buffer.from(await readBytes(path));
   validateArtifactBuffer(bytes, artifact);
   const metadata = manifest(bytes, artifact);
-  const token = await credential(env, context.distribution, artifact.name);
+  const token = await credential(
+    env,
+    context.distribution,
+    artifact.name,
+    undefined,
+    diagnostics,
+  );
+  diagnostics.enter("artifacts");
   validateArtifactBuffer(bytes, artifact);
+  diagnostics.enter("provenance-transport");
   publishBuffer ??= npmRequire("libnpmpublish").publish;
   await publishBuffer(metadata, bytes, {
     registry,
@@ -360,28 +413,35 @@ export async function validateConsumerAuthority(
   return context;
 }
 
-async function main() {
+async function main(diagnostics) {
   const env = process.env;
+  diagnostics.enter("arguments");
   const path = parseConsumerArguments(process.argv.slice(2));
+  diagnostics.enter("files");
   const packet = JSON.parse(
     await readFile(env.FOUNDATION_APPROVED_PACKET, "utf8"),
   );
   const certificate = JSON.parse(
     await readFile(env.FOUNDATION_APPROVAL_CERT, "utf8"),
   );
+  diagnostics.enter("authority");
   const context = await validateConsumerAuthority(env, packet, certificate);
+  diagnostics.enter("checkout");
   assert.equal(
     spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim(),
     context.executionSha,
     "Consumer checkout mismatch",
   );
+  diagnostics.enter("npm-config");
+  const config = await loadNpmConfiguration();
   const result = await consumeApprovedArtifact({
     packet,
     context,
     path,
     packDirectory: env.FOUNDATION_PACK_DIRECTORY,
     env,
-    config: await loadNpmConfiguration(),
+    config,
+    diagnostics,
   });
   console.log(JSON.stringify(result));
 }
@@ -390,17 +450,10 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  main().catch(() => {
+  const diagnostics = createConsumerDiagnostics();
+  main(diagnostics).catch(() => {
     // Errors/config/server responses may contain credentials: never serialize them.
-    console.error(
-      JSON.stringify({
-        error: {
-          code: "FOUNDATION_PUBLISH_BLOCKED",
-          message:
-            "Foundation consumer blocked publication; verify approved metadata, authentication and bytes",
-        },
-      }),
-    );
+    console.error(JSON.stringify(diagnostics.failure()));
     process.exitCode = 1;
   });
 }
