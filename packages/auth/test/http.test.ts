@@ -2,21 +2,23 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFoundationAuth, type FoundationAuth } from "../src/index.js";
 
-describe("foundation auth HTTP flows", () => {
+const idModes = [undefined, "uuid"] as const;
+describe.each(idModes)("foundation auth HTTP flows (%s)", (generateId) => {
   const sent: Array<{ subject: string; text: string; to: string }> = [];
   let auth: FoundationAuth;
+  let records: Record<
+    "account" | "session" | "user" | "verification",
+    unknown[]
+  >;
   afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
     sent.splice(0);
+    records = { account: [], session: [], user: [], verification: [] };
     auth = createFoundationAuth({
       baseURL: "http://localhost:3000",
-      database: memoryAdapter({
-        account: [],
-        session: [],
-        user: [],
-        verification: [],
-      }),
+      database: memoryAdapter(records),
+      ...(generateId ? { generateId } : {}),
       email: {
         send(input) {
           sent.push(input);
@@ -37,6 +39,14 @@ describe("foundation auth HTTP flows", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.to).toBe("person@example.com");
     expect(sent[0]?.subject).toBe("Verify your email");
+    const idFormat =
+      generateId === "uuid"
+        ? /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        : /^[a-zA-Z0-9]{32}$/;
+    for (const model of [records.user, records.account]) {
+      expect(model).toHaveLength(1);
+      expect(model[0]).toHaveProperty("id", expect.stringMatching(idFormat));
+    }
   });
 
   it("does not enable TOTP or expose plugin server APIs without an opt-in", async () => {
@@ -49,6 +59,7 @@ describe("foundation auth HTTP flows", () => {
 
   it("requires a second explicit opt-in before exposing enrollment", async () => {
     auth = createFoundationAuth({
+      ...(generateId ? { generateId } : {}),
       baseURL: "http://localhost:3000",
       database: memoryAdapter({
         account: [],
@@ -144,6 +155,7 @@ describe("foundation auth HTTP flows", () => {
 
   it("rejects Google OAuth state as a Magic Link without issuing a session", async () => {
     auth = createFoundationAuth({
+      ...(generateId ? { generateId } : {}),
       baseURL: "http://localhost:3000",
       database: memoryAdapter({
         account: [],
@@ -193,8 +205,12 @@ describe("foundation auth HTTP flows", () => {
 
     // A newly issued email link still authenticates with Google enabled.
     expect(
-      (await post("/api/auth/sign-in/magic-link", { email, callbackURL: "/" }))
-        .status,
+      (
+        await post("/api/auth/sign-in/magic-link", {
+          email,
+          callbackURL: "/",
+        })
+      ).status,
     ).toBe(200);
     expect(sent).toHaveLength(1);
     const verified = await auth.handler(new Request(sent[0]!.text));
@@ -227,6 +243,7 @@ describe("foundation auth HTTP flows", () => {
     ];
     for (const capture of captured) capture.mockImplementation(() => undefined);
     auth = createFoundationAuth({
+      ...(generateId ? { generateId } : {}),
       baseURL: "http://localhost:3000",
       database: memoryAdapter({
         account: [],
@@ -267,6 +284,7 @@ describe("foundation auth HTTP flows", () => {
     ];
     for (const capture of captured) capture.mockImplementation(() => undefined);
     auth = createFoundationAuth({
+      ...(generateId ? { generateId } : {}),
       baseURL: "http://localhost:3000",
       database: () => {
         throw new Error(

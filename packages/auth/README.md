@@ -55,9 +55,51 @@ pnpm --filter <app> add '@t00ls-dev/auth@workspace:*'
   são convertidas em sessão anônima. Encaminhe os headers retornados, incluindo
   cada `Set-Cookie`, para preservar renovação e limpeza de cookies.
 - `FoundationAuthOptions`: exige `baseURL`, adaptador `database`, `email` e
-  `secret`; aceita credenciais `google`, `totp` e `rateLimit` opt-in.
+  `secret`; aceita credenciais `google`, `totp`, `rateLimit`, `turnstile` e
+  `generateId: "uuid"` opt-in.
 - `FoundationEmail`: contrato mínimo de envio usado pelos fluxos de
   autenticação.
+
+### IDs UUID opt-in
+
+`generateId: "uuid"` encaminha a opção nativa `advanced.database.generateId` do
+Better Auth (validada na versão 1.7.7). Sem a opção, o wrapper não configura a
+geração de IDs e preserva o comportamento atual. Não há gerador paralelo nem
+geração no cliente.
+
+```ts
+const auth = createFoundationAuth({
+  baseURL,
+  database,
+  email,
+  secret,
+  generateId: "uuid",
+});
+```
+
+A opção é global para os IDs dos registros gerenciados pelo Better Auth:
+usuários, sessões, contas, verificações e modelos de plugins que usam o gerador
+nativo (incluindo `twoFactor`). Referências como `userId` acompanham o ID do
+usuário. Não converte `accountId` de providers OAuth, tokens de sessão,
+access/refresh tokens, valores de verificação, segredos TOTP ou IDs de domínio,
+tenants e memberships. Esses campos conservam suas próprias semânticas e não
+devem ser convertidos indiscriminadamente para colunas UUID.
+
+Com Drizzle/PostgreSQL, o adapter 1.7.7 declara suporte nativo e delega a
+geração ao banco. As chaves primárias exigem defaults como
+`uuid("id").defaultRandom().primaryKey()` /
+`id uuid PRIMARY KEY DEFAULT gen_random_uuid()`; referências ao usuário devem
+ter tipo compatível (`uuid`). Tokens, `accountId`, `providerId`, `identifier` e
+`value` continuam textuais. Somente mudar a opção sem preparar o schema pode
+causar falhas de inserção. Com adapters sem geração UUID nativa, Better Auth usa
+`crypto.randomUUID()` no servidor; em D1, UUIDs são strings em colunas `text`.
+Links mantém a opção omitida e seu schema atual.
+
+O schema e as migrations pertencem à aplicação. A opção não converte registros
+existentes nem permite migrar automaticamente IDs textuais para UUID. Planeje a
+compatibilidade dos dados e das referências antes de habilitá-la em um banco
+existente, conforme o
+[runbook de migrations](../../docs/runbooks/migrations.md).
 
 ### TOTP opt-in
 

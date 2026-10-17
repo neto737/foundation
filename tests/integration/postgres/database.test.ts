@@ -34,7 +34,7 @@ import {
   Wait,
 } from "testcontainers";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { authSchema } from "./auth-schema.js";
+import { createAuthSchema } from "./auth-schema.js";
 
 const execFileAsync = promisify(execFile);
 const integrationRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -566,112 +566,179 @@ describe("PostgreSQL adapter", () => {
     ).toBe(0);
   });
 
-  it("integrates Foundation Better Auth with PostgreSQL using its unchanged text ID defaults", async () => {
-    const { client, db } = await database();
-    const sent: string[] = [];
-    const origin = "http://localhost:3000";
-    const auth = createFoundationAuth({
-      baseURL: origin,
-      secret: "synthetic-test-secret-at-least-32-characters",
-      database: drizzleAdapter(db, { provider: "pg", schema: authSchema }),
-      email: {
-        send: ({ text }) => {
-          sent.push(text);
-          return Promise.resolve();
-        },
-      },
-    });
-    function request(path: string, body?: object, cookie = "") {
-      return auth.handler(
-        new Request(`${origin}/api/auth${path}`, {
-          method: body ? "POST" : "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Origin": origin,
-            "Cookie": cookie,
-          },
-          ...(body ? { body: JSON.stringify(body) } : {}),
-        }),
+  it.each(["text", "uuid"] as const)(
+    "integrates Foundation Better Auth with PostgreSQL using %s IDs",
+    async (idType) => {
+      const { client: admin } = await database();
+      const name = `foundation_auth_${idType}`;
+      await admin.query(`CREATE DATABASE ${name}`);
+      const { client, db } = await database(name);
+      const fixture = await readFile(
+        new URL("./auth-fixture.sql", import.meta.url),
+        "utf8",
       );
-    }
-    function emailUrl() {
-      const text = sent.at(-1);
-      if (!text) throw new Error("Expected a captured email");
-      return new URL(text);
-    }
-    const credentials = {
-      email: "pg-auth@example.com",
-      password: "correct-horse-battery-staple",
-    };
-    expect(
-      (
-        await request("/sign-up/email", {
-          ...credentials,
-          name: "PostgreSQL test",
-        })
-      ).status,
-    ).toBe(200);
-    expect((await request("/sign-in/email", credentials)).status).toBe(403);
-    expect([200, 302]).toContain(
-      (await auth.handler(new Request(emailUrl()))).status,
-    );
-    const login = await request("/sign-in/email", credentials);
-    expect(login.status).toBe(200);
-    const cookie = login.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0])
-      .join("; ");
-    expect(cookie).toContain("session_token=");
-    expect(login.headers.getSetCookie().join(";")).toContain("HttpOnly");
-    const resolved = await auth.resolveSession(new Headers({ cookie }));
-    expect(resolved.data?.user.email).toBe(credentials.email);
-    expect(resolved.data?.session.expiresAt).toBeInstanceOf(Date);
-    expect((await request("/sign-out", {}, cookie)).status).toBe(200);
-    expect(
-      (await auth.resolveSession(new Headers({ cookie }))).data,
-    ).toBeNull();
-    expect(
-      (
-        await request("/request-password-reset", {
-          email: credentials.email,
-          redirectTo: `${origin}/reset`,
-        })
-      ).status,
-    ).toBe(200);
-    const token = emailUrl().pathname.split("/").at(-1);
-    expect(
-      (
-        await request("/reset-password", {
-          token,
-          newPassword: "replacement-password-for-test",
-        })
-      ).status,
-    ).toBe(200);
-    expect((await request("/sign-in/email", credentials)).status).toBe(401);
-    expect(
-      (
-        await request("/sign-in/email", {
-          ...credentials,
-          password: "replacement-password-for-test",
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      (await request("/sign-in/magic-link", { email: credentials.email }))
-        .status,
-    ).toBe(200);
-    const magic = await auth.handler(new Request(emailUrl()));
-    expect([200, 302]).toContain(magic.status);
-    expect(magic.headers.getSetCookie().join(";")).toContain("session_token=");
-    expect(
-      (
-        await client.query<{ created_at: Date }>(
-          'SELECT created_at FROM "user" WHERE email = $1',
-          [credentials.email],
-        )
-      ).rows[0]?.created_at,
-    ).toBeInstanceOf(Date);
-  });
+      await client.query(
+        idType === "uuid"
+          ? fixture
+              .replaceAll(
+                "id text PRIMARY KEY",
+                "id uuid PRIMARY KEY DEFAULT gen_random_uuid()",
+              )
+              .replaceAll("user_id text NOT NULL", "user_id uuid NOT NULL")
+          : fixture,
+      );
+      const uuidFormat =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      function expectId(value: string) {
+        if (idType === "uuid") expect(value).toMatch(uuidFormat);
+        else {
+          expect(value).toMatch(/^[a-zA-Z0-9]{32}$/);
+          expect(value).not.toMatch(uuidFormat);
+        }
+      }
+      const sent: string[] = [];
+      const origin = "http://localhost:3000";
+      const auth = createFoundationAuth({
+        baseURL: origin,
+        secret: "synthetic-test-secret-at-least-32-characters",
+        database: drizzleAdapter(db, {
+          provider: "pg",
+          schema: createAuthSchema(idType),
+        }),
+        ...(idType === "uuid" ? { generateId: "uuid" as const } : {}),
+        email: {
+          send: ({ text }) => {
+            sent.push(text);
+            return Promise.resolve();
+          },
+        },
+      });
+      function request(path: string, body?: object, cookie = "") {
+        return auth.handler(
+          new Request(`${origin}/api/auth${path}`, {
+            method: body ? "POST" : "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "Origin": origin,
+              "Cookie": cookie,
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          }),
+        );
+      }
+      function emailUrl() {
+        const text = sent.at(-1);
+        if (!text) throw new Error("Expected a captured email");
+        return new URL(text);
+      }
+      const credentials = {
+        email: "pg-auth@example.com",
+        password: "correct-horse-battery-staple",
+      };
+      expect(
+        (
+          await request("/sign-up/email", {
+            ...credentials,
+            name: "PostgreSQL test",
+            id: "client-must-not-select-the-user-id",
+          })
+        ).status,
+      ).toBe(200);
+      expect((await request("/sign-in/email", credentials)).status).toBe(403);
+      expect([200, 302]).toContain(
+        (await auth.handler(new Request(emailUrl()))).status,
+      );
+      const login = await request("/sign-in/email", credentials);
+      expect(login.status).toBe(200);
+      const cookie = login.headers
+        .getSetCookie()
+        .map((value) => value.split(";")[0])
+        .join("; ");
+      expect(cookie).toContain("session_token=");
+      expect(login.headers.getSetCookie().join(";")).toContain("HttpOnly");
+      const resolved = await auth.resolveSession(new Headers({ cookie }));
+      expect(resolved.data?.user.email).toBe(credentials.email);
+      const identity = resolved.data;
+      if (!identity) throw new Error("Expected a persisted session");
+      expectId(identity.user.id);
+      expectId(identity.session.id);
+      expect(identity.session.userId).toBe(identity.user.id);
+      expect(identity.session.token).toMatch(/^[a-zA-Z0-9]{32}$/);
+      const accounts = await db.select().from(createAuthSchema(idType).account);
+      expect(accounts).toHaveLength(1);
+      for (const account of accounts) {
+        expectId(account.id);
+        expect(account.userId).toBe(identity.user.id);
+        expect(account.accountId).toBe(identity.user.id);
+        expect(account.providerId).toBe("credential");
+      }
+      expect(resolved.data?.session.expiresAt).toBeInstanceOf(Date);
+      expect((await request("/sign-out", {}, cookie)).status).toBe(200);
+      expect(
+        (await auth.resolveSession(new Headers({ cookie }))).data,
+      ).toBeNull();
+      expect(
+        (
+          await request("/request-password-reset", {
+            email: credentials.email,
+            redirectTo: `${origin}/reset`,
+          })
+        ).status,
+      ).toBe(200);
+      const token = emailUrl().pathname.split("/").at(-1);
+      expect(token).toMatch(/^[a-zA-Z0-9]{24}$/);
+      const verifications = await db
+        .select()
+        .from(createAuthSchema(idType).verification);
+      expect(verifications).toHaveLength(1);
+      for (const verification of verifications) {
+        expectId(verification.id);
+        expect(verification.identifier).toBe(`reset-password:${token}`);
+        expect(verification.value).toBe(identity.user.id);
+      }
+      expect(
+        (
+          await request("/reset-password", {
+            token,
+            newPassword: "replacement-password-for-test",
+          })
+        ).status,
+      ).toBe(200);
+      expect((await request("/sign-in/email", credentials)).status).toBe(401);
+      expect(
+        (
+          await request("/sign-in/email", {
+            ...credentials,
+            password: "replacement-password-for-test",
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await request("/sign-in/magic-link", { email: credentials.email }))
+          .status,
+      ).toBe(200);
+      const magic = await auth.handler(new Request(emailUrl()));
+      expect([200, 302]).toContain(magic.status);
+      expect(magic.headers.getSetCookie().join(";")).toContain(
+        "session_token=",
+      );
+      const sessions = await db.select().from(createAuthSchema(idType).session);
+      expect(sessions.length).toBeGreaterThan(0);
+      for (const session of sessions) {
+        expectId(session.id);
+        expect(session.userId).toBe(identity.user.id);
+        expect(session.token).toMatch(/^[a-zA-Z0-9]{32}$/);
+      }
+      expect(
+        (
+          await client.query<{ created_at: Date }>(
+            'SELECT created_at FROM "user" WHERE email = $1',
+            [credentials.email],
+          )
+        ).rows[0]?.created_at,
+      ).toBeInstanceOf(Date);
+    },
+  );
 
   it("runs pg, Drizzle and audit in separate local workerd invocations", async () => {
     const bundle = await build({
