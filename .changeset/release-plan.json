@@ -1,124 +1,53 @@
 {
-  "baseSha": "79dec4983d45fb9deb7459850965ce496a24a2cb",
+  "baseSha": "3c03a536fe113fb84298298cd96c0e917a1a8ac0",
   "changesets": [
     {
-      "hash": "36ff56fb8e04a66e59ac157c6f39f268ff35ac6f332aca447c3ea036dc1ae437",
-      "id": "links-observatory-headers"
+      "hash": "ac3ec9792d80717e5b48d70efba0cb13153ed2a75012803cd6d220416b18c758",
+      "id": "better-auth-native-uuid"
     },
     {
-      "hash": "b430857d8e721fb7ba7107dd961c4cf37134b992e074ba60c369d93e46805a40",
-      "id": "links-totp-backend"
-    },
-    {
-      "hash": "8dc2a8ed44fb05d80c9adc6ba97146777d078114227363cb7cde037aada8cbe3",
-      "id": "links-turnstile-v1"
-    },
-    {
-      "hash": "a3c4e8c3ee0e607f00495867dfb86359c35f43355ac19ac032685cc5a3154a36",
-      "id": "mit-open-source"
-    },
-    {
-      "hash": "d3dc12b1529c87504049dcac9032509a58a23ce86f25dffd29fb23ebde737965",
-      "id": "quiet-links-session"
-    },
-    {
-      "hash": "b320e3da805890c43fda179279e28b760f360b2ccf4d1af4339d80b1a9e74b4e",
-      "id": "secure-better-auth"
+      "hash": "e28f8ad801529f3859959264228f5974a2bd390ecc352f1d194edab9d05dcaa4",
+      "id": "postgresql-node-client"
     }
   ],
   "cliVersion": "3.0.3",
   "format": 1,
   "packages": [
     {
-      "changesets": ["mit-open-source"],
-      "dependencies": [],
-      "name": "@t00ls-dev/access",
-      "oldVersion": "0.1.1",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
-    },
-    {
-      "changesets": ["mit-open-source"],
+      "changesets": ["postgresql-node-client"],
       "dependencies": [],
       "name": "@t00ls-dev/audit",
-      "oldVersion": "0.1.1",
+      "oldVersion": "0.1.2",
       "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
+      "type": "major",
+      "version": "1.0.0"
     },
     {
-      "changesets": [
-        "links-totp-backend",
-        "links-turnstile-v1",
-        "mit-open-source",
-        "quiet-links-session",
-        "secure-better-auth"
-      ],
+      "changesets": ["better-auth-native-uuid"],
       "dependencies": [],
       "name": "@t00ls-dev/auth",
-      "oldVersion": "0.1.1",
+      "oldVersion": "0.2.0",
       "reason": "changeset",
       "type": "minor",
-      "version": "0.2.0"
+      "version": "0.3.0"
     },
     {
-      "changesets": ["mit-open-source"],
-      "dependencies": [],
-      "name": "@t00ls-dev/config",
-      "oldVersion": "0.1.1",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
-    },
-    {
-      "changesets": ["mit-open-source"],
+      "changesets": ["postgresql-node-client"],
       "dependencies": [],
       "name": "@t00ls-dev/db",
-      "oldVersion": "0.1.1",
+      "oldVersion": "0.1.2",
       "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
+      "type": "major",
+      "version": "1.0.0"
     },
     {
-      "changesets": ["mit-open-source"],
-      "dependencies": [],
-      "name": "@t00ls-dev/email",
-      "oldVersion": "0.1.1",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
-    },
-    {
-      "changesets": ["mit-open-source"],
-      "dependencies": [],
-      "name": "@t00ls-dev/observability",
-      "oldVersion": "0.1.1",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
-    },
-    {
-      "changesets": [
-        "links-observatory-headers",
-        "links-turnstile-v1",
-        "mit-open-source"
-      ],
-      "dependencies": [],
-      "name": "@t00ls-dev/security",
-      "oldVersion": "0.1.1",
-      "reason": "changeset",
-      "type": "minor",
-      "version": "0.2.0"
-    },
-    {
-      "changesets": ["mit-open-source"],
+      "changesets": ["postgresql-node-client"],
       "dependencies": [],
       "name": "@t00ls-dev/tenant",
-      "oldVersion": "0.1.1",
+      "oldVersion": "0.1.2",
       "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.2"
+      "type": "major",
+      "version": "1.0.0"
     }
   ],
   "repository": "t00ls-dev/foundation"
