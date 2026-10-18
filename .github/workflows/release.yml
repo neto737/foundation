@@ -4,9 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Audit, owner approval, publish or resume exact artifacts
+        description:
+          Audit, approval, publication or isolated credential diagnostic
         type: choice
-        options: [audit, approve, publish, resume]
+        options: [audit, approve, publish, resume, diagnose-exchange]
         default: audit
         required: true
       release_pr:
@@ -215,3 +216,26 @@ jobs:
           name: npm-release-result
           path: ${{ runner.temp }}/npm-release/
           if-no-files-found: warn
+
+  diagnose-exchange:
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.ref ==
+      'refs/heads/master' && inputs.mode == 'diagnose-exchange' &&
+      inputs.distribution == 'release' && inputs.execution_sha == github.sha &&
+      github.actor == 't00ls-dev' && github.run_attempt == 1 &&
+      inputs.confirmation == 'DIAGNOSE_NPM_EXCHANGE_WITHOUT_PUBLICATION'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: One credential exchange without any package transport
+        run: node .github/scripts/release-exchange-diagnostic.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

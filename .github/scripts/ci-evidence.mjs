@@ -57,7 +57,10 @@ export function validateDeployEvent(event) {
   return run;
 }
 
-export async function approvedCi(sha, { request, origin } = {}) {
+export async function approvedCi(
+  sha,
+  { request, origin, log = console.log } = {},
+) {
   assert(shaPattern.test(sha));
   request ??= (url) => authenticatedJson(url, process.env.GITHUB_TOKEN);
   const workflow = await request(`${api}/actions/workflows/ci.yml`);
@@ -108,7 +111,7 @@ export async function approvedCi(sha, { request, origin } = {}) {
       "New CI run; revalidate evidence",
     );
   }
-  console.log(
+  log(
     `Approved master CI: run ${evidence.runId}, attempt ${evidence.attempt}, SHA ${sha}`,
   );
   return evidence;
