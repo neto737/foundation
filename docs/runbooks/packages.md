@@ -365,10 +365,13 @@ credencial; o grafo de imports do diagnóstico não contém consumidor de artefa
 nem biblioteca de publicação. A máquina de requests permite somente GET no
 broker e POST no endpoint do pacote fixo. Nenhum tarball, certificado ou
 artefato de release é baixado. A credencial retornada é descartada, e a saída
-contém somente `stage`, `category`, `http_status`, `reason` e
-`expiration_check`. `reason=VALID` significa somente credencial validada, sem
-comprovar transporte ou publicação. Uma rejeição produz os motivos sanitizados
-existentes e exit code de falha.
+contém `stage`, `category`, `http_status`, `reason`, `expiration_check` e a
+classificação fechada `expiration_type`. Para números, acrescenta somente
+`expiration_number_kind`, sem valor, magnitude, datas ou inferência de unidade.
+Objetos e arrays não têm chaves/conteúdo inspecionados ou registrados.
+`reason=VALID` significa somente credencial validada, sem comprovar transporte
+ou publicação. Uma rejeição produz os motivos sanitizados existentes e exit code
+de falha.
 
 Esse diagnóstico não inicia audit/approve/publish/resume e não cria autorização
 para publicar. Mudanças em código de credencial continuam sendo protected inputs
