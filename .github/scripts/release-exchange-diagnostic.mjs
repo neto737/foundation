@@ -19,6 +19,35 @@ export const diagnosticPackage = "@t00ls-dev/audit";
 export const diagnosticConfirmation =
   "DIAGNOSE_NPM_EXCHANGE_WITHOUT_PUBLICATION";
 
+// Only closed classifications leave this function. No dates, magnitudes,
+// values, object keys or contents are retained or interpreted as expiration.
+export function classifyExpiration(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return { expiration_type: "UNOBSERVED" };
+  if (!Object.hasOwn(body, "expires")) return { expiration_type: "MISSING" };
+  const value = body.expires;
+  if (value === null) return { expiration_type: "NULL" };
+  if (Array.isArray(value)) return { expiration_type: "ARRAY" };
+  const type = typeof value;
+  if (type === "number") {
+    const kind = !Number.isFinite(value)
+      ? "NON_FINITE"
+      : !Number.isInteger(value)
+        ? "FRACTIONAL"
+        : !Number.isSafeInteger(value)
+          ? "UNSAFE_INTEGER"
+          : value > 0
+            ? "POSITIVE_SAFE_INTEGER"
+            : "NON_POSITIVE_SAFE_INTEGER";
+    return { expiration_type: "NUMBER", expiration_number_kind: kind };
+  }
+  return {
+    expiration_type:
+      { string: "STRING", boolean: "BOOLEAN", object: "OBJECT" }[type] ??
+      "OTHER",
+  };
+}
+
 export async function validateDiagnosticAuthority(env, checkoutSha, request) {
   assert.equal(env.RELEASE_MODE, "diagnose-exchange");
   assert.equal(env.DISTRIBUTION_MODE, "release");
@@ -63,6 +92,7 @@ export async function diagnoseExchange({
   request = fetch,
 }) {
   const diagnostics = createConsumerDiagnostics();
+  let profile = { expiration_type: "UNOBSERVED" };
   try {
     diagnostics.enter("authority");
     await validateDiagnosticAuthority(env, checkoutSha, githubRequest);
@@ -78,7 +108,17 @@ export async function diagnoseExchange({
       assert.equal(options.method ?? "GET", calls === 1 ? "GET" : "POST");
       assert.equal(options.redirect, "error");
       assert.equal(options.body, undefined);
-      return request(url, options);
+      const response = await request(url, options);
+      if (calls !== 2 || typeof response?.json !== "function") return response;
+      return {
+        status: response.status,
+        json: async () => {
+          const body = await response.json();
+          profile = classifyExpiration(body);
+          // Pass the original object to the unchanged production validator.
+          return body;
+        },
+      };
     };
     // Discard the credential; there is no transport import or continuation.
     void (await publicationCredential(
@@ -95,6 +135,7 @@ export async function diagnoseExchange({
       http_status: 201,
       reason: "VALID",
       expiration_check: null,
+      ...profile,
     };
   } catch {
     const safe = diagnostics.failure().error;
@@ -104,6 +145,7 @@ export async function diagnoseExchange({
       http_status: safe.http_status ?? null,
       reason: safe.reason ?? "UNCLASSIFIED",
       expiration_check: safe.expiration_check ?? null,
+      ...profile,
     };
   }
 }
@@ -125,6 +167,7 @@ async function main() {
         http_status: null,
         reason: "UNCLASSIFIED",
         expiration_check: null,
+        expiration_type: "UNOBSERVED",
       }),
     );
     process.exitCode = 1;

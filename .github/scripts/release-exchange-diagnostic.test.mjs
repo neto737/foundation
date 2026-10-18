@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import { releaseOwner, repository } from "./release-core.mjs";
 import {
   diagnoseExchange,
+  classifyExpiration,
   diagnosticConfirmation,
   diagnosticPackage,
 } from "./release-exchange-diagnostic.mjs";
@@ -83,6 +84,16 @@ test("isolated exchange emits only permitted fields and never continues to trans
   t.mock.method(Date, "now", () => now);
   for (const scenario of [
     { expires: null, reason: "EXPIRATION_INVALID", check: "TYPE" },
+    { expires: true, reason: "EXPIRATION_INVALID", check: "TYPE" },
+    { expires: [sentinel], reason: "EXPIRATION_INVALID", check: "TYPE" },
+    {
+      expires: { hidden: sentinel },
+      reason: "EXPIRATION_INVALID",
+      check: "TYPE",
+    },
+    { expires: 1700000000, reason: "EXPIRATION_INVALID", check: "TYPE" },
+    { expires: 1700000000000, reason: "EXPIRATION_INVALID", check: "TYPE" },
+    { expires: 3600, reason: "EXPIRATION_INVALID", check: "TYPE" },
     { expires: "", reason: "EXPIRATION_INVALID", check: "EMPTY" },
     { expires: sentinel, reason: "EXPIRATION_INVALID", check: "SYNTAX" },
     {
@@ -161,6 +172,10 @@ test("isolated exchange emits only permitted fields and never continues to trans
     assert.deepEqual(Object.keys(result).sort(), [
       "category",
       "expiration_check",
+      ...(Object.hasOwn(result, "expiration_number_kind")
+        ? ["expiration_number_kind"]
+        : []),
+      "expiration_type",
       "http_status",
       "reason",
       "stage",
@@ -169,10 +184,97 @@ test("isolated exchange emits only permitted fields and never continues to trans
     assert.equal(result.category, "authentication");
     assert.equal(result.reason, scenario.reason);
     assert.equal(result.expiration_check, scenario.check ?? null);
+    assert.deepEqual(
+      {
+        expiration_type: result.expiration_type,
+        ...(result.expiration_number_kind
+          ? { expiration_number_kind: result.expiration_number_kind }
+          : {}),
+      },
+      scenario.http ||
+        scenario.brokenJson ||
+        scenario.network ||
+        scenario.timeout
+        ? { expiration_type: "UNOBSERVED" }
+        : classifyExpiration(
+            scenario.missing ? {} : { expires: scenario.expires },
+          ),
+    );
     const serialized = JSON.stringify(result);
     for (const forbidden of [sentinel, "2026-", "synthetic", "secret"])
       assert(!serialized.includes(forbidden));
   }
+});
+
+test("expiration type classifications reveal no numeric value, unit or nested content", () => {
+  const nested = Object.defineProperty({}, "sensitive", {
+    get() {
+      throw new Error(sentinel);
+    },
+  });
+  for (const [value, type, kind] of [
+    [null, "NULL"],
+    [false, "BOOLEAN"],
+    [true, "BOOLEAN"],
+    [sentinel, "STRING"],
+    [[], "ARRAY"],
+    [[nested], "ARRAY"],
+    [nested, "OBJECT"],
+    [1, "NUMBER", "POSITIVE_SAFE_INTEGER"],
+    [3600, "NUMBER", "POSITIVE_SAFE_INTEGER"],
+    [1700000000, "NUMBER", "POSITIVE_SAFE_INTEGER"],
+    [1700000000000, "NUMBER", "POSITIVE_SAFE_INTEGER"],
+    [Number.MAX_SAFE_INTEGER, "NUMBER", "POSITIVE_SAFE_INTEGER"],
+    [0, "NUMBER", "NON_POSITIVE_SAFE_INTEGER"],
+    [-42, "NUMBER", "NON_POSITIVE_SAFE_INTEGER"],
+    [Number.MAX_SAFE_INTEGER + 1, "NUMBER", "UNSAFE_INTEGER"],
+    [0.25, "NUMBER", "FRACTIONAL"],
+    [Number.MIN_VALUE, "NUMBER", "FRACTIONAL"],
+    [NaN, "NUMBER", "NON_FINITE"],
+    [Infinity, "NUMBER", "NON_FINITE"],
+    [-Infinity, "NUMBER", "NON_FINITE"],
+    [undefined, "OTHER"],
+  ]) {
+    const result = classifyExpiration({ expires: value, created: sentinel });
+    assert.deepEqual(result, {
+      expiration_type: type,
+      ...(kind ? { expiration_number_kind: kind } : {}),
+    });
+    const serialized = JSON.stringify(result);
+    for (const forbidden of [
+      sentinel,
+      "sensitive",
+      "created",
+      "170000",
+      "3600",
+    ])
+      assert(!serialized.includes(forbidden));
+  }
+  assert.deepEqual(classifyExpiration({}), { expiration_type: "MISSING" });
+  for (const body of [null, [], "malformed", 1])
+    assert.deepEqual(classifyExpiration(body), {
+      expiration_type: "UNOBSERVED",
+    });
+});
+
+test("JSON serializes Date as string and preserves other types without a temporal interpretation", () => {
+  for (const [value, expected] of [
+    [new Date("2030-01-01T00:00:00Z"), "STRING"],
+    [null, "NULL"],
+    [1234567890, "NUMBER"],
+    [1234567890000, "NUMBER"],
+    [3600, "NUMBER"],
+    [true, "BOOLEAN"],
+    [[sentinel], "ARRAY"],
+    [{ hidden: sentinel }, "OBJECT"],
+  ]) {
+    const decoded = JSON.parse(JSON.stringify({ expires: value }));
+    assert.equal(classifyExpiration(decoded).expiration_type, expected);
+  }
+  assert.equal(
+    classifyExpiration(JSON.parse('{"expires":1e400}')).expiration_number_kind,
+    "NON_FINITE",
+  );
 });
 
 test("diagnostic rejects stale snapshots, retries and unauthorized contexts before OIDC", async () => {
