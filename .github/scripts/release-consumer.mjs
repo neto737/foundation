@@ -43,6 +43,8 @@ const exchangeReasons = new Set([
   "INVALID_RESPONSE",
   "TOKEN_TYPE_INVALID",
   "TOKEN_MISSING",
+  "EXPIRATION_MISSING",
+  "EXPIRATION_INVALID",
   "TOKEN_EXPIRED",
   "TIMEOUT",
   "NETWORK_ERROR",
@@ -264,12 +266,40 @@ export async function publicationCredential(
     typeof exchanged.token === "string" && exchanged.token.length > 0,
     "OIDC exchange credential missing",
   );
+  diagnostics.exchange(status, "EXPIRATION_MISSING");
+  assert(Object.hasOwn(exchanged, "expires"), "OIDC expiration missing");
+  diagnostics.exchange(status, "EXPIRATION_INVALID");
+  assert.equal(typeof exchanged.expires, "string", "Invalid OIDC expiration");
+  // npm specifies a required RFC 3339 date-time, not a duration or epoch.
+  // Date.parse alone coerces arrays/numbers and accepts ambiguous local dates.
+  const expiration =
+    /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[Tt](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(
+      exchanged.expires,
+    );
+  assert(expiration, "Invalid OIDC expiration");
+  const year = Number(expiration[1]);
+  const month = Number(expiration[2]);
+  const day = Number(expiration[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  assert(day <= monthDays[month - 1], "Invalid OIDC expiration");
+  const expiresAt = Date.parse(exchanged.expires);
+  assert(Number.isFinite(expiresAt), "Invalid OIDC expiration");
   diagnostics.exchange(status, "TOKEN_EXPIRED");
-  assert(
-    Number.isFinite(Date.parse(exchanged.expires)) &&
-      Date.parse(exchanged.expires) > Date.now(),
-    "Expired OIDC exchange credential",
-  );
+  assert(expiresAt > Date.now(), "Expired OIDC exchange credential");
   diagnostics.exchange(status, "UNCLASSIFIED");
   return exchanged.token;
 }

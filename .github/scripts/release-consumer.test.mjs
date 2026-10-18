@@ -196,10 +196,11 @@ test("exchange failures expose only safe reasons and status and never reach tran
       body: { ...valid, token },
       reason: "TOKEN_MISSING",
     })),
-    ...[secret, new Date(0).toISOString()].map((expires) => ({
-      body: { ...valid, expires },
+    { body: { ...valid, expires: secret }, reason: "EXPIRATION_INVALID" },
+    {
+      body: { ...valid, expires: new Date(0).toISOString() },
       reason: "TOKEN_EXPIRED",
-    })),
+    },
     {
       requestError: new DOMException(secret, "TimeoutError"),
       status: null,
@@ -262,6 +263,104 @@ test("exchange failures expose only safe reasons and status and never reach tran
     ]);
     assert(!JSON.stringify(error).includes(secret));
     assert(!JSON.stringify(error).includes("sentinel"));
+  }
+});
+
+test("exchange expiration follows npm date-time contract and fails closed", async (t) => {
+  const now = Date.parse("2026-10-18T15:00:00.000Z");
+  t.mock.method(Date, "now", () => now);
+  const secret = "JWT.sentinel npm_sentinel Authorization:Bearer secret";
+  const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+  const cases = [
+    ...[
+      "2026-10-18T16:00:00.000Z",
+      "2026-10-18T16:00:00Z",
+      "2026-10-18T18:30:00+02:30",
+      "2026-10-18T09:00:00-07:00",
+      "2026-10-18t16:00:00z",
+      "2026-10-18T16:00:00.123456Z",
+      "2028-02-29T16:00:00Z",
+    ].map((expires) => ({ label: expires, expires, reason: null })),
+    ...[
+      "2026-10-18T14:59:59.999Z",
+      "2026-10-18T15:00:00.000Z",
+      "2026-10-18T17:00:00+02:00",
+    ].map((expires) => ({ label: expires, expires, reason: "TOKEN_EXPIRED" })),
+    { label: "absent", reason: "EXPIRATION_MISSING" },
+    ...[
+      undefined,
+      null,
+      true,
+      3600,
+      now + 3600000,
+      (now + 3600000) / 1000,
+      ["2026-10-18T16:00:00Z"],
+      { expires: "2026-10-18T16:00:00Z", secret },
+      "",
+      "3600",
+      secret,
+      "2026-10-18T16:00:00",
+      "2026-10-19",
+      "Sun, 18 Oct 2026 16:00:00 GMT",
+      "2026-11-31T16:00:00Z",
+      "2027-02-29T16:00:00Z",
+      "2100-02-29T16:00:00Z",
+      "2026-13-01T16:00:00Z",
+      "2026-10-18T24:00:00Z",
+      "2026-10-18T16:60:00Z",
+      "2026-10-18T16:00:00+24:00",
+      "2026-10-18T16:00:00+02:60",
+      "2026-10-18T16:00:00Z\n",
+    ].map((expires, index) => ({
+      label: `invalid expiration ${index}`,
+      expires,
+      reason: "EXPIRATION_INVALID",
+    })),
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.label, async () => {
+      const diagnostics = createConsumerDiagnostics();
+      let requests = 0;
+      let uploads = 0;
+      const body = { token_type: "oidc", token: secret };
+      if (Object.hasOwn(scenario, "expires")) body.expires = scenario.expires;
+      const run = consumeApprovedArtifact({
+        ...fixture("release"),
+        diagnostics,
+        credential: (env, distribution, name, _request, trace) =>
+          publicationCredential(
+            env,
+            distribution,
+            name,
+            async () =>
+              ++requests === 1
+                ? { status: 200, json: async () => ({ value: identity }) }
+                : { status: 201, json: async () => body },
+            trace,
+          ),
+        publishBuffer: async (_manifest, _bytes, options) => {
+          assert.equal(options.forceAuth.token, secret);
+          uploads++;
+        },
+      });
+      if (scenario.reason === null) {
+        await run;
+        assert.equal(uploads, 1);
+      } else {
+        await assert.rejects(run);
+        assert.equal(uploads, 0);
+        const result = diagnostics.failure();
+        assert.equal(result.error.code, "FOUNDATION_PUBLISH_BLOCKED");
+        assert.equal(result.error.stage, "npm-exchange");
+        assert.equal(result.error.category, "authentication");
+        assert.equal(result.error.http_status, 201);
+        assert.equal(result.error.reason, scenario.reason);
+        assert(!JSON.stringify(result).includes("sentinel"));
+        assert(!JSON.stringify(result).includes(secret));
+        assert(!JSON.stringify(result).includes(identity));
+      }
+      assert.equal(requests, 2);
+    });
   }
 });
 
