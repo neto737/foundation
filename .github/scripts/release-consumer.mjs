@@ -51,25 +51,41 @@ const exchangeReasons = new Set([
   "UNCLASSIFIED",
 ]);
 
+const expirationChecks = new Set([
+  "TYPE",
+  "EMPTY",
+  "SYNTAX",
+  "CALENDAR",
+  "PARSE",
+]);
+
 export function createConsumerDiagnostics() {
   let stage = "arguments";
   let httpStatus = null;
   let reason = "UNCLASSIFIED";
+  let expirationCheck;
   return {
     enter(next) {
       assert(Object.hasOwn(failureCategories, next));
       stage = next;
       httpStatus = null;
       reason = "UNCLASSIFIED";
+      expirationCheck = undefined;
     },
-    exchange(status, nextReason) {
+    exchange(status, nextReason, nextExpirationCheck) {
       assert.equal(stage, "npm-exchange");
       assert(exchangeReasons.has(nextReason));
+      assert(
+        nextExpirationCheck === undefined ||
+          (nextReason === "EXPIRATION_INVALID" &&
+            expirationChecks.has(nextExpirationCheck)),
+      );
       httpStatus =
         Number.isInteger(status) && status >= 100 && status <= 599
           ? status
           : null;
       reason = nextReason;
+      expirationCheck = nextExpirationCheck;
     },
     failure() {
       // Deliberately accepts no exception: messages, causes and server responses
@@ -82,7 +98,13 @@ export function createConsumerDiagnostics() {
           stage,
           category: failureCategories[stage],
           ...(stage === "npm-exchange"
-            ? { http_status: httpStatus, reason }
+            ? {
+                http_status: httpStatus,
+                reason,
+                ...(expirationCheck
+                  ? { expiration_check: expirationCheck }
+                  : {}),
+              }
             : {}),
         },
       };
@@ -268,15 +290,19 @@ export async function publicationCredential(
   );
   diagnostics.exchange(status, "EXPIRATION_MISSING");
   assert(Object.hasOwn(exchanged, "expires"), "OIDC expiration missing");
-  diagnostics.exchange(status, "EXPIRATION_INVALID");
+  diagnostics.exchange(status, "EXPIRATION_INVALID", "TYPE");
   assert.equal(typeof exchanged.expires, "string", "Invalid OIDC expiration");
+  diagnostics.exchange(status, "EXPIRATION_INVALID", "EMPTY");
+  assert(exchanged.expires.length > 0, "Invalid OIDC expiration");
   // npm specifies a required RFC 3339 date-time, not a duration or epoch.
   // Date.parse alone coerces arrays/numbers and accepts ambiguous local dates.
+  diagnostics.exchange(status, "EXPIRATION_INVALID", "SYNTAX");
   const expiration =
     /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[Tt](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(
       exchanged.expires,
     );
   assert(expiration, "Invalid OIDC expiration");
+  diagnostics.exchange(status, "EXPIRATION_INVALID", "CALENDAR");
   const year = Number(expiration[1]);
   const month = Number(expiration[2]);
   const day = Number(expiration[3]);
@@ -296,6 +322,7 @@ export async function publicationCredential(
     31,
   ];
   assert(day <= monthDays[month - 1], "Invalid OIDC expiration");
+  diagnostics.exchange(status, "EXPIRATION_INVALID", "PARSE");
   const expiresAt = Date.parse(exchanged.expires);
   assert(Number.isFinite(expiresAt), "Invalid OIDC expiration");
   diagnostics.exchange(status, "TOKEN_EXPIRED");

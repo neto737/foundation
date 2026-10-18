@@ -73,6 +73,7 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
     ["authority", "authorization"],
     ["checkout", "snapshot"],
     ["npm-config", "configuration"],
+    ["npm-exchange", "authentication"],
   ]) {
     const secret =
       "JWT.secret Authorization:Bearer secret https://secret/?token=secret";
@@ -95,7 +96,12 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
       spawnSync: () => (gate === "checkout" ? fail() : { stdout: sha }),
       loadNpmConfiguration: async () =>
         gate === "npm-config" ? fail() : emptyConfig(),
-      consumeApprovedArtifact: async () => {
+      consumeApprovedArtifact: async ({ diagnostics }) => {
+        if (gate === "npm-exchange") {
+          diagnostics.enter("npm-exchange");
+          diagnostics.exchange(201, "EXPIRATION_INVALID", "TYPE");
+          fail();
+        }
         uploads++;
       },
       console: {
@@ -119,9 +125,16 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
     assert.deepEqual(Object.keys(error).sort(), [
       "category",
       "code",
+      ...(gate === "npm-exchange" ? ["expiration_check", "http_status"] : []),
       "message",
+      ...(gate === "npm-exchange" ? ["reason"] : []),
       "stage",
     ]);
+    if (gate === "npm-exchange") {
+      assert.equal(error.expiration_check, "TYPE");
+      assert.equal(error.http_status, 201);
+      assert.equal(error.reason, "EXPIRATION_INVALID");
+    }
     assert(!output[0].includes("secret"));
   }
 });
@@ -196,7 +209,11 @@ test("exchange failures expose only safe reasons and status and never reach tran
       body: { ...valid, token },
       reason: "TOKEN_MISSING",
     })),
-    { body: { ...valid, expires: secret }, reason: "EXPIRATION_INVALID" },
+    {
+      body: { ...valid, expires: secret },
+      reason: "EXPIRATION_INVALID",
+      expirationCheck: "SYNTAX",
+    },
     {
       body: { ...valid, expires: new Date(0).toISOString() },
       reason: "TOKEN_EXPIRED",
@@ -253,9 +270,11 @@ test("exchange failures expose only safe reasons and status and never reach tran
       Object.hasOwn(scenario, "status") ? scenario.status : 201,
     );
     assert.equal(error.reason, scenario.reason);
+    assert.equal(error.expiration_check, scenario.expirationCheck);
     assert.deepEqual(Object.keys(error).sort(), [
       "category",
       "code",
+      ...(scenario.expirationCheck ? ["expiration_check"] : []),
       "http_status",
       "message",
       "reason",
@@ -263,6 +282,123 @@ test("exchange failures expose only safe reasons and status and never reach tran
     ]);
     assert(!JSON.stringify(error).includes(secret));
     assert(!JSON.stringify(error).includes("sentinel"));
+  }
+});
+
+test("expiration diagnostics accept only fixed checks and clear them between gates", () => {
+  const trace = createConsumerDiagnostics();
+  trace.enter("npm-exchange");
+  for (const check of ["TYPE", "EMPTY", "SYNTAX", "CALENDAR", "PARSE"]) {
+    trace.exchange(201, "EXPIRATION_INVALID", check);
+    assert.equal(trace.failure().error.expiration_check, check);
+  }
+  assert.throws(() => trace.exchange(201, "EXPIRATION_INVALID", "secret"));
+  assert.throws(() => trace.exchange(401, "HTTP_REJECTED", "TYPE"));
+  assert.throws(() => trace.exchange(201, "TOKEN_EXPIRED", "TYPE"));
+  assert(!JSON.stringify(trace.failure()).includes("secret"));
+  assert(
+    !Object.hasOwn(
+      createConsumerDiagnostics().failure().error,
+      "expiration_check",
+    ),
+  );
+  trace.exchange(201, "TOKEN_EXPIRED");
+  assert(!Object.hasOwn(trace.failure().error, "expiration_check"));
+  trace.exchange(201, "EXPIRATION_INVALID", "TYPE");
+  trace.enter("provenance-transport");
+  assert(!Object.hasOwn(trace.failure().error, "expiration_check"));
+});
+
+test("expiration checks distinguish rejection without exposing values or consulting the clock early", async (t) => {
+  const now = Date.parse("2026-10-18T15:00:00Z");
+  let clockReads = 0;
+  t.mock.method(Date, "now", () => {
+    clockReads++;
+    return now;
+  });
+  const secret = "JWT.sentinel npm_sentinel https://user:pass@secret/";
+  const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+  const cases = [
+    ...[null, true, 3600, now + 3600000, [secret], { secret }].map(
+      (expires) => ({ expires, check: "TYPE" }),
+    ),
+    { expires: "", check: "EMPTY" },
+    ...[
+      secret,
+      "2026-10-18T16:00:00",
+      "2026-10-19",
+      "2026-10-18 16:00:00Z",
+      "2026-12-31T23:59:60Z",
+      "+010000-01-01T00:00:00Z",
+      "2026-10-18T16:00:00+24:00",
+    ].map((expires) => ({ expires, check: "SYNTAX" })),
+    ...["2026-11-31T16:00:00Z", "2100-02-29T16:00:00Z"].map((expires) => ({
+      expires,
+      check: "CALENDAR",
+    })),
+    { expires: "2026-10-18T16:00:00Z\n", check: "SYNTAX" },
+    { expires: "2026-10-18T16:00:00Z", check: "PARSE", invalidParser: true },
+  ];
+  for (const scenario of cases) {
+    const trace = createConsumerDiagnostics();
+    clockReads = 0;
+    let requests = 0;
+    let uploads = 0;
+    const parser = scenario.invalidParser
+      ? t.mock.method(Date, "parse", () => NaN)
+      : null;
+    try {
+      await assert.rejects(
+        consumeApprovedArtifact({
+          ...fixture("release"),
+          diagnostics: trace,
+          credential: (env, distribution, name, _request, diagnostics) =>
+            publicationCredential(
+              env,
+              distribution,
+              name,
+              async () =>
+                ++requests === 1
+                  ? { status: 200, json: async () => ({ value: identity }) }
+                  : {
+                      status: 201,
+                      json: async () => ({
+                        token_type: "oidc",
+                        token: secret,
+                        expires: scenario.expires,
+                      }),
+                    },
+              diagnostics,
+            ),
+          publishBuffer: async () => {
+            uploads++;
+          },
+        }),
+      );
+    } finally {
+      parser?.mock.restore();
+    }
+    assert.equal(requests, 2);
+    assert.equal(uploads, 0);
+    assert.equal(clockReads, 0);
+    const result = trace.failure();
+    assert.equal(result.error.code, "FOUNDATION_PUBLISH_BLOCKED");
+    assert.equal(result.error.stage, "npm-exchange");
+    assert.equal(result.error.category, "authentication");
+    assert.equal(result.error.http_status, 201);
+    assert.equal(result.error.reason, "EXPIRATION_INVALID");
+    assert.equal(result.error.expiration_check, scenario.check);
+    assert.deepEqual(Object.keys(result.error).sort(), [
+      "category",
+      "code",
+      "expiration_check",
+      "http_status",
+      "message",
+      "reason",
+      "stage",
+    ]);
+    for (const value of [secret, identity, "sentinel", "2026-", "2100-"])
+      assert(!JSON.stringify(result).includes(value));
   }
 });
 
@@ -360,6 +496,30 @@ test("exchange expiration follows npm date-time contract and fails closed", asyn
         assert(!JSON.stringify(result).includes(identity));
       }
       assert.equal(requests, 2);
+    });
+  }
+});
+
+test("expiration decisions with explicit offsets are independent of the process timezone", () => {
+  const source = `
+    import assert from 'node:assert/strict';
+    import {publicationCredential,createConsumerDiagnostics} from ${JSON.stringify(new URL("./release-consumer.mjs", import.meta.url).href)};
+    Date.now=()=>Date.parse('2026-10-18T15:00:00Z');
+    const sha='a'.repeat(40);
+    const identity='synthetic.'+Buffer.from(JSON.stringify({repository:'t00ls-dev/foundation',ref:'refs/heads/master',sha})).toString('base64url')+'.synthetic';
+    const env={EXECUTION_SHA:sha,ACTIONS_ID_TOKEN_REQUEST_URL:'https://pipelines.actions.githubusercontent.com/synthetic/oidc',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'synthetic'};
+    const cases=[['2026-10-18T16:00:00Z',true],['2026-10-18T18:30:00+02:30',true],['2026-10-18T09:00:00-07:00',true],['2026-10-18T16:00:00-00:00',true],['2026-10-18T16:00:00',false],['2026-10-18T15:00:00Z',false]];
+    for(const [expires,expected]of cases){let count=0,accepted=false;const trace=createConsumerDiagnostics();try{await publicationCredential(env,'release','@t00ls-dev/audit',async()=>++count===1?{status:200,json:async()=>({value:identity})}:{status:201,json:async()=>({token_type:'oidc',token:'synthetic',expires})},trace);accepted=true;}catch{}assert.equal(accepted,expected);assert.equal(count,2);}
+  `;
+  for (const timezone of [
+    "UTC",
+    "America/New_York",
+    "Pacific/Kiritimati",
+    "Etc/GMT+12",
+  ]) {
+    execFileSync(process.execPath, ["--input-type=module", "--eval", source], {
+      env: { ...process.env, TZ: timezone },
+      stdio: "pipe",
     });
   }
 });
