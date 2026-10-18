@@ -38,12 +38,36 @@ const failureCategories = Object.freeze({
   "provenance-transport": "publication",
 });
 
+const exchangeReasons = new Set([
+  "HTTP_REJECTED",
+  "INVALID_RESPONSE",
+  "TOKEN_TYPE_INVALID",
+  "TOKEN_MISSING",
+  "TOKEN_EXPIRED",
+  "TIMEOUT",
+  "NETWORK_ERROR",
+  "UNCLASSIFIED",
+]);
+
 export function createConsumerDiagnostics() {
   let stage = "arguments";
+  let httpStatus = null;
+  let reason = "UNCLASSIFIED";
   return {
     enter(next) {
       assert(Object.hasOwn(failureCategories, next));
       stage = next;
+      httpStatus = null;
+      reason = "UNCLASSIFIED";
+    },
+    exchange(status, nextReason) {
+      assert.equal(stage, "npm-exchange");
+      assert(exchangeReasons.has(nextReason));
+      httpStatus =
+        Number.isInteger(status) && status >= 100 && status <= 599
+          ? status
+          : null;
+      reason = nextReason;
     },
     failure() {
       // Deliberately accepts no exception: messages, causes and server responses
@@ -55,6 +79,9 @@ export function createConsumerDiagnostics() {
             "Foundation consumer blocked publication; verify approved metadata, authentication and bytes",
           stage,
           category: failureCategories[stage],
+          ...(stage === "npm-exchange"
+            ? { http_status: httpStatus, reason }
+            : {}),
         },
       };
     },
@@ -180,8 +207,10 @@ export async function publicationCredential(
   assert.equal(claims.ref, "refs/heads/master", "OIDC ref mismatch");
   assert.equal(claims.sha, env.EXECUTION_SHA, "OIDC snapshot mismatch");
   diagnostics.enter("npm-exchange");
-  const exchanged = await responseJson(
-    await request(
+  const signal = AbortSignal.timeout(30000);
+  let response;
+  try {
+    response = await request(
       `${registry}/-/npm/v1/oidc/token/exchange/package/${encodeURIComponent(name)}`,
       {
         method: "POST",
@@ -189,23 +218,59 @@ export async function publicationCredential(
           Authorization: `Bearer ${identity.value}`,
           Accept: "application/json",
         },
-        signal: AbortSignal.timeout(30000),
+        signal,
         redirect: "error",
       },
-    ),
+    );
+  } catch (error) {
+    diagnostics.exchange(
+      null,
+      signal.aborted || error?.name === "TimeoutError"
+        ? "TIMEOUT"
+        : error instanceof TypeError
+          ? "NETWORK_ERROR"
+          : "UNCLASSIFIED",
+    );
+    throw error;
+  }
+  const status = response?.status;
+  diagnostics.exchange(status, "INVALID_RESPONSE");
+  assert(Number.isInteger(status) && status >= 100 && status <= 599);
+  diagnostics.exchange(status, "HTTP_REJECTED");
+  assert.equal(
+    status,
     201,
     "npm OIDC exchange failed; no credential fallback permitted",
   );
+  diagnostics.exchange(status, "INVALID_RESPONSE");
+  assert.equal(typeof response.json, "function");
+  let exchanged;
+  try {
+    exchanged = await response.json();
+  } catch (error) {
+    if (signal.aborted || error?.name === "TimeoutError")
+      diagnostics.exchange(status, "TIMEOUT");
+    else if (error instanceof TypeError)
+      diagnostics.exchange(status, "NETWORK_ERROR");
+    throw error;
+  }
+  assert(
+    exchanged && typeof exchanged === "object" && !Array.isArray(exchanged),
+  );
+  diagnostics.exchange(status, "TOKEN_TYPE_INVALID");
   assert.equal(exchanged.token_type, "oidc", "Unexpected OIDC credential type");
+  diagnostics.exchange(status, "TOKEN_MISSING");
   assert(
     typeof exchanged.token === "string" && exchanged.token.length > 0,
     "OIDC exchange credential missing",
   );
+  diagnostics.exchange(status, "TOKEN_EXPIRED");
   assert(
     Number.isFinite(Date.parse(exchanged.expires)) &&
       Date.parse(exchanged.expires) > Date.now(),
     "Expired OIDC exchange credential",
   );
+  diagnostics.exchange(status, "UNCLASSIFIED");
   return exchanged.token;
 }
 

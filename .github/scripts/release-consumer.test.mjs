@@ -135,6 +135,166 @@ test("consumer diagnostics isolate invocations and reject unlisted stage values"
   assert.equal(second.failure().error.stage, "arguments");
 });
 
+test("exchange diagnostics validate metadata and reset between stages and invocations", () => {
+  const trace = createConsumerDiagnostics();
+  assert.throws(() => trace.exchange(401, "HTTP_REJECTED"));
+  trace.enter("npm-exchange");
+  assert.throws(() => trace.exchange(401, "secret-response"));
+  for (const status of [undefined, null, "401", 0, 99, 600, 201.5, NaN, {}]) {
+    trace.exchange(status, "INVALID_RESPONSE");
+    assert.equal(trace.failure().error.http_status, null);
+  }
+  trace.exchange(401, "HTTP_REJECTED");
+  assert.equal(trace.failure().error.http_status, 401);
+  const other = createConsumerDiagnostics();
+  other.enter("npm-exchange");
+  assert.equal(other.failure().error.http_status, null);
+  assert.equal(other.failure().error.reason, "UNCLASSIFIED");
+  trace.enter("artifacts");
+  assert(!Object.hasOwn(trace.failure().error, "http_status"));
+  assert(!Object.hasOwn(trace.failure().error, "reason"));
+  trace.enter("npm-exchange");
+  assert.equal(trace.failure().error.http_status, null);
+  assert.equal(trace.failure().error.reason, "UNCLASSIFIED");
+});
+
+test("exchange failures expose only safe reasons and status and never reach transport", async () => {
+  const secret =
+    "JWT.sentinel npm_sentinel Authorization:Bearer https://user:pass@secret/";
+  const valid = {
+    token_type: "oidc",
+    token: secret,
+    expires: new Date(Date.now() + 60000).toISOString(),
+  };
+  const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+  const cases = [
+    ...[301, 400, 401, 403, 404, 429, 500, 503].map((status) => ({
+      response: {
+        status,
+        json: () => assert.fail("Rejected bodies must not be read"),
+      },
+      status,
+      reason: "HTTP_REJECTED",
+    })),
+    ...[undefined, null, {}, { status: "201" }, { status: 600 }].map(
+      (response) => ({
+        response,
+        status: null,
+        reason: "INVALID_RESPONSE",
+      }),
+    ),
+    ...[null, [], secret, 42].map((body) => ({
+      body,
+      reason: "INVALID_RESPONSE",
+    })),
+    { response: { status: 201 }, reason: "INVALID_RESPONSE" },
+    { bodyError: new SyntaxError(secret), reason: "INVALID_RESPONSE" },
+    { bodyError: new DOMException(secret, "TimeoutError"), reason: "TIMEOUT" },
+    { bodyError: new TypeError(secret), reason: "NETWORK_ERROR" },
+    { body: { ...valid, token_type: secret }, reason: "TOKEN_TYPE_INVALID" },
+    ...[undefined, null, "", 123].map((token) => ({
+      body: { ...valid, token },
+      reason: "TOKEN_MISSING",
+    })),
+    ...[secret, new Date(0).toISOString()].map((expires) => ({
+      body: { ...valid, expires },
+      reason: "TOKEN_EXPIRED",
+    })),
+    {
+      requestError: new DOMException(secret, "TimeoutError"),
+      status: null,
+      reason: "TIMEOUT",
+    },
+    {
+      requestError: new TypeError(secret, { cause: { token: secret } }),
+      status: null,
+      reason: "NETWORK_ERROR",
+    },
+    { requestError: new Error(secret), status: null, reason: "UNCLASSIFIED" },
+  ];
+  for (const scenario of cases) {
+    const diagnostics = createConsumerDiagnostics();
+    let calls = 0;
+    let uploads = 0;
+    const request = async () => {
+      if (++calls === 1)
+        return { status: 200, json: async () => ({ value: identity }) };
+      if (scenario.requestError) throw scenario.requestError;
+      if (Object.hasOwn(scenario, "response")) return scenario.response;
+      return {
+        status: 201,
+        headers: { authorization: secret },
+        json: async () => {
+          if (scenario.bodyError) throw scenario.bodyError;
+          return scenario.body;
+        },
+      };
+    };
+    await assert.rejects(
+      consumeApprovedArtifact({
+        ...fixture("release"),
+        diagnostics,
+        credential: (env, distribution, name, _request, trace) =>
+          publicationCredential(env, distribution, name, request, trace),
+        publishBuffer: async () => {
+          uploads++;
+        },
+      }),
+    );
+    assert.equal(calls, 2);
+    assert.equal(uploads, 0);
+    const { error } = diagnostics.failure();
+    assert.equal(error.code, "FOUNDATION_PUBLISH_BLOCKED");
+    assert.equal(error.stage, "npm-exchange");
+    assert.equal(error.category, "authentication");
+    assert.equal(
+      error.http_status,
+      Object.hasOwn(scenario, "status") ? scenario.status : 201,
+    );
+    assert.equal(error.reason, scenario.reason);
+    assert.deepEqual(Object.keys(error).sort(), [
+      "category",
+      "code",
+      "http_status",
+      "message",
+      "reason",
+      "stage",
+    ]);
+    assert(!JSON.stringify(error).includes(secret));
+    assert(!JSON.stringify(error).includes("sentinel"));
+  }
+});
+
+test("exchange timeout during response body reading preserves HTTP status", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(AbortSignal, "timeout", () => controller.signal);
+  const diagnostics = createConsumerDiagnostics();
+  const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+  let calls = 0;
+  await assert.rejects(
+    publicationCredential(
+      oidcEnv(),
+      "release",
+      "@t00ls-dev/audit",
+      async () =>
+        ++calls === 1
+          ? { status: 200, json: async () => ({ value: identity }) }
+          : {
+              status: 201,
+              json: async () => {
+                controller.abort();
+                throw new DOMException("secret body", "AbortError");
+              },
+            },
+      diagnostics,
+    ),
+  );
+  assert.equal(calls, 2);
+  assert.equal(diagnostics.failure().error.http_status, 201);
+  assert.equal(diagnostics.failure().error.reason, "TIMEOUT");
+  assert(!JSON.stringify(diagnostics.failure()).includes("secret"));
+});
+
 test("consumer inner failures retain safe categories and stop before later operations", async () => {
   for (const [gate, category] of [
     ["npm-config", "configuration"],
