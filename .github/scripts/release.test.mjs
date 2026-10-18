@@ -69,6 +69,7 @@ import {
 import { distributionAttempts } from "../../tests/distribution-attempts.mjs";
 import "./ci-reporting.test.mjs";
 import "./release-consumer.test.mjs";
+import "./release-exchange-diagnostic.test.mjs";
 import { loadNpmConfiguration } from "./release-consumer.mjs";
 
 const sha = "a".repeat(40);
@@ -2669,7 +2670,7 @@ test("actual Changesets 3.0.3 pack-directory format works offline without publis
   }
 });
 
-test("workflow separates audit/owner approval/publication; only publisher has OIDC", () => {
+test("workflow separates release modes and isolated credential-only OIDC diagnostics", () => {
   const workflow = parse(readFileSync(".github/workflows/release.yml", "utf8"));
   const ci = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
@@ -2707,7 +2708,7 @@ test("workflow separates audit/owner approval/publication; only publisher has OI
     Object.entries(workflow.jobs)
       .filter(([, job]) => job.permissions?.["id-token"] === "write")
       .map(([name]) => name),
-    ["publish"],
+    ["publish", "diagnose-exchange"],
   );
   const condition = workflow.jobs.publish.if.replace(/\s+/g, " ");
   assert(

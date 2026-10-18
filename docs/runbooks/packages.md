@@ -67,7 +67,8 @@ exigem predecessor e `latest` realmente existentes no npm.
 
 Release continua exclusivamente `workflow_dispatch` em master. Os inputs são:
 
-- `mode`: `audit`, `approve`, `publish` ou `resume`;
+- `mode`: `audit`, `approve`, `publish`, `resume` ou o diagnóstico isolado
+  `diagnose-exchange`;
 - `release_pr` e `release_sha`: PR Version Packages e seu merge imutável;
 - `execution_sha`: snapshot/executor exato, igual ao workflow, checkout e
   master;
@@ -195,10 +196,11 @@ originais e certificado; publisher repete gates imediatamente antes da
 tentativa. Não recompila/reempacota os bytes autorizados, nem faz retry
 automático.
 
-Somente publisher possui `id-token: write`; não há `packages: write`, token npm
-persistente como padrão ou envio de GITHUB_TOKEN ao registry. npm **11.5.1**,
-pin/integridade no lockfile, é tooling privado necessário ao OIDC. pnpm
-**10.15.1** e Changesets **3.0.3** são preservados. O caminho é:
+Somente publisher e diagnóstico isolado possuem `id-token: write`; não há
+`packages: write`, token npm persistente como padrão ou envio de GITHUB_TOKEN ao
+registry. npm **11.5.1**, pin/integridade no lockfile, é tooling privado
+necessário ao OIDC. pnpm **10.15.1** e Changesets **3.0.3** são preservados. O
+caminho é:
 
 ```text
 Changesets --from-pack-dir → pnpm → consumidor protegido → libnpmpublish do npm 11.5.1
@@ -342,3 +344,32 @@ consumidor, sem alterar packages históricos.
 Workspace/tarballs continuam disponíveis para desenvolvimento/testes. Veja
 [Distribuição](package-distribution.md) para os 18 exports/perfis TypeScript e
 [Criação de apps](creating-an-app.md) para o gerador existente.
+
+## Diagnóstico isolado do exchange npm
+
+Mediante autorização operacional específica, `mode=diagnose-exchange` executa
+uma única obtenção de JWT GitHub e um único exchange para `@t00ls-dev/audit`,
+sem transporte de pacotes. Usa o próprio `release.yml`, master, distribuição
+`release`, `execution_sha` igual ao SHA atual e a confirmação
+`DIAGNOSE_NPM_EXCHANGE_WITHOUT_PUBLICATION`. Os inputs históricos `release_pr` e
+`release_sha` continuam exigidos pelo formulário, mas não autorizam nem vinculam
+uma publicação nesse modo.
+
+O entrypoint exige owner/admin atual pela API, identidade exata do workflow,
+checkout/master/SHA, tentativa 1 e CI aprovada do SHA. Usa o mesmo lock do
+release. Não execute novamente sem nova autorização. Um erro bloqueia a
+execução, sem retry de exchange. Não há fallback de credencial.
+
+O módulo compartilhado `release-credential.mjs` contém a obtenção e validação da
+credencial; o grafo de imports do diagnóstico não contém consumidor de artefatos
+nem biblioteca de publicação. A máquina de requests permite somente GET no
+broker e POST no endpoint do pacote fixo. Nenhum tarball, certificado ou
+artefato de release é baixado. A credencial retornada é descartada, e a saída
+contém somente `stage`, `category`, `http_status`, `reason` e
+`expiration_check`. `reason=VALID` significa somente credencial validada, sem
+comprovar transporte ou publicação. Uma rejeição produz os motivos sanitizados
+existentes e exit code de falha.
+
+Esse diagnóstico não inicia audit/approve/publish/resume e não cria autorização
+para publicar. Mudanças em código de credencial continuam sendo protected inputs
+e invalidam a reutilização de snapshots/certificados incompatíveis.
