@@ -91,9 +91,9 @@ test("isolated exchange emits only permitted fields and never continues to trans
       reason: "EXPIRATION_INVALID",
       check: "TYPE",
     },
-    { expires: 1700000000, reason: "EXPIRATION_INVALID", check: "TYPE" },
-    { expires: 1700000000000, reason: "EXPIRATION_INVALID", check: "TYPE" },
-    { expires: 3600, reason: "EXPIRATION_INVALID", check: "TYPE" },
+    { expires: 1700000000, reason: "VALID" },
+    { expires: 1700000000000, reason: "VALID" },
+    { expires: 3600, reason: "VALID" },
     { expires: "", reason: "EXPIRATION_INVALID", check: "EMPTY" },
     { expires: sentinel, reason: "EXPIRATION_INVALID", check: "SYNTAX" },
     {

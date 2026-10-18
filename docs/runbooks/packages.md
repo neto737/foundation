@@ -226,7 +226,15 @@ Os métodos são derivados da distribuição e entram no envelope e no certifica
 - **oidc:** release ordinária. Token bootstrap, tokens tradicionais/injetados e
   credenciais de config são rejeitados. O consumidor solicita identidade GitHub
   para npm, confere repo/ref/snapshot, exige exchange npm bem-sucedido, tipo
-  OIDC e validade. Falha não ativa o fallback opcional da CLI npm.
+  OIDC e credencial não vazia. O metadata numérico positivo/inteiro seguro de
+  `expires`, observado no registry, é opaco: não se infere unidade nem se
+  converte em data. A credencial recém-emitida pelo exchange por pacote é usada
+  somente na operação aprovada, sem cache ou persistência; sua validade é
+  aplicada pelo npm no transporte oficial, como no cliente OIDC do npm. Metadata
+  textual continua exigindo date-time válido e futuro; ausência e outros
+  tipos/formas inválidos bloqueiam. Falha do exchange ou rejeição da credencial
+  no registry encerra a operação sem fallback opcional da CLI ou retry de
+  upload.
 
 Configuração npm efetiva é carregada pela biblioteca instalada, incluindo
 project/user/global/env/cli/builtin. O guard examina apenas nomes de chaves,
