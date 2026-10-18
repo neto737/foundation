@@ -231,6 +231,18 @@ export async function publicationCredential(
   diagnostics.exchange(status, "EXPIRATION_MISSING");
   assert(Object.hasOwn(exchanged, "expires"), "OIDC expiration missing");
   diagnostics.exchange(status, "EXPIRATION_INVALID", "TYPE");
+  if (typeof exchanged.expires === "number") {
+    // The registry returns numeric metadata while its schema says date-time.
+    // Do not infer units. Like npm's official OIDC client, use only the freshly
+    // exchanged, package-scoped credential; npm enforces its lifetime at upload.
+    // No credential is cached, persisted, reused or obtained from configuration.
+    assert(
+      Number.isSafeInteger(exchanged.expires) && exchanged.expires > 0,
+      "Invalid OIDC exchange metadata",
+    );
+    diagnostics.exchange(status, "UNCLASSIFIED");
+    return exchanged.token;
+  }
   assert.equal(typeof exchanged.expires, "string", "Invalid OIDC expiration");
   diagnostics.exchange(status, "EXPIRATION_INVALID", "EMPTY");
   assert(exchanged.expires.length > 0, "Invalid OIDC expiration");

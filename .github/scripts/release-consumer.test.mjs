@@ -148,6 +148,96 @@ test("consumer diagnostics isolate invocations and reject unlisted stage values"
   assert.equal(second.failure().error.stage, "arguments");
 });
 
+test("fresh numeric OIDC metadata is opaque and never converted to an expiration date", async (t) => {
+  const fail = () =>
+    assert.fail("Numeric metadata must not be interpreted as time");
+  t.mock.method(Date, "now", fail);
+  t.mock.method(Date, "parse", fail);
+  const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+  for (const expires of [
+    1,
+    3600,
+    1700000000,
+    1700000000000,
+    Number.MAX_SAFE_INTEGER,
+  ]) {
+    let requests = 0;
+    const token = await publicationCredential(
+      oidcEnv(),
+      "release",
+      "@t00ls-dev/audit",
+      async () =>
+        ++requests === 1
+          ? { status: 200, json: async () => ({ value: identity }) }
+          : {
+              status: 201,
+              json: async () => ({
+                token_type: "oidc",
+                token: "synthetic-temporary",
+                expires,
+              }),
+            },
+    );
+    assert.equal(token, "synthetic-temporary");
+    assert.equal(requests, 2);
+  }
+});
+
+test("registry rejection of fresh OIDC credentials aborts once without fallback or credential reuse", async () => {
+  const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
+  const seen = [];
+  for (const statusCode of [401, 403]) {
+    const f = fixture("release");
+    const trace = createConsumerDiagnostics();
+    let requests = 0,
+      transports = 0;
+    const secret = `synthetic-token-${statusCode}`;
+    await assert.rejects(
+      consumeApprovedArtifact({
+        ...f,
+        diagnostics: trace,
+        credential: (env, distribution, name, _request, diagnostics) =>
+          publicationCredential(
+            env,
+            distribution,
+            name,
+            async () =>
+              ++requests === 1
+                ? { status: 200, json: async () => ({ value: identity }) }
+                : {
+                    status: 201,
+                    json: async () => ({
+                      token_type: "oidc",
+                      token: secret,
+                      expires: 3600,
+                    }),
+                  },
+            diagnostics,
+          ),
+        publishBuffer: async (metadata, bytes, options) => {
+          transports++;
+          assert.deepEqual(bytes, f.bytes);
+          assert.notEqual(bytes, f.bytes);
+          assert.equal(metadata.name, f.packet.artifacts[0].name);
+          assert.deepEqual(options.forceAuth, { token: secret });
+          assert.equal(options.registry, registry);
+          assert.equal(options.access, "public");
+          assert.equal(options.defaultTag, "latest");
+          assert.equal(options.provenance, true);
+          seen.push(options.forceAuth.token);
+          throw Object.assign(new Error(secret), { statusCode });
+        },
+      }),
+    );
+    assert.equal(requests, 2);
+    assert.equal(transports, 1);
+    assert.equal(trace.failure().error.stage, "provenance-transport");
+    assert.equal(trace.failure().error.code, "FOUNDATION_PUBLISH_BLOCKED");
+    assert(!JSON.stringify(trace.failure()).includes(secret));
+  }
+  assert.equal(new Set(seen).size, 2);
+});
+
 test("exchange diagnostics validate metadata and reset between stages and invocations", () => {
   const trace = createConsumerDiagnostics();
   assert.throws(() => trace.exchange(401, "HTTP_REJECTED"));
@@ -319,9 +409,18 @@ test("expiration checks distinguish rejection without exposing values or consult
   const secret = "JWT.sentinel npm_sentinel https://user:pass@secret/";
   const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
   const cases = [
-    ...[null, true, 3600, now + 3600000, [secret], { secret }].map(
-      (expires) => ({ expires, check: "TYPE" }),
-    ),
+    ...[
+      null,
+      true,
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+      [secret],
+      { secret },
+    ].map((expires) => ({ expires, check: "TYPE" })),
     { expires: "", check: "EMPTY" },
     ...[
       secret,
@@ -402,12 +501,19 @@ test("expiration checks distinguish rejection without exposing values or consult
   }
 });
 
-test("exchange expiration follows npm date-time contract and fails closed", async (t) => {
+test("exchange accepts observed numeric metadata without units and strictly validates date-time metadata", async (t) => {
   const now = Date.parse("2026-10-18T15:00:00.000Z");
   t.mock.method(Date, "now", () => now);
   const secret = "JWT.sentinel npm_sentinel Authorization:Bearer secret";
   const identity = `synthetic.${Buffer.from(JSON.stringify({ repository: "t00ls-dev/foundation", ref: "refs/heads/master", sha })).toString("base64url")}.synthetic`;
   const cases = [
+    ...[1, 3600, 1700000000, 1700000000000, Number.MAX_SAFE_INTEGER].map(
+      (expires) => ({
+        label: "opaque numeric metadata",
+        expires,
+        reason: null,
+      }),
+    ),
     ...[
       "2026-10-18T16:00:00.000Z",
       "2026-10-18T16:00:00Z",
@@ -427,9 +533,12 @@ test("exchange expiration follows npm date-time contract and fails closed", asyn
       undefined,
       null,
       true,
-      3600,
-      now + 3600000,
-      (now + 3600000) / 1000,
+      0,
+      -1,
+      0.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      NaN,
+      Infinity,
       ["2026-10-18T16:00:00Z"],
       { expires: "2026-10-18T16:00:00Z", secret },
       "",
