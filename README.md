@@ -5,15 +5,17 @@ do [Foundation](https://github.com/t00ls-dev/foundation).
 
 ## Estado atual
 
-O projeto possui uma primeira fatia de **API local executável**: onboarding por
+O projeto possui uma primeira fatia **web executável localmente**: onboarding por
 e-mail verificado e senha posterior, provisionamento atômico de organização com
 primeira igreja, vínculo administrativo e auditoria, além de contexto
 organizacional e consulta de igrejas. Há migrations próprias e testes em
-PostgreSQL descartável. Interface React, membros e ambiente de produção ainda
-não foram implementados.
+PostgreSQL descartável. A SPA React permite concluir esse fluxo, selecionar uma
+organização e consultar suas igrejas. Membros e ambiente de produção ainda não
+foram implementados.
 
 Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para
 execução local, endpoints, decisões técnicas e limites desta entrega.
+[Interface de onboarding](docs/interface-onboarding.md) descreve a SPA e seus testes.
 
 ## MVP aprovado
 
@@ -60,12 +62,18 @@ runtime e conectividade de produção continuam sem definição.
 - [Instruções do repositório](AGENTS.md): responsabilidades, convenções e validação.
 - [Onboarding e provisionamento](docs/onboarding-provisionamento.md): contratos,
   execução e validação da primeira fatia.
+- [Interface de onboarding](docs/interface-onboarding.md): React, desenvolvimento
+  com Vite, navegação e testes de navegador.
 
 Documentação e mensagens próprias usam português brasileiro. Com Node
 `>=22.22.0`, instale com `npm ci --ignore-scripts`, execute `npm run typecheck`,
 `npm test` e `npm run build`. `npm run test:integration` exige Docker: cria seu
 próprio PostgreSQL, aplica explicitamente o histórico apenas nesse banco sintético,
-executa os testes e remove o container. Não usa um banco externo configurado.
+executa os testes e remove o container. Não usa um banco externo configurado. `npm run test:e2e` exercita a interface em
+Chromium contra outra instância descartável, após `npm run build`.
+
+Com o banco sintético e o segredo local configurados conforme o guia de onboarding,
+`npm run dev` inicia Vite em `http://localhost:5173` e a API em loopback na porta 3000. `npm start` serve o build e a API juntos em `http://localhost:3000`.
 
 O legado permanece em [t00ls-dev/Levi.old](https://github.com/t00ls-dev/Levi.old),
 separado deste repositório. Configurações locais e segredos ficam fora do

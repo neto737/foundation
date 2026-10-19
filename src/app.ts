@@ -43,6 +43,7 @@ type Environment = {
 
 export function createApp(options: AppOptions) {
   const origin = new URL(options.baseURL).origin;
+  const returnPath = options.onboardingReturnPath ?? "/api/onboarding";
   if (options.baseURL !== origin || options.secret.length < 32)
     throw new Error(
       "Configure a origem e um segredo de ao menos 32 caracteres.",
@@ -110,7 +111,7 @@ export function createApp(options: AppOptions) {
       options,
       c.req.raw,
       "/sign-in/magic-link",
-      { email, callbackURL: "/api/onboarding" },
+      { email, callbackURL: returnPath },
     );
   });
   app.get("/api/auth/magic-link/verify", (c) => {
@@ -119,7 +120,7 @@ export function createApp(options: AppOptions) {
       c.get("auth"),
       options,
       c.req.raw,
-      `/magic-link/verify?${new URLSearchParams({ token, callbackURL: "/api/onboarding" })}`,
+      `/magic-link/verify?${new URLSearchParams({ token, callbackURL: returnPath })}`,
     );
   });
   app.post("/api/onboarding/password-email", async (c) => {
@@ -130,7 +131,7 @@ export function createApp(options: AppOptions) {
       options,
       c.req.raw,
       "/request-password-reset",
-      { email: identity.user.email, redirectTo: "/api/onboarding" },
+      { email: identity.user.email, redirectTo: returnPath },
     );
   });
   app.get("/api/auth/reset-password/:token", (c) => {
@@ -139,7 +140,7 @@ export function createApp(options: AppOptions) {
       c.get("auth"),
       options,
       c.req.raw,
-      `/reset-password/${token}?${new URLSearchParams({ callbackURL: "/api/onboarding" })}`,
+      `/reset-password/${token}?${new URLSearchParams({ callbackURL: returnPath })}`,
     );
   });
   app.post("/api/onboarding/password", async (c) => {
@@ -250,12 +251,12 @@ export function createApp(options: AppOptions) {
     return c.json({ organizationId: context.tenantId, role: context.role });
   });
   app.get("/api/churches", async (c) =>
-    c.json({
-      churches: await listChurches(
+    c.json(
+      await listChurches(
         c.get("database"),
         await readySession(c.get("database"), c.get("identity")),
       ),
-    }),
+    ),
   );
   app.get("/api/churches/:id", async (c) =>
     c.json(

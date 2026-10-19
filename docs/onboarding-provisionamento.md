@@ -1,8 +1,9 @@
 # Onboarding e provisionamento
 
-Esta primeira fatia implementa uma API local. O escopo de produto continua em
-[Decisões do MVP](decisoes-mvp.md). Não há interface React, cadastro de membros,
-convites, administração adicional, deploy ou infraestrutura de produção.
+Esta primeira fatia implementa uma API local, consumida pela
+[interface React de onboarding](interface-onboarding.md). O escopo de produto
+continua em [Decisões do MVP](decisoes-mvp.md). Cadastro de membros, convites,
+administração adicional, deploy e infraestrutura de produção continuam pendentes.
 
 ## Execução local
 
@@ -15,6 +16,7 @@ npm run typecheck
 npm test
 npm run test:integration
 npm run build
+npm run test:e2e
 npm run format:check
 ```
 
@@ -41,10 +43,14 @@ npm run db:migrate
 npm run dev
 ```
 
-`npm start` executa o build já produzido. O servidor escuta somente em
-`127.0.0.1:3000`; use `http://localhost:3000` como origem das solicitações.
-`LEVI_PORT` altera a porta. Banco remoto é recusado pelo executável local e pelo
-comando de migrations. Não há carregamento automático de `.env`.
+`npm run dev` inicia Vite em `http://localhost:5173` e a API em
+`127.0.0.1:3000`. O proxy preserva cookies e a origem de navegador.
+`npm start` executa o build já produzido e serve SPA/API juntos em
+`http://localhost:3000`, com o servidor ligado somente a `127.0.0.1`.
+`LEVI_PORT` altera a porta da API; `LEVI_PUBLIC_ORIGIN` permite somente origem HTTP
+local e é configurada pelo comando de desenvolvimento. Banco remoto é recusado
+pelo executável local e pelo comando de migrations. Não há carregamento automático
+de `.env`.
 
 O transporte local grava e-mails em `.local/mail/`, com diretório privado e arquivos
 `0600`, sem envio real nem endpoint de consulta da caixa. A API recebe um
@@ -60,14 +66,15 @@ migrations ao iniciar, fazer build ou atualizar dependências. Não há GitHub A
 ## Fluxo e endpoints
 
 Todos os corpos de escrita são JSON e rejeitam campos desconhecidos. Envie
-`Origin: http://localhost:3000` e preserve os cookies nativos, inclusive cada
+`Origin` igual à origem pública configurada (5173 no desenvolvimento, 3000 no
+build local) e preserve os cookies nativos, inclusive cada
 `Set-Cookie`. Escritas autenticadas sem origem confiável são recusadas. Respostas
 são privadas e não armazenáveis em cache; links não são enviados em `Referer`.
 
 | Método e caminho                      | Entrada e comportamento                                                                                                                                                                                                                        |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/onboarding/email`          | `{ "email": "pessoa@example.test" }`. Solicita Magic Link pelo handler público do Foundation. Não exige nem aceita senha/nome/ID.                                                                                                              |
-| `GET /api/auth/magic-link/verify`     | Link enviado pelo Better Auth; verifica posse do e-mail e cria sessão. Callback fixo para `/api/onboarding`.                                                                                                                                   |
+| `GET /api/auth/magic-link/verify`     | Link enviado pelo Better Auth; verifica posse do e-mail e cria sessão. Callback fixado pela composição: `/onboarding` na web local, `/api/onboarding` por padrão na API.                                                                       |
 | `GET /api/onboarding`                 | Etapa autoritativa: `email`, `verificar-email`, `senha`, `organizacao` ou `concluido`. Link inválido/expirado/usado informa erro em português.                                                                                                 |
 | `POST /api/onboarding/password-email` | `{}` e sessão verificada. Solicita ao Better Auth o link para primeira senha/recuperação, para o e-mail da própria sessão.                                                                                                                     |
 | `GET /api/auth/reset-password/:token` | Callback público nativo do link; redireciona à etapa com token. Não define senha.                                                                                                                                                              |
@@ -78,7 +85,7 @@ são privadas e não armazenáveis em cache; links não são enviados em `Refere
 | `GET /api/organizations`              | Lista somente organizações com vínculo administrativo atual da conta pronta, para retomar em outra sessão.                                                                                                                                     |
 | `POST /api/tenant`                    | `{ "organizationId": "UUID" }`. Valida vínculo administrativo antes de associar a organização à sessão.                                                                                                                                        |
 | `GET /api/context`                    | Organização ativa e role `admin`, após resolver sessão pronta e vínculo atual.                                                                                                                                                                 |
-| `GET /api/churches`                   | Igrejas da organização ativa autorizada.                                                                                                                                                                                                       |
+| `GET /api/churches`                   | `{ organizationId, churches: [{ id, nome }] }`, com o contexto autorizado usado na própria consulta. A interface confere esse ID para evitar associação incorreta se outra aba trocar o tenant.                                                |
 | `GET /api/churches/:id`               | Igreja consultada por ID **e** organização ativa autorizada. Outra organização retorna `404`.                                                                                                                                                  |
 
 Rotas convencionais de signup, mudança de senha/e-mail, plugins e chamadas diretas

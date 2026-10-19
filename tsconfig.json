@@ -19,6 +19,9 @@
     "src/**/*.ts",
     "tools/**/*.ts",
     "test/**/*.ts",
-    "drizzle.config.ts"
+    "drizzle.config.ts",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "e2e/**/*.ts"
   ]
 }
