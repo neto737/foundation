@@ -345,6 +345,8 @@ export function App({
                   <p>
                     Use o link recebido para verificar seu e-mail e continuar.
                     Se não encontrar a mensagem, confira também o spam.
+                    Solicitações repetidas podem ser limitadas; aguarde antes de
+                    pedir outro link.
                   </p>
                   <p>
                     Depois da verificação, você vai solicitar um segundo e-mail

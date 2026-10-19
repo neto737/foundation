@@ -168,7 +168,7 @@ test("workerd: inicialização em banco vazio não executa migrations", async ()
   const empty = await createPostgresDatabase(url.toString());
   const runtime = await workerHarness(url.toString());
   try {
-    assert.equal((await runtime.send("/api/onboarding")).status, 200);
+    assert.equal((await runtime.send("/api/onboarding")).status, 503);
     const tables = await empty.client.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'",
     );
@@ -179,14 +179,14 @@ test("workerd: inicialização em banco vazio não executa migrations", async ()
   }
 });
 
-test("workerd: dois e-mails, allowlist DEV, prontidão, cookies e callbacks nativos", async () => {
+test("workerd: onboarding público, dois e-mails, prontidão, cookies e callbacks nativos", async () => {
   const count = sent.length;
   assert.equal(
     (await send("/api/onboarding/email", { email: "not-allowed@example.test" }))
       .status,
     200,
   );
-  assert.equal(sent.length, count);
+  assert.equal(sent.length, count + 1);
   const account = await verified();
   assert.equal(
     (
@@ -492,4 +492,104 @@ test("workerd: CPU de processo, heap V8, RSS e latência da senha sem reduzir sc
   } finally {
     probe.close();
   }
+});
+
+test("workerd público: limite persiste entre invocações, ignora X-Forwarded-For e mantém erro em português", async () => {
+  const ip = "198.51.100.240";
+  const responses = [];
+  for (let index = 0; index < 6; index++) {
+    responses.push(
+      await send("/api/onboarding/email", { email: email() }, "", {
+        "cf-connecting-ip": ip,
+        "x-forwarded-for": `203.0.113.${index}`,
+      }),
+    );
+  }
+  assert.deepEqual(
+    responses.map((response) => response.status),
+    [200, 200, 200, 200, 200, 429],
+  );
+  const denied = responses.at(-1)!;
+  assert.ok(Number(denied.headers.get("retry-after")) > 0);
+  assert.equal((await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
+  const counters = await observer.client.query(
+    "SELECT key FROM abuse_counters",
+  );
+  assert.ok(!JSON.stringify(counters.rows).includes(ip));
+  await observer.client.query(
+    "ALTER TABLE abuse_counters RENAME TO worker_abuse_unavailable",
+  );
+  try {
+    const count = sent.length;
+    assert.equal(
+      (await send("/api/onboarding/email", { email: email() })).status,
+      503,
+    );
+    assert.equal(sent.length, count);
+  } finally {
+    await observer.client.query(
+      "ALTER TABLE worker_abuse_unavailable RENAME TO abuse_counters",
+    );
+  }
+});
+
+test("workerd público: recuperação de senha compartilha limite de e-mails; login limita tentativas sem enumerar contas", async () => {
+  const account = await verified();
+  const headers = { "cf-connecting-ip": "198.51.100.241" };
+  const before = sent.filter(
+    (message) => message.to[0] === account.email,
+  ).length;
+  for (let i = 0; i < 5; i++)
+    assert.equal(
+      (
+        await send(
+          "/api/onboarding/password-email",
+          {},
+          account.cookie,
+          headers,
+        )
+      ).status,
+      200,
+    );
+  assert.equal(
+    sent.filter((message) => message.to[0] === account.email).length - before,
+    2,
+  );
+  assert.equal(
+    (await send("/api/onboarding/password-email", {}, account.cookie, headers))
+      .status,
+    429,
+  );
+  assert.equal(
+    (await send("/api/onboarding/email", { email: email() }, "", headers))
+      .status,
+    429,
+  );
+  const loginHeaders = { "cf-connecting-ip": "198.51.100.242" };
+  const bodies = [];
+  let reset: string | null = null;
+  let attempts = 0;
+  let limited = false;
+  // Janela fixa pode virar durante scrypt. Conta pelo reset real, não pelo relógio do teste.
+  for (let i = 0; i < 22; i++) {
+    const response = await send(
+      "/api/auth/sign-in/email",
+      { email: i % 2 ? account.email : email(), password: "synthetic-wrong" },
+      "",
+      loginHeaders,
+    );
+    const currentReset = response.headers.get("ratelimit-reset");
+    assert.ok(currentReset);
+    attempts = currentReset === reset ? attempts + 1 : 1;
+    reset = currentReset;
+    if (attempts > 10) {
+      assert.equal(response.status, 429);
+      limited = true;
+      break;
+    }
+    assert.equal(response.status, 401);
+    bodies.push(await response.text());
+  }
+  assert.ok(limited);
+  assert.equal(new Set(bodies).size, 1);
 });

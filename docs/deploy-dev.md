@@ -1,204 +1,168 @@
-# Deploy DEV
+# Deploy DEV público
 
-O processo adapta o deploy real do exemplo Links do Foundation: GitHub Actions,
-checkout do SHA exato da branch principal, instalação pelo lockfile, validação,
-ambiente `dev`, publicação Wrangler identificada pelo SHA e verificação posterior.
-Não utiliza credenciais, banco ou recursos do Foundation. A preparação deste
-processo não comprova publicação: o ambiente só estará disponível após os recursos
-e as validações remotas descritos abaixo.
+O Levi prepara acesso público em `https://levi.t00ls.dev`, sem Cloudflare Access
+ou lista de destinatários. Cadastro continua por e-mail verificado, primeira senha
+e provisionamento de organização/primeira igreja. Dados privados exigem sessão,
+prontidão e vínculo organizacional atual no servidor.
 
-## Diferenças necessárias
+O processo reutiliza o padrão operacional comprovado do Links: CI automática,
+GitHub Actions, SHA validado, ambiente `dev`, fila de publicação e Wrangler não
+interativo. O Levi mantém npm e PostgreSQL/Hyperdrive; não copia o monorepo, D1
+ou fases de migrations do Foundation. Preparação não comprova publicação remota.
 
-O repositório Foundation é público; o Links usa pnpm/Turborepo, o plugin Cloudflare
-do Vite e D1. Seu workflow também coordena fases de migrations D1. O Levi permanece um projeto npm,
-com Vite e Wrangler existentes, PostgreSQL Neon e Hyperdrive exclusivos. Não
-adiciona plugin Vite, SDK de provedor, workspace ou runner compartilhado.
+## CI, identidade e publicação
 
-O workflow [Deploy DEV](../.github/workflows/deploy-dev.yml) é **somente manual**
-nesta etapa: não executa em push/PR. Valida o SHA informado na própria execução;
-não depende de um CI separado ainda inexistente. A publicação espera o job
-`checks`, usa o ambiente GitHub `dev` e uma fila sem cancelamento de operação em
-andamento. O script reconfirma HEAD limpo e main remota imediatamente antes do
-upload, recusando execução obsoleta. Não há publicação de branches de PR.
+[CI](../.github/workflows/ci.yml) executa em PR e push na `main`: instalação pelo
+lockfile, formatação, typecheck, unitários/contratos, build, dry-run Wrangler,
+PostgreSQL descartável, workerd e navegador. Recebe somente `contents: read`,
+sem secrets de produto, provedor ou banco persistente. Não usa `pull_request_target`.
 
-Migrations remotas continuam administrativas e independentes, no comando
-`npm run db:migrate:dev` de [Cloudflare Workers](cloudflare-workers.md#migrations-dev-explícitas).
-O workflow não recebe URL de banco, credenciais de migrator ou chave de gestão
-Neon. Seus testes aplicam o histórico somente em containers sintéticos próprios.
+[Deploy DEV](../.github/workflows/deploy-dev.yml) aguarda `workflow_run` da CI
+concluída com sucesso. Aceita somente CI de **push na main do próprio Levi**.
+PRs, forks, outras branches e CI falha não publicam. Mantém `workflow_dispatch`
+com SHA completo para recuperação controlada, também exigindo CI de push aprovada.
 
-O Links usa health público com SHA e leitura D1. Para este DEV privado, o smoke
-automático confere o SHA da versão ativa pela API Cloudflare e o redirecionamento
-anônimo de `/` e `/api/onboarding` para Access. **Isso não comprova saúde do banco,
-autenticação ou entrega de e-mail.** Não há bypass ou service token do Access para
-facilitar o smoke. Os testes funcionais remotos exigem um testador autorizado.
+O validador [ci-evidence](../tools/ci-evidence.ts) consulta a API GitHub, confirma
+workflow canônico `ci.yml`, repositório de origem, evento, branch, SHA, conclusão,
+tentativa atual e job `checks` efetivamente aprovado. Não baixa artifacts de PR.
+O checkout é do SHA confiável da main; o script reconfirma main remota e HEAD
+limpo antes do upload. Execuções obsoletas falham fechadas. O Worker recebe tag
+com o SHA validado, conferida na versão ativa após publicação.
 
-## Recursos antes de habilitar
+A publicação usa `contents: read` e `actions: read`, runners padrão
+`ubuntu-latest`, environment `dev` restrito à main e fila `levi-dev` sem cancelar
+uma publicação em andamento. Secrets são encaminhados somente à etapa de deploy;
+a instalação/build não os recebem.
 
-1. Confirmar Workers Free e quotas, Neon Free, Resend Free e elegibilidade gratuita
-   do Access. Confirmar também franquia/bloqueio de gasto do GitHub Actions no
-   repositório privado antes de disparar o workflow. Não contratar upgrades.
-2. Inventariar os recursos existentes antes de criar qualquer outro. Preparar
-   projeto e banco exclusivamente Levi DEV, host direto Neon e roles
-   `levi_dev_migrator` e `levi_dev_runtime`. Runtime sem DDL; migrator não vai para
-   Worker, Hyperdrive ou GitHub Actions. Confirmar projeto, banco, roles,
-   privilégios, TLS, estado vazio/esperado e SQL; aplicar explicitamente o histórico.
-3. Preparar Hyperdrive de nome `levi-dev`, apontando ao host/banco DEV esperado e à
-   role runtime. Desabilitar query cache e conferir `caching.disabled=true` na
-   configuração efetiva. Confirmar TLS até o Neon; o padrão Hyperdrive exige TLS,
-   e o comando de migration exige `sslmode=verify-full`. Não usar pooler Neon como
-   alvo do migrator ou alterar suas guardas.
-4. Preparar remetente Resend de domínio verificado, tracking de links desabilitado
-   e chave exclusiva de envio restrita ao domínio. Manter os dois e-mails nativos.
-   A lista privada do transporte deve conter somente testadores autorizados.
-5. Antes da publicação, configurar uma aplicação self-hosted Access cobrindo o
-   hostname inteiro `levi.t00ls.dev`, sem path ou destinos adicionais. Pode usar
-   `domain` ou um único destino público com esse URI, sem overrides públicos.
-   Usar somente políticas Allow com regras Email para os mesmos endereços exatos
-   da lista de envio. Não usar domínio inteiro, Everyone, grupos, Bypass ou Service
-   Auth. Este primeiro processo recusa formas de política diferentes, inclusive
-   regras adicionais Require/Exclude, para manter a conferência objetiva.
-6. Inventariar rotas de toda a conta: somente o custom domain Levi poderá apontar
-   ao Worker `levi-dev`; nenhuma rota alternativa em outra zona. Manter workers.dev
-   e previews desabilitados. A guarda consulta custom domains da conta e rotas da
-   zona t00ls.dev; não certifica rotas em outras zonas às quais o token não dê acesso.
+**O deploy permanece bloqueado enquanto a variable de repositório
+`LEVI_DEV_DEPLOY_ENABLED` estiver ausente ou diferente de `true`.** CI automática
+pode executar sem essa habilitação. Não configurar a variable antes de validar
+recursos, migrations, configuração e planos gratuitos. `LEVI_DEV_READY=true` é
+uma confirmação operacional explícita desses pré-requisitos, não descoberta
+ou prova automática deles.
 
-`LEVI_DEV_READY=true` é a confirmação operacional dessas condições, incluindo
-plano gratuito, migrations, privilégios/TLS e e-mail; não é uma descoberta
-automática dessas propriedades. Ausência de credenciais ou testadores impede
-habilitação. A publicação não cria banco, Hyperdrive ou Access, nem muda plano.
+## Recursos e pré-requisitos remotos
 
-## Autenticação segura e configuração
+Inventariar antes de criar recursos. Confirmar elegibilidade e quotas Workers
+Free, Neon Free e Resend Free. Não contratar upgrades. Recursos devem ser próprios
+do Levi, sem usar credenciais ou modificar recursos do Foundation.
 
-Contas existentes não significam sessão autenticada. No Links, os tokens de deploy
-estão nos secrets do repositório Foundation. A API GitHub lista os nomes, mas não
-retorna seus valores. Não é necessário nem apropriado extrair/reutilizar esses
-tokens para o Levi.
+1. Projeto/banco Neon DEV identificado, host direto e TLS, roles separadas
+   `levi_dev_migrator` e `levi_dev_runtime`; runtime sem DDL. Banco com histórico
+   revisado e aplicado explicitamente por operação administrativa autorizada.
+   A role runtime precisa de SELECT/INSERT/UPDATE/DELETE em `abuse_counters`
+   (incluindo a limpeza), sem permissão para criar/alterar tabelas.
+2. Hyperdrive exclusivo `levi-dev`, host/banco DEV esperados, role runtime,
+   TLS e **`caching.disabled=true` conferido pela API**. Sem query cache para
+   sessões, memberships, contadores ou dados organizacionais.
+3. Resend com domínio remetente verificado e tracking de links desabilitado.
+   Chave própria de envio restrita ao domínio. Não há allowlist de destinatários.
+   Domínio/chave de teste que só envie ao proprietário não satisfaz cadastro público.
+4. Worker `levi-dev`, Static Assets e API na mesma origem HTTPS. Somente custom
+   domain `levi.t00ls.dev`; workers.dev/previews permanecem desabilitados.
+   Inventariar rotas alternativas em todas as zonas acessíveis. O script confere
+   custom domains da conta e rotas da zona t00ls.dev; não atesta zonas fora do token.
+5. Nenhuma aplicação Access deve interceptar o hostname público. O processo não
+   exige ID/permissões de Access nem remove políticas remotas automaticamente.
+   O smoke exige HTML público e estado de onboarding, sem redirects para Access.
+6. Validar e-mails, autenticação, persistência, isolamento, quotas e CPU remotamente.
+   Métricas locais workerd não são CPU faturada Cloudflare. Não reduzir scrypt
+   para caber no Free. Um limite real impeditivo exige parar antes de contratar.
 
-Para administração local, um operador pode executar o Wrangler instalado:
+A falta de acesso aos provedores não impede CI/testes locais, mas impede validar
+provisionamento, planos, entrega de e-mails ou publicação.
 
-```sh
-npx --no-install wrangler login
-npx --no-install wrangler whoami
-```
+## Secrets e configuração privada
 
-O primeiro comando abre o consentimento Cloudflare no navegador. Em sessão sem
-navegador/retorno OAuth, usar conexão autenticada ou token exclusivo por variável
-de ambiente privada. Não enviar tokens pelo chat, argumentos de shell ou arquivos
-versionados. Esse login local não configura GitHub Actions nem autentica Neon ou
-Resend.
+Não depende de `wrangler login` no runner. Configurar tokens exclusivos em
+Settings → Environments → dev do GitHub Levi, sem fornecer valores pelo chat ou
+versioná-los. Em terminal privado, `gh secret set NOME --repo t00ls-dev/levi --env dev`
+solicita o valor interativamente.
 
-Para deploy não interativo, criar tokens exclusivos no painel Cloudflare, na
-conta correta, com expiração e escopo mínimo disponível:
+| Secret do environment dev | Uso                                                                |
+| ------------------------- | ------------------------------------------------------------------ |
+| `CLOUDFLARE_ACCOUNT_ID`   | Conta correta                                                      |
+| `CLOUDFLARE_API_TOKEN`    | Publicar Worker/Assets/custom domain, menor escopo disponível      |
+| `CLOUDFLARE_READ_TOKEN`   | Leitura Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas |
+| `LEVI_AUTH_SECRET`        | Aleatório, exclusivo, estável, ao menos 32 caracteres              |
+| `RESEND_API_KEY`          | Somente envio, restrito ao domínio remetente                       |
 
-- `CLOUDFLARE_API_TOKEN`: permissão de publicar Worker e Static Assets e configurar
-  seu custom domain na zona t00ls.dev. Após a criação inicial, restringir ao Worker
-  levi-dev quando a conta permitir. Não conceder gestão de plano, D1 ou migrations.
-- `CLOUDFLARE_READ_TOKEN`: somente leitura de Hyperdrive, aplicações/políticas
-  Access, Worker/versões/subdomínio/custom domains, zona e rotas. A conferência
-  consulta somente APIs GET. Falha de permissão bloqueia o deploy, sem fallback.
+Variables do environment `dev`: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`,
+`LEVI_DEV_DATABASE_HOST`, `LEVI_DEV_DATABASE_NAME`, `LEVI_EMAIL_FROM` e
+`LEVI_DEV_READY`. Os IDs são obtidos de recursos reais; host direto Neon e banco
+`levi_dev` ou prefixo permitido. A habilitação `LEVI_DEV_DEPLOY_ENABLED` é uma
+variable **do repositório**, avaliada antes de entrar no environment.
 
-Na interface GitHub, abrir Settings → Environments → dev, limitar deployment
-branches a `main` e configurar os secrets abaixo. Alternativamente, em terminal
-privado autenticado, estes comandos solicitam o valor interativamente, sem valor
-na linha de comando:
+`LEVI_ACCESS_APP_ID` e `LEVI_DEV_EMAIL_ALLOWLIST` deixaram de ser consumidos;
+nenhum endereço pessoal deve ser colocado em variables públicas. Chaves de gestão
+Neon/Resend e credenciais migrator não pertencem ao workflow. A configuração
+Wrangler raiz continua sem rotas e com Hyperdrive placeholder para testes locais.
 
-```sh
-gh secret set CLOUDFLARE_ACCOUNT_ID --repo t00ls-dev/levi --env dev
-gh secret set CLOUDFLARE_API_TOKEN --repo t00ls-dev/levi --env dev
-gh secret set CLOUDFLARE_READ_TOKEN --repo t00ls-dev/levi --env dev
-gh secret set LEVI_AUTH_SECRET --repo t00ls-dev/levi --env dev
-gh secret set RESEND_API_KEY --repo t00ls-dev/levi --env dev
-gh secret set LEVI_DEV_EMAIL_ALLOWLIST --repo t00ls-dev/levi --env dev
-```
+## Proteção contra abuso
 
-LEVI_AUTH_SECRET deve ser aleatório, exclusivo e estável, com ao menos 32
-caracteres; não gerar um novo a cada deploy. LEVI_DEV_EMAIL_ALLOWLIST contém JSON
-com 1–50 endereços exatos, sem versionar nomes/endereço de testadores. O secret
-Resend é uma chave **Sending access**, restrita ao domínio verificado; não é a
-chave administrativa do provedor.
+A composição Worker habilita o limitador público `fixedWindowRateLimit` do
+`@t00ls-dev/security`, com store PostgreSQL atômico do Levi. Limites de janela fixa:
 
-Configurar estas **variables do ambiente dev**, com valores obtidos dos recursos
-identificados (sem inventar IDs):
+| Escopo                                                                           | Limite       |
+| -------------------------------------------------------------------------------- | ------------ |
+| Pedidos Magic Link/definição de senha, por IP, compartilhado entre as duas rotas | 5/minuto     |
+| Login por senha, por IP                                                          | 10/minuto    |
+| Demais chamadas API, por IP, incluindo callbacks                                 | 60/minuto    |
+| Envios ao mesmo destinatário, compartilhados entre os dois e-mails               | 3/15 minutos |
+| Tentativas de envio globais do Levi                                              | 90/dia UTC   |
 
-| Variable                 | Conteúdo                                                     |
-| ------------------------ | ------------------------------------------------------------ |
-| `CLOUDFLARE_ZONE_ID`     | ID da zona t00ls.dev na conta esperada                       |
-| `LEVI_ACCESS_APP_ID`     | ID da aplicação Access exclusiva que protege todo o hostname |
-| `LEVI_HYPERDRIVE_ID`     | ID real do recurso exclusivo levi-dev, sem cache             |
-| `LEVI_DEV_DATABASE_HOST` | Host direto Neon, ep-...neon.tech, sem -pooler               |
-| `LEVI_DEV_DATABASE_NAME` | levi_dev ou prefixo levi_dev_                                |
-| `LEVI_EMAIL_FROM`        | Remetente de domínio verificado                              |
-| `LEVI_DEV_READY`         | true somente após conferir os requisitos operacionais        |
+IP vem exclusivamente de `CF-Connecting-IP`, garantido pela entrada Cloudflare;
+`X-Forwarded-For` do visitante não define autoridade. Header ausente usa bucket
+compartilhado. A entrada Node local não habilita essa confiança em headers.
+Os contadores usam HMAC-SHA-256 com segredo do servidor, sem IP/e-mail em claro,
+expiração e limpeza limitada/indexada a cada incremento. O schema técnico consta
+na migration `0001_abuse-limits.sql`, sem aplicação remota automática.
 
-Por último, configurar a **variable de repositório** `LEVI_DEV_DEPLOY_ENABLED=true`.
-Ela é avaliada antes de o job entrar no ambiente; não colocá-la somente no ambiente
-dev. Deixá-la ausente/desabilitada impede publicação mesmo em disparo manual.
-Um workflow com checks aprovados e deploy ignorado por essa guarda não significa
-que a aplicação foi publicada.
+Excesso por IP retorna 429 em português com `Retry-After`. Excesso por destinatário
+ou orçamento global suprime envio mantendo a resposta genérica; envio não é
+confirmação de entrega. Suprimir não depende da existência da conta. Falhas do banco
+não liberam solicitações e falhas do provider não são declaradas como envio
+confirmado; ambas não provocam retry automático. Tentativas de envio falhas também
+consomem orçamento. Credenciais inválidas no login mantêm erro/status genéricos.
+Os parâmetros criptográficos nativos permanecem intactos.
 
-Para permitir provisionamento nesta sessão sem dar credenciais ao CI, o operador
-pode disponibilizar conexão autenticada Neon ou API key em arquivo privado/ambiente
-seguro. No console Neon, usar Settings → API keys; depois de identificar/criar o
-projeto DEV, preferir chave limitada ao projeto. Uma chave limitada não cria outro
-projeto. A URL de migrations permanece privada no terminal administrativo. No
-Resend, usar API Keys para criar a chave exclusiva; administração do domínio exige
-acesso administrativo próprio, separado da chave de envio. Não armazenar chaves
-administrativas Neon/Resend no workflow de publicação.
+O wrapper auth publicado também oferece rate limiting por banco e Turnstile; esses
+contratos foram examinados. O limitador Hono existente foi escolhido para cobrir
+as rotas compostas e reutilizar o mesmo store nas quotas de envio, sem segundo
+schema de contadores ou CAPTCHA. Limites nativos do Better Auth não substituem a
+proteção durável entre invocações.
 
-## Disparo e verificações
+São limites conservadores para DEV, não garantia contra bots distribuídos, DDoS
+ou exaustão intencional da quota global. Endereços IP distintos continuam sujeitos
+ao teto global de e-mails. Limites de janela têm rajada na fronteira; podem atrasar
+uso legítimo e precisam de acompanhamento. As quotas reais da conta Resend podem
+ser compartilhadas com outros usos; o teto do Levi não atesta saldo do provedor.
 
-O job checks executa instalação reproduzível, formatação, typecheck, unitários,
-build Node/React, dry-run real Wrangler, PostgreSQL descartável, workerd e navegador.
-Sem checks aprovados, não há deploy. Antes do upload, o script também consulta
-Access (incluindo aplicações mais específicas no hostname), Hyperdrive/cache,
-subdomínio/previews, custom domains e rotas da zona. Configuração inesperada falha
-fechada; a guarda não cria políticas ou corrige recursos automaticamente.
+## Migrations, operação e recuperação
 
-O Wrangler raiz continua sem rotas e com Hyperdrive placeholder para builds/testes
-locais. O comando de deploy gera configuração temporária a partir dela, substitui
-somente o binding, o remetente e o custom domain canônico. Os três secrets de
-runtime vão em arquivo temporário modo 0600 para `wrangler deploy --secrets-file`,
-suportado pela versão instalada. O diretório é privado, ignorado e removido ao
-final; não há artifact com secrets. A saída bruta do Wrangler não é impressa nem
-salva. A gravação de logs do próprio Wrangler é desabilitada explicitamente, mantendo
-a sanitização habilitada. Não habilitar request logs/traces com URLs de autenticação.
+Migrations PostgreSQL permanecem separadas de build, CI, deploy e inicialização.
+CI aplica o histórico somente nos próprios containers sintéticos. Aplicação remota
+exige tarefa/autorização específica, identificação de host/banco/role/TLS/schema
+esperado e comando `npm run db:migrate:dev`; ver
+[Cloudflare Workers](cloudflare-workers.md#migrations-dev-explícitas).
 
-Quando todas as configurações estiverem completas, executar:
+Após os recursos validados e a habilitação deliberada, um push integrado com CI
+aprovada publica automaticamente. Para retry manual de SHA atual já aprovado:
 
 ```sh
 gh workflow run deploy-dev.yml --repo t00ls-dev/levi --ref main \
   -f execution_sha="$(gh api repos/t00ls-dev/levi/git/ref/heads/main --jq .object.sha)"
-gh run list --repo t00ls-dev/levi --workflow deploy-dev.yml
 ```
 
-O comando npm `deploy:dev` é usado dentro desse contexto; fora do GitHub Actions,
-sem main/SHA/configuração válidos, ele recusa a publicação. Não substituir por um
-`wrangler deploy` avulso para contornar as guardas. Não adicionar migrations a esse
-comando ou workflow.
+A publicação gera config/secrets temporários privados e os remove ao terminar.
+A saída bruta Wrangler e seus logs em disco ficam desabilitados/sanitizados.
+Não habilitar request logs ou traces com URLs de autenticação. Depois do upload,
+confere Hyperdrive/rotas, versão ativa com 100% do SHA esperado, interface pública,
+onboarding anônimo e 401 nos dados privados. Isso **não substitui** testar os dois
+e-mails reais, conta, senha, organizações, isolamento e consumo remoto de CPU.
 
-Depois de publicar, o script reconfirma as proteções, consulta o deployment ativo
-com 100% da versão e sua tag SHA e exige redirecionamento anônimo para Access na
-SPA e na API. Se qualquer verificação falhar, o job falha; isso pode ocorrer **após**
-um upload efetivo. Não repetir automaticamente uma mutação ou presumir rollback.
-
-Com testador autorizado, validar separadamente Access permitido/negado, dois
-e-mails, links e callbacks HTTPS, definição de senha e login/logout, cookies e
-headers, organizações/igrejas e isolamento, revogação, idempotência/concorrência e
-rollback observado por outra conexão. Confirmar novamente ausência de cache SQL.
-Medir CPU/limites e latência de operações de senha no Workers Free. As medidas
-locais não são CPU faturada; o uso do Links não garante o mesmo orçamento de CPU.
-Não reduzir scrypt nem contratar plano se Free falhar; registrar o limite real.
-
-Para retirada, primeiro desabilitar `LEVI_DEV_DEPLOY_ENABLED`, retirar somente o
-custom domain Levi e conservar Access/banco para diagnóstico. Reverter versão
-Worker apenas se compatível com o schema; não desfazer migrations ou excluir
-recursos/dados como rollback automático. A primeira publicação pode ser retirada
-sem haver versão anterior segura. Não alterar outros Workers ou o Foundation.
-
-## Referências
-
-- [GitHub Actions no Workers](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
-- [Cache do Hyperdrive](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/).
-- [TLS do Hyperdrive](https://developers.cloudflare.com/hyperdrive/configuration/tls-ssl-certificates-for-hyperdrive/).
-- [API keys Neon](https://neon.com/docs/manage/api-keys).
-- [Permissões de API keys Resend](https://resend.com/changelog/new-api-key-permissions).
+Para interromper publicação, desabilitar `LEVI_DEV_DEPLOY_ENABLED`. Para retirada
+remota deliberada, retirar somente o custom domain Levi, preservando banco para
+diagnóstico. Reverter Worker apenas para versão compatível com o schema; não
+reverter migrations ou excluir dados automaticamente. Falha após upload pode
+ter deixado versão ativa: conferir estado antes de repetir.

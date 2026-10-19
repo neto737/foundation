@@ -59,7 +59,6 @@ export async function workerHarness(databaseUrl: string) {
         LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
         RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
         LEVI_EMAIL_FROM: "Levi <levi@example.test>",
-        LEVI_DEV_EMAIL_ALLOWLIST: JSON.stringify(addresses),
       },
       hyperdrives: { HYPERDRIVE: databaseUrl },
       outboundService: async (request) => {
@@ -78,6 +77,7 @@ export async function workerHarness(databaseUrl: string) {
     }),
   );
   await mf.ready;
+  let clientNumber = 0;
   const send = async (
     path: string,
     body?: object,
@@ -91,6 +91,7 @@ export async function workerHarness(databaseUrl: string) {
         redirect: "manual",
         headers: {
           origin: workerOrigin,
+          "cf-connecting-ip": `192.0.2.${(++clientNumber % 250) + 1}`,
           cookie,
           "content-type": "application/json",
           ...headers,

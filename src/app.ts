@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { createAbuseProtection } from "./abuse.js";
 import { bodyLimit } from "hono/body-limit";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import {
@@ -38,6 +39,7 @@ type Environment = {
     database: Database;
     auth: FoundationAuth;
     identity: FoundationSession | null;
+    abuse: ReturnType<typeof createAbuseProtection> | null;
   };
 };
 
@@ -86,11 +88,26 @@ export function createApp(options: AppOptions) {
     const database = await createPostgresDatabase(options.databaseUrl);
     try {
       c.set("database", database);
-      c.set("auth", createAuth(database, options));
+      const abuse = options.publicAbuseProtection
+        ? createAbuseProtection(database.client, options.secret)
+        : null;
+      c.set("abuse", abuse);
+      c.set(
+        "auth",
+        createAuth(database, {
+          ...options,
+          email: abuse ? abuse.protectEmail(options.email) : options.email,
+        }),
+      );
       await next();
     } finally {
       await database.client.end();
     }
+  });
+  app.use("/api/*", async (c, next) => {
+    const abuse = c.get("abuse");
+    if (abuse) return abuse.middleware(c, next);
+    await next();
   });
   // Resolve uma vez por request, propagando inclusive cada cookie de renovação.
   app.use("/api/*", async (c, next) => {

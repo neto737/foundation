@@ -5,19 +5,21 @@ import { join, resolve } from "node:path";
 import ts from "typescript";
 import {
   deploySettings,
-  verifyAccess,
   verifyHyperdrive,
   deploymentConfig,
   deployOrigin,
   deployWorker,
 } from "./deploy-config.js";
+import { requireSuccessfulCI } from "./ci-evidence.js";
 
-// Nenhuma migration, criação de banco/Access/Hyperdrive ou alteração de plano.
+// Nenhuma migration, criação de banco/Hyperdrive ou alteração de plano.
 let phase = "configuração";
 let directory: string | undefined;
 try {
   const env = process.env;
   const settings = deploySettings(env);
+  phase = "CI aprovada do SHA atual";
+  const ci = await requireSuccessfulCI(env);
   async function currentMain() {
     const response = await fetch(
       "https://api.github.com/repos/t00ls-dev/levi/git/ref/heads/main",
@@ -84,12 +86,6 @@ try {
       await cloudflare(`${account}/hyperdrive/configs/${settings.hyperdrive}`),
       env,
     );
-    verifyAccess(
-      await cloudflare(`${account}/access/apps/${settings.access}`),
-      await list(`${account}/access/apps/${settings.access}/policies`),
-      settings.addresses,
-      await list(`${account}/access/apps`),
-    );
     const alternate = await cloudflare(
       `${account}/workers/scripts/${deployWorker}/subdomain`,
       true,
@@ -137,12 +133,12 @@ try {
     JSON.stringify({
       LEVI_AUTH_SECRET: env.LEVI_AUTH_SECRET,
       RESEND_API_KEY: env.RESEND_API_KEY,
-      LEVI_DEV_EMAIL_ALLOWLIST: env.LEVI_DEV_EMAIL_ALLOWLIST,
     }),
     { mode: 0o600 },
   );
   await currentMain();
   phase = "publicação Wrangler";
+  assert.deepEqual(await requireSuccessfulCI(env), ci);
   // A saída bruta pode conter configuração privada: nunca é impressa ou anexada.
   const result = spawnSync(
     process.execPath,
@@ -188,19 +184,32 @@ try {
     `${account}/workers/scripts/${deployWorker}/versions/${versions[0].version_id}`,
   );
   assert.equal(version.annotations?.["workers/tag"], settings.sha);
-  for (const path of ["/", "/api/onboarding"]) {
+  for (const path of [
+    "/",
+    "/api/onboarding",
+    "/api/organizations",
+    "/api/churches",
+  ]) {
     const response = await fetch(`${deployOrigin}${path}`, {
       redirect: "manual",
       signal: AbortSignal.timeout(15_000),
     });
-    assert.equal(response.status, 302);
-    const target = new URL(response.headers.get("location") ?? "");
-    assert.equal(target.protocol, "https:");
-    assert.ok(target.hostname.endsWith(".cloudflareaccess.com"));
-    await response.body?.cancel();
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.ok(response.headers.get("content-security-policy"));
+    if (path === "/") {
+      assert.equal(response.status, 200);
+      assert.ok(response.headers.get("content-type")?.includes("text/html"));
+      await response.body?.cancel();
+    } else if (path === "/api/onboarding") {
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { etapa: "email" });
+    } else {
+      assert.equal(response.status, 401);
+      await response.body?.cancel();
+    }
   }
   console.info(
-    `Versão ${settings.sha} publicada; versão ativa e bloqueio anônimo conferidos. Fluxo autenticado e CPU Free ainda exigem validação remota com testador autorizado.`,
+    `Versão ${settings.sha} publicada; SHA ativo, acesso público e bloqueio de dados privados conferidos. E-mails, fluxo autenticado e CPU Free ainda exigem validação remota.`,
   );
 } catch {
   console.error(
