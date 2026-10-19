@@ -1,0 +1,90 @@
+name: Deploy DEV
+
+# Primeiro DEV: publicação explícita, sem deploy em push ou em pull request.
+on:
+  workflow_dispatch:
+    inputs:
+      execution_sha:
+        description: SHA completo da main que será validado e publicado
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: levi-dev
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: >-
+      github.repository == 't00ls-dev/levi' &&
+      github.ref == 'refs/heads/main' && inputs.execution_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.3
+          cache: npm
+      - name: Confirmar main atual
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(gh api repos/t00ls-dev/levi/git/ref/heads/main --jq .object.sha)" = "$EXPECTED_SHA"
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run worker:build
+      # Os harnesses usam somente seus próprios containers PostgreSQL sintéticos.
+      # Não recebem URL de banco remoto ou credenciais de migrations.
+      - run: npm run test:integration
+      - run: npm run test:worker
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  deploy:
+    needs: checks
+    if: >-
+      github.repository == 't00ls-dev/levi' &&
+      github.ref == 'refs/heads/main' && inputs.execution_sha == github.sha &&
+      vars.LEVI_DEV_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.3
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verificar proteções, publicar e conferir versão e bloqueio anônimo
+        run: npm run deploy:dev
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LEVI_DEPLOY_SHA: ${{ github.sha }}
+          LEVI_DEV_READY: ${{ vars.LEVI_DEV_READY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_READ_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          LEVI_ACCESS_APP_ID: ${{ vars.LEVI_ACCESS_APP_ID }}
+          LEVI_HYPERDRIVE_ID: ${{ vars.LEVI_HYPERDRIVE_ID }}
+          LEVI_DEV_DATABASE_HOST: ${{ vars.LEVI_DEV_DATABASE_HOST }}
+          LEVI_DEV_DATABASE_NAME: ${{ vars.LEVI_DEV_DATABASE_NAME }}
+          LEVI_EMAIL_FROM: ${{ vars.LEVI_EMAIL_FROM }}
+          LEVI_AUTH_SECRET: ${{ secrets.LEVI_AUTH_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          LEVI_DEV_EMAIL_ALLOWLIST: ${{ secrets.LEVI_DEV_EMAIL_ALLOWLIST }}

@@ -65,6 +65,8 @@ runtime e conectividade de produção continuam sem definição.
   execução e validação da primeira fatia.
 - [Cloudflare Workers](docs/cloudflare-workers.md): bindings, dry-run, validação
   workerd e migrations DEV explícitas, sem recursos remotos publicados.
+- [Deploy DEV](docs/deploy-dev.md): processo manual GitHub Actions/Wrangler,
+  credenciais próprias e verificação prévia de Access e Hyperdrive.
 - [Interface de onboarding](docs/interface-onboarding.md): React, desenvolvimento
   com Vite, navegação e testes de navegador.
 
