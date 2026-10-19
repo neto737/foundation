@@ -1,5 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { setTimeout } from "node:timers/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Somente este container recém-criado é usado e removido. Sem banco externo.
 const image =
@@ -24,6 +27,7 @@ const container = execFileSync(
   ],
   { encoding: "utf8" },
 ).trim();
+let mailDirectory: string | undefined;
 try {
   let ready = false;
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -59,7 +63,24 @@ try {
   }
   run(["tools/migrate.ts"]);
   run(["tools/migrate.ts"]); // reaplicação do journal deve ser inócua
-  run(["--test", "--test-concurrency=1", "test/integration.test.ts"]);
+  if (process.argv.includes("--browser")) {
+    mailDirectory = await mkdtemp(join(tmpdir(), "levi-browser-"));
+    const result = spawnSync(
+      process.execPath,
+      [
+        "node_modules/@playwright/test/cli.js",
+        "test",
+        ...process.argv.slice(process.argv.indexOf("--browser") + 1),
+      ],
+      {
+        env: { ...env, LEVI_TEST_MAIL_DIR: mailDirectory },
+        stdio: "inherit",
+      },
+    );
+    if (result.status !== 0)
+      throw new Error("A validação no navegador falhou.");
+  } else run(["--test", "--test-concurrency=1", "test/integration.test.ts"]);
 } finally {
   execFileSync("docker", ["stop", container], { stdio: "ignore" });
+  if (mailDirectory) await rm(mailDirectory, { recursive: true, force: true });
 }

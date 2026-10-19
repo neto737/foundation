@@ -16,6 +16,8 @@ export interface AppOptions {
   baseURL: string;
   secret: string;
   email: FoundationEmail;
+  /** Destino fixo de apresentação; não vem da requisição do usuário. */
+  onboardingReturnPath?: "/onboarding";
 }
 
 export function createAuth(database: Database, options: AppOptions) {

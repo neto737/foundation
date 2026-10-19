@@ -594,12 +594,13 @@ test("duas organizações ficam isoladas e administrador acessa múltiplas igrej
   );
   const listed = await request("/api/churches", undefined, first.cookie);
   assert.equal(listed.status, 200);
+  const listing = (await listed.json()) as {
+    organizationId: string;
+    churches: { id: string }[];
+  };
+  assert.equal(listing.organizationId, first.organizationId);
   assert.deepEqual(
-    new Set(
-      ((await listed.json()) as { churches: { id: string }[] }).churches.map(
-        (c) => c.id,
-      ),
-    ),
+    new Set(listing.churches.map((c) => c.id)),
     new Set([first.churchId, church.rows[0].id]),
   );
   assert.equal(

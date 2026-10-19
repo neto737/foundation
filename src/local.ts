@@ -2,16 +2,22 @@ import { serve } from "@hono/node-server";
 import { mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { createApp } from "./app.js";
+import { mountWeb } from "./web.js";
 
 const databaseUrl = process.env.LEVI_DATABASE_URL;
 const secret = process.env.LEVI_AUTH_SECRET;
 const port = Number(process.env.LEVI_PORT ?? "3000");
+const publicOrigin =
+  process.env.LEVI_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 if (
   !databaseUrl ||
   !["127.0.0.1", "localhost", "[::1]"].includes(
     new URL(databaseUrl).hostname,
   ) ||
   !secret ||
+  !["localhost", "127.0.0.1"].includes(new URL(publicOrigin).hostname) ||
+  new URL(publicOrigin).origin !== publicOrigin ||
+  new URL(publicOrigin).protocol !== "http:" ||
   !Number.isInteger(port) ||
   port < 1024 ||
   port > 65535
@@ -22,7 +28,8 @@ if (
 }
 const app = createApp({
   databaseUrl,
-  baseURL: `http://localhost:${port}`,
+  baseURL: publicOrigin,
+  onboardingReturnPath: "/onboarding",
   secret,
   email: {
     async send(message) {
@@ -36,8 +43,9 @@ const app = createApp({
     },
   },
 });
+mountWeb(app);
 serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () =>
   console.info(
-    `Levi local em http://localhost:${port}. E-mails capturados em .local/mail.`,
+    `Levi em ${publicOrigin}. API local na porta ${port}. E-mails capturados em .local/mail.`,
   ),
 );

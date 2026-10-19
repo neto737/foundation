@@ -237,11 +237,12 @@ export async function listChurches(
   identity: FoundationSession,
 ) {
   const context = await organizationContext(database, identity);
-  return database.db
+  const rows = await database.db
     .select({ id: churches.id, nome: churches.name })
     .from(churches)
     .where(eq(churches.tenantId, context.tenantId))
     .orderBy(churches.id);
+  return { organizationId: context.tenantId, churches: rows };
 }
 
 export async function findChurch(
