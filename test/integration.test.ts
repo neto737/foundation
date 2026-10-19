@@ -3,6 +3,7 @@ import { after, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { createApp } from "../src/app.js";
+import { createAbuseProtection } from "../src/abuse.js";
 import { createAdaptorServer } from "@hono/node-server";
 import { once } from "node:events";
 import { setTimeout } from "node:timers/promises";
@@ -13,6 +14,133 @@ if (!databaseUrl || process.env.LEVI_LOCAL_DATABASE !== "1")
 const observer = await createPostgresDatabase(databaseUrl);
 after(async () => {
   await observer.client.end();
+});
+
+test("DEV público: limites duráveis por IP/destinatário, concorrência e respostas sem enumeração", async () => {
+  const messages: Array<{ to: string }> = [];
+  const publicApp = createApp({
+    databaseUrl,
+    baseURL: origin,
+    secret: "synthetic-public-secret-with-more-than-32-characters",
+    publicAbuseProtection: true,
+    email: {
+      send: async (input) => {
+        messages.push(input);
+      },
+    },
+  });
+  const email = `${randomUUID()}@example.test`;
+  const sendPublic = (address: string, forwarded: string) =>
+    publicApp.request(
+      new Request(new URL("/api/onboarding/email", origin), {
+        method: "POST",
+        headers: {
+          origin,
+          "content-type": "application/json",
+          "cf-connecting-ip": "192.0.2.220",
+          "x-forwarded-for": forwarded,
+        },
+        body: JSON.stringify({ email: address }),
+      }),
+    );
+  const results = await Promise.all(
+    Array.from({ length: 7 }, (_, i) => sendPublic(email, `198.51.100.${i}`)),
+  );
+  assert.equal(results.filter((r) => r.status === 200).length, 5);
+  assert.equal(results.filter((r) => r.status === 429).length, 2);
+  assert.equal(messages.length, 3);
+  const denied = results.find((r) => r.status === 429)!;
+  assert.ok(Number(denied.headers.get("retry-after")) > 0);
+  assert.equal((await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
+  const allowedBodies = await Promise.all(
+    results.filter((r) => r.status === 200).map((r) => r.json()),
+  );
+  assert.ok(
+    allowedBodies.every(
+      (value) => JSON.stringify(value) === JSON.stringify(allowedBodies[0]),
+    ),
+  );
+  const counters = await observer.client.query(
+    "SELECT key FROM abuse_counters",
+  );
+  assert.ok(!JSON.stringify(counters.rows).includes(email));
+  assert.ok(!JSON.stringify(counters.rows).includes("192.0.2.220"));
+});
+
+test("DEV público: orçamento diário atômico entre conexões, expiração e falha fechada", async () => {
+  const other = await createPostgresDatabase(databaseUrl!);
+  const key = `email-day:${Math.floor(Date.now() / 86_400_000) * 86_400_000}`;
+  try {
+    await observer.client.query(
+      "INSERT INTO abuse_counters(key,count,expires_at) VALUES($1,88,now()+interval '1 day') ON CONFLICT(key) DO UPDATE SET count=88",
+      [key],
+    );
+    const messages: unknown[] = [];
+    const providers = [observer, other].map((database) =>
+      createAbuseProtection(database.client, "synthetic-secret").protectEmail({
+        send: async (input) => {
+          messages.push(input);
+        },
+      }),
+    );
+    await Promise.all(
+      providers.map(async (provider) => {
+        for (let i = 0; i < 6; i++)
+          await provider.send({
+            to: `${randomUUID()}@example.test`,
+            subject: "synthetic",
+            text: "synthetic",
+          });
+      }),
+    );
+    assert.equal(messages.length, 2);
+    assert.equal(
+      (
+        await observer.client.query(
+          "SELECT count FROM abuse_counters WHERE key=$1",
+          [key],
+        )
+      ).rows[0].count,
+      100,
+    );
+    await observer.client.query(
+      "INSERT INTO abuse_counters(key,count,expires_at) VALUES('expired-synthetic',1,now()-interval '1 second')",
+    );
+    await createAbuseProtection(
+      other.client,
+      "synthetic-secret",
+    ).store.increment("fresh-synthetic", Date.now() + 60_000);
+    assert.equal(
+      (
+        await observer.client.query(
+          "SELECT key FROM abuse_counters WHERE key='expired-synthetic'",
+        )
+      ).rowCount,
+      0,
+    );
+    await observer.client.query(
+      "ALTER TABLE abuse_counters RENAME TO unavailable_abuse_counters",
+    );
+    try {
+      await assert.rejects(
+        providers[0]!.send({
+          to: `${randomUUID()}@example.test`,
+          subject: "synthetic",
+          text: "synthetic",
+        }),
+      );
+      assert.equal(messages.length, 2);
+    } finally {
+      await observer.client.query(
+        "ALTER TABLE unavailable_abuse_counters RENAME TO abuse_counters",
+      );
+    }
+  } finally {
+    await observer.client.query("DELETE FROM abuse_counters WHERE key=$1", [
+      key,
+    ]);
+    await other.client.end();
+  }
 });
 const origin = "http://localhost:3000";
 const sent: Array<{ to: string; subject: string; text: string }> = [];

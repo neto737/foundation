@@ -5,7 +5,6 @@ import { spawnSync } from "node:child_process";
 import ts from "typescript";
 import {
   deploySettings,
-  verifyAccess,
   verifyHyperdrive,
   deploymentConfig,
 } from "../tools/deploy-config.js";
@@ -24,18 +23,11 @@ const valid: NodeJS.ProcessEnv = {
   CLOUDFLARE_API_TOKEN: "synthetic-only",
   CLOUDFLARE_READ_TOKEN: "synthetic-only",
   LEVI_HYPERDRIVE_ID: "c".repeat(32),
-  LEVI_ACCESS_APP_ID: "12345678-1234-1234-1234-123456789abc",
   LEVI_DEV_DATABASE_HOST: "ep-synthetic-only.us-east-2.aws.neon.tech",
   LEVI_DEV_DATABASE_NAME: "levi_dev",
   LEVI_EMAIL_FROM: "Levi <levi@example.test>",
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
   RESEND_API_KEY: "synthetic-only",
-  LEVI_DEV_EMAIL_ALLOWLIST: '["tester@example.test"]',
-};
-const app = { type: "self_hosted", domain: "levi.t00ls.dev" };
-const policy = {
-  decision: "allow",
-  include: [{ email: { email: "tester@example.test" } }],
 };
 const hyperdrive = {
   id: valid.LEVI_HYPERDRIVE_ID,
@@ -49,8 +41,12 @@ const hyperdrive = {
   },
 };
 
-test("deploy exige execução explícita da main e configuração completa, sem credenciais de migrations", () => {
+test("deploy exige execução confiável da main e configuração completa, sem credenciais de migrations", () => {
   assert.equal(deploySettings(valid).sha, valid.GITHUB_SHA);
+  assert.equal(
+    deploySettings({ ...valid, GITHUB_EVENT_NAME: "workflow_run" }).sha,
+    valid.GITHUB_SHA,
+  );
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
     { GITHUB_REPOSITORY: "other/levi" },
@@ -63,78 +59,15 @@ test("deploy exige execução explícita da main e configuração completa, sem 
     { CLOUDFLARE_ZONE_ID: "" },
     { CLOUDFLARE_READ_TOKEN: "" },
     { LEVI_HYPERDRIVE_ID: "0".repeat(32) },
-    { LEVI_ACCESS_APP_ID: "" },
     { LEVI_DEV_DATABASE_NAME: "foundation" },
     {
       LEVI_DEV_DATABASE_HOST:
         "ep-synthetic-only-pooler.us-east-2.aws.neon.tech",
     },
-    { LEVI_DEV_EMAIL_ALLOWLIST: '["*@example.test"]' },
     { LEVI_AUTH_SECRET: "" },
     { RESEND_API_KEY: "" },
   ])
     assert.throws(() => deploySettings({ ...valid, ...changes }));
-});
-
-test("Access aceita somente testadores exatos e a aplicação que protege todo o hostname", () => {
-  verifyAccess(app, [policy], ["TESTER@example.test"]);
-  verifyAccess(
-    {
-      type: "self_hosted",
-      destinations: [{ type: "public", uri: "levi.t00ls.dev" }],
-    },
-    [policy],
-    ["tester@example.test"],
-  );
-  for (const changes of [
-    { type: "saas" },
-    { domain: "levi.t00ls.dev/onboarding" },
-    { domain: "*.t00ls.dev" },
-    { options_preflight_bypass: true },
-    { destinations: [{ uri: "other.t00ls.dev" }] },
-    {
-      destinations: [
-        {
-          type: "public",
-          uri: "levi.t00ls.dev",
-          overrides: [{ path: "/api/*", public: true }],
-        },
-      ],
-    },
-  ])
-    assert.throws(() =>
-      verifyAccess({ ...app, ...changes }, [policy], ["tester@example.test"]),
-    );
-  assert.throws(() =>
-    verifyAccess(
-      { ...app, id: "expected" },
-      [policy],
-      ["tester@example.test"],
-      [{ id: "other", domain: "levi.t00ls.dev/api/*" }],
-    ),
-  );
-  assert.throws(() =>
-    verifyAccess(
-      { ...app, id: "expected" },
-      [policy],
-      ["tester@example.test"],
-      [{ id: "other", destinations: [{ uri: "levi.t00ls.dev/api/*" }] }],
-    ),
-  );
-  for (const policies of [
-    [],
-    [{ ...policy, decision: "bypass" }],
-    [{ ...policy, decision: "non_identity" }],
-    [{ ...policy, include: [{ everyone: {} }] }],
-    [{ ...policy, include: [{ email_domain: { domain: "example.test" } }] }],
-    [{ ...policy, include: [{ group: { id: "synthetic" } }] }],
-    [{ ...policy, include: [{ email: { email: "other@example.test" } }] }],
-    [
-      policy,
-      { ...policy, include: [{ email: { email: "other@example.test" } }] },
-    ],
-  ])
-    assert.throws(() => verifyAccess(app, policies, ["tester@example.test"]));
 });
 
 test("Hyperdrive exige cache desabilitado, recurso e role exclusivos e alvo DEV esperado", () => {

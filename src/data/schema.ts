@@ -4,6 +4,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -13,6 +14,17 @@ import {
 } from "drizzle-orm/pg-core";
 
 const instant = (name: string) => timestamp(name, { withTimezone: true });
+
+// Contadores técnicos efêmeros; chaves contêm HMAC, nunca IP/e-mail em claro.
+export const abuseCounters = pgTable(
+  "abuse_counters",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull(),
+    expiresAt: instant("expires_at").notNull(),
+  },
+  (t) => [index("abuse_counters_expiry_idx").on(t.expiresAt)],
+);
 
 // Modelo público do Better Auth. IDs externos, tokens e valores não são UUIDs.
 export const user = pgTable("user", {

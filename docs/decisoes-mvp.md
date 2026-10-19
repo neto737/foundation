@@ -95,6 +95,11 @@ administrador. Conta verificada com senha pode existir antes do provisionamento
 da organização; não prometer uma transação única incluindo interação humana e
 envio externo de e-mail.
 
+O DEV está preparado para acesso público, sem Cloudflare Access ou allowlist de
+e-mails, com limites duráveis de solicitações e envio. Essa composição não concede
+acesso anônimo aos dados privados e ainda depende de validação/publicação remota;
+procedimento em [Deploy DEV](deploy-dev.md).
+
 ## Dados e operação
 
 - PostgreSQL principal compartilhado; IDs de entidades em UUID gerados no

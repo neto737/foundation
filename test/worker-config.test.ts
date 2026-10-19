@@ -12,7 +12,6 @@ const env: WorkerEnv = {
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
   RESEND_API_KEY: "synthetic-only-not-a-real-key",
   LEVI_EMAIL_FROM: "Levi <levi@example.test>",
-  LEVI_DEV_EMAIL_ALLOWLIST: '["tester@example.test"]',
 };
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -30,7 +29,7 @@ test("política final de headers preserva no-referrer também no runtime Node", 
 test("Worker sem secrets/configuração completa responde 503 sanitizado, sem tentar a API", async () => {
   const response = await worker.fetch(new Request("https://levi.t00ls.dev/"), {
     ...env,
-    LEVI_DEV_EMAIL_ALLOWLIST: "[]",
+    RESEND_API_KEY: "",
   });
   assert.equal(response.status, 503);
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
@@ -47,14 +46,11 @@ test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
     { LEVI_AUTH_SECRET: "" },
     { RESEND_API_KEY: "" },
     { LEVI_EMAIL_FROM: "" },
-    { LEVI_DEV_EMAIL_ALLOWLIST: "[]" },
-    { LEVI_DEV_EMAIL_ALLOWLIST: '["*@example.test"]' },
-    { LEVI_DEV_EMAIL_ALLOWLIST: '"tester@example.test"' },
   ])
     assert.throws(() => workerOptions({ ...env, ...changes }));
 });
 
-test("adapter Resend publicado envia só para destinatários DEV exatos", async () => {
+test("adapter Resend publicado aceita destinatários públicos sem allowlist", async () => {
   const messages: Array<Record<string, unknown>> = [];
   globalThis.fetch = async (url, init) => {
     assert.equal(url, "https://api.resend.com/emails");
@@ -67,13 +63,13 @@ test("adapter Resend publicado envia só para destinatários DEV exatos", async 
     subject: "synthetic",
     text: "synthetic",
   });
-  assert.equal(messages.length, 0);
+  assert.equal(messages.length, 1);
   await email.send({
     to: "TESTER@example.test",
     subject: "synthetic",
     text: "synthetic",
   });
-  assert.equal(messages.length, 1);
+  assert.equal(messages.length, 2);
   assert.equal(messages[0]?.from, env.LEVI_EMAIL_FROM);
 });
 

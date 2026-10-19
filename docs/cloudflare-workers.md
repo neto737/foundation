@@ -37,15 +37,14 @@ comando de build publica recursos. `worker:build` sempre usa `--dry-run`.
 O processo manual de publicação, com suas guardas e autenticação própria, está em
 [Deploy DEV](deploy-dev.md); `deploy:dev` é o único comando npm de publicação.
 
-| Binding/configuração       | Uso                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------- |
-| `HYPERDRIVE`               | Conexão DEV PostgreSQL; configuração remota deve ter query cache desabilitado |
-| `ASSETS`                   | Build estático da SPA                                                         |
-| `LEVI_PUBLIC_ORIGIN`       | Origem HTTPS canônica, sem path, configurável no ambiente                     |
-| `LEVI_AUTH_SECRET`         | Secret exclusivo DEV, estável, com pelo menos 32 caracteres                   |
-| `RESEND_API_KEY`           | Secret exclusivo DEV, somente envio e com domínio restrito quando disponível  |
-| `LEVI_EMAIL_FROM`          | Remetente de domínio/subdomínio verificado                                    |
-| `LEVI_DEV_EMAIL_ALLOWLIST` | JSON privado com 1–50 e-mails exatos dos testadores                           |
+| Binding/configuração | Uso                                                                           |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `HYPERDRIVE`         | Conexão DEV PostgreSQL; configuração remota deve ter query cache desabilitado |
+| `ASSETS`             | Build estático da SPA                                                         |
+| `LEVI_PUBLIC_ORIGIN` | Origem HTTPS canônica, sem path, configurável no ambiente                     |
+| `LEVI_AUTH_SECRET`   | Secret exclusivo DEV, estável, com pelo menos 32 caracteres                   |
+| `RESEND_API_KEY`     | Secret exclusivo DEV, somente envio e com domínio restrito quando disponível  |
+| `LEVI_EMAIL_FROM`    | Remetente de domínio/subdomínio verificado                                    |
 
 A lista não admite domínio, curinga ou lista vazia. Destinatário externo à lista
 recebe a mesma confirmação genérica de solicitação, mas o transporte não envia
@@ -155,26 +154,26 @@ para usar um banco padrão ou de produção. Nenhuma migration nova foi necessá
 
 ## Antes do primeiro deploy
 
-Uma nova tarefa deve autorizar explicitamente os recursos/publicação. Preparar:
+O ambiente preparado é DEV público: sem Cloudflare Access ou allowlist de
+endereços. Consultar [Deploy DEV](deploy-dev.md) para recursos, CI automática,
+secrets, habilitação e guardas do SHA/Hyperdrive. O deploy permanece desabilitado
+até identificar e validar os recursos remotos e planos gratuitos.
 
-1. Banco e roles exclusivos DEV, histórico aplicado explicitamente, Hyperdrive
-   dedicado sem cache e ID real no binding. Rever quotas/pool/conexão TLS.
-2. Segredos, remetente verificado, tracking de links desabilitado e testadores
-   definidos privadamente. Confirmar que somente eles recebem e-mails.
-3. Cloudflare Access de todo tráfego no Worker, cobrindo URLs alternativas, antes
-   de ativar rota para `levi.t00ls.dev`. A configuração atual não altera DNS ou
-   protege um Worker remoto que ainda não existe.
-4. Orçamento/plano, medição remota de CPU/memória, limites e retirada/rollback.
-   Não reduzir scrypt para caber em plano gratuito.
-5. Smoke real HTTPS/Access/Resend/Hyperdrive: links com Access expirado, renovação e
-   logout, revogação sem cache, rollback por conexão observadora e repetição segura.
+Banco/roles exclusivos, TLS, migrations administrativas explícitas, Hyperdrive
+sem cache, remetente verificado e tracking desabilitado são pré-requisitos.
+O histórico inclui os contadores duráveis de abuso; sua ausência bloqueia a API
+pública com falha fechada. A inicialização nunca aplica migrations.
 
-Logs de invocação e traces ficam desabilitados no Wrangler: URLs de auth contêm
-credenciais temporárias. Não ligar request tracing, debug HTTP ou gravação de
-snapshots em sessões autenticadas. Erros Foundation/Levi permanecem sanitizados.
-Access não substitui a sessão/membership da aplicação; rate limit durável adicional
-e outros controles de operação podem ser tratados conforme o público/risco.
+A composição Worker reutiliza o rate limiter Foundation com PostgreSQL e quotas
+por cliente/destinatário/globais descritas no guia de deploy. Node local não
+confia em headers Cloudflare. Mecanismos contra abuso complementam sessão e
+membership; não concedem acesso anônimo aos dados de organizações.
 
-Não há evidência de Hyperdrive, Access, DNS, Neon ou Resend remotos nesta validação.
-Miniflare com Hyperdrive local conecta diretamente ao container e não reproduz o
-cache/pooling distribuído. O dry-run tampouco prova esses recursos.
+Validar remotamente os dois e-mails, links/callbacks HTTPS, senha e login/logout,
+provisionamento, isolamento, revogação e consumo CPU no Workers Free. Não reduzir
+scrypt para caber no plano. Logs de invocação e traces continuam desabilitados:
+URLs de auth contêm credenciais temporárias. Erros permanecem sanitizados.
+
+Nenhum recurso remoto ou entrega Resend é comprovado por testes Miniflare ou
+build/dry-run. Hyperdrive local conecta ao container e não reproduz cache/pooling
+distribuído. A publicação depende de acesso administrativo aos provedores.

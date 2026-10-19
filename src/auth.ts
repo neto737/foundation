@@ -18,6 +18,8 @@ export interface AppOptions {
   email: FoundationEmail;
   /** Destino fixo de apresentação; não vem da requisição do usuário. */
   onboardingReturnPath?: "/onboarding";
+  /** Somente a entrada Worker confia no header de IP da Cloudflare. */
+  publicAbuseProtection?: boolean;
 }
 
 export function createAuth(database: Database, options: AppOptions) {
@@ -132,7 +134,10 @@ export async function authRequest(
           },
     ),
     {
-      status: response.status,
+      status:
+        path === "/sign-in/email" && [400, 401, 403].includes(response.status)
+          ? 401
+          : response.status,
       headers: response.headers,
     },
   );
