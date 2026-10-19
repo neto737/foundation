@@ -10,7 +10,8 @@ e-mail verificado e senha posterior, provisionamento atômico de organização c
 primeira igreja, vínculo administrativo e auditoria, além de contexto
 organizacional e consulta de igrejas. Há migrations próprias e testes em
 PostgreSQL descartável. A SPA React permite concluir esse fluxo, selecionar uma
-organização e consultar suas igrejas. Membros e ambiente de produção ainda não
+organização e consultar suas igrejas. A composição Cloudflare Workers possui
+build/dry-run e testes locais em workerd; nenhum deploy foi realizado. Membros e ambiente de produção ainda não
 foram implementados.
 
 Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para
@@ -62,6 +63,8 @@ runtime e conectividade de produção continuam sem definição.
 - [Instruções do repositório](AGENTS.md): responsabilidades, convenções e validação.
 - [Onboarding e provisionamento](docs/onboarding-provisionamento.md): contratos,
   execução e validação da primeira fatia.
+- [Cloudflare Workers](docs/cloudflare-workers.md): bindings, dry-run, validação
+  workerd e migrations DEV explícitas, sem recursos remotos publicados.
 - [Interface de onboarding](docs/interface-onboarding.md): React, desenvolvimento
   com Vite, navegação e testes de navegador.
 

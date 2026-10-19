@@ -17,11 +17,11 @@ aqui. Fatos técnicos descrevem capacidades e limites; recomendações não se t
 requisitos por repetição. Relatórios históricos permanecem como evidência de suas
 execuções e não são necessários para compreender ou definir o escopo atual.
 
-| Classificação         | Estado                                                                                                                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                        |
-| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                   |
-| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Demais funcionalidades do MVP ainda não implementadas. |
+| Classificação         | Estado                                                                                                                                                                                                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                            |
+| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                       |
+| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers validada localmente, sem deploy ou serviços remotos comprovados. Demais funcionalidades do MVP ainda não implementadas. |
 
 ## Organização, acesso e identidade
 
