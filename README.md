@@ -5,10 +5,15 @@ do [Foundation](https://github.com/t00ls-dev/foundation).
 
 ## Estado atual
 
-O projeto está em **preparação documental**. Ainda não há aplicação, dependências,
-schema, migrations ou testes do Levi neste repositório, nem ambiente operacional
-comprovado. As funcionalidades do MVP estão aprovadas como escopo, mas **nenhuma
-está implementada**. A implementação depende de autorização específica.
+O projeto possui uma primeira fatia de **API local executável**: onboarding por
+e-mail verificado e senha posterior, provisionamento atômico de organização com
+primeira igreja, vínculo administrativo e auditoria, além de contexto
+organizacional e consulta de igrejas. Há migrations próprias e testes em
+PostgreSQL descartável. Interface React, membros e ambiente de produção ainda
+não foram implementados.
+
+Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para
+execução local, endpoints, decisões técnicas e limites desta entrega.
 
 ## MVP aprovado
 
@@ -44,17 +49,23 @@ para o Levi.
 Consulte a [arquitetura do Foundation](https://github.com/t00ls-dev/foundation/blob/master/docs/architecture/overview.md)
 e o [guia de consumo de pacotes](https://github.com/t00ls-dev/foundation/blob/master/docs/runbooks/packages.md).
 O preset `basic-d1` não corresponde ao PostgreSQL aprovado; UI e ferramentas
-privadas do workspace não são pacotes públicos disponíveis ao consumidor. Runtime,
-conectividade e integração completa de autenticação ainda precisam de validação.
+privadas do workspace não são pacotes públicos disponíveis ao consumidor. Esta
+fatia usa um único projeto TypeScript, Hono, Better Auth e Drizzle com PostgreSQL
+via `pg`, consumindo versões publicadas. O servidor Node é uma superfície local;
+runtime e conectividade de produção continuam sem definição.
 
 ## Documentação e contribuição
 
 - [Decisões do MVP](docs/decisoes-mvp.md): escopo e precedência documental.
 - [Instruções do repositório](AGENTS.md): responsabilidades, convenções e validação.
+- [Onboarding e provisionamento](docs/onboarding-provisionamento.md): contratos,
+  execução e validação da primeira fatia.
 
-Documentação e interface usam português brasileiro. Nesta fase, a validação é
-documental: revisar diffs, links e consistência das decisões. Comandos de
-instalação, execução e testes serão documentados quando a aplicação existir.
+Documentação e mensagens próprias usam português brasileiro. Com Node
+`>=22.22.0`, instale com `npm ci --ignore-scripts`, execute `npm run typecheck`,
+`npm test` e `npm run build`. `npm run test:integration` exige Docker: cria seu
+próprio PostgreSQL, aplica explicitamente o histórico apenas nesse banco sintético,
+executa os testes e remove o container. Não usa um banco externo configurado.
 
 O legado permanece em [t00ls-dev/Levi.old](https://github.com/t00ls-dev/Levi.old),
 separado deste repositório. Configurações locais e segredos ficam fora do

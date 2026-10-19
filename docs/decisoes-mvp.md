@@ -1,8 +1,9 @@
 # Decisões do MVP
 
-**Referência vigente em 2026-10-16.** O MVP ainda não está implementado. Este
-documento registra o escopo aprovado e suas invariantes; não autoriza execução de
-desenvolvimento ou operação.
+**Escopo aprovado em 2026-10-16; estado atualizado em 2026-10-19.** O MVP completo
+ainda não está implementado. A primeira fatia de onboarding e provisionamento
+está descrita em [Onboarding e provisionamento](onboarding-provisionamento.md).
+Este documento registra o escopo e suas invariantes, sem autorizar operação.
 
 ## Precedência e estado
 
@@ -16,11 +17,11 @@ aqui. Fatos técnicos descrevem capacidades e limites; recomendações não se t
 requisitos por repetição. Relatórios históricos permanecem como evidência de suas
 execuções e não são necessários para compreender ou definir o escopo atual.
 
-| Classificação | Estado |
-| --- | --- |
-| Aprovado | Regras das seções seguintes, ainda por implementar. |
-| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização. |
-| Implementado | Apenas documentação e preparação mínima do repositório; nenhuma funcionalidade do MVP. |
+| Classificação         | Estado                                                                                                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                            |
+| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                       |
+| Implementado          | API local de onboarding, provisionamento inicial e contexto/autorização organizacional, com migrations e testes PostgreSQL. Demais funcionalidades do MVP ainda não implementadas. |
 
 ## Organização, acesso e identidade
 
@@ -40,15 +41,15 @@ execuções e não são necessários para compreender ou definir o escopo atual.
 
 ## Cadastro e consultas
 
-| Campo pessoal | Regra aprovada |
-| --- | --- |
-| Nome | Obrigatório e não vazio. |
-| Nascimento | Opcional; data civil conhecida ou ausência. |
-| Telefone e e-mail de contato | Opcionais e compartilháveis; não são credenciais. |
-| Ingresso conhecido | Opcional; não confundir com criação do registro no sistema. |
-| Endereço | Opcional. |
-| Data de batismo | Opcional; ausência não significa “não batizado”. |
-| Função na igreja | Opcional; não determina permissão administrativa. |
+| Campo pessoal                | Regra aprovada                                              |
+| ---------------------------- | ----------------------------------------------------------- |
+| Nome                         | Obrigatório e não vazio.                                    |
+| Nascimento                   | Opcional; data civil conhecida ou ausência.                 |
+| Telefone e e-mail de contato | Opcionais e compartilháveis; não são credenciais.           |
+| Ingresso conhecido           | Opcional; não confundir com criação do registro no sistema. |
+| Endereço                     | Opcional.                                                   |
+| Data de batismo              | Opcional; ausência não significa “não batizado”.            |
+| Função na igreja             | Opcional; não determina permissão administrativa.           |
 
 A organização e a igreja atual são obrigatórias no registro e validadas pelo
 servidor, assim como os metadados gerados pelo sistema. Campos pessoais opcionais
@@ -131,15 +132,23 @@ interface, contratos, domínio e persistência, com React/Hono como referência 
 Foundation. A topologia Workers e a conexão PostgreSQL/Hyperdrive continuam
 sujeitas a prova; não são infraestrutura entregue ou provedor já escolhido.
 
-**Verificações de engenharia futuras:**
+**Composição verificada na primeira fatia (2026-10-19):** os pacotes publicados
+`auth@0.3.0`, `db@1.0.0`, `tenant@1.0.0` e `audit@1.0.0` substituem as limitações
+técnicas da referência histórica acima: UUID opt-in no wrapper, factory assíncrona
+com `pg` e adapters com executor `query`. O schema composto UUID, o onboarding
+e-mail-primeiro e o rollback conjunto de provisionamento/auditoria são cobertos
+pelos testes locais. Isso não comprova operação remota ou o restante do MVP.
 
-- Compatibilizar UUID com o wrapper de auth, que não expõe a opção de geração de
-  IDs; provar o onboarding e-mail-primeiro, retomada e tratamento de conta existente.
+**Verificações de engenharia contínuas e futuras:**
+
+- Preservar a compatibilidade UUID, o onboarding e-mail-primeiro, retomada e
+  tratamento de conta existente ao evoluir a composição.
 - Compor sessão e contexto de tenant com vínculo atual e autorização estática no
   servidor. Os pacotes não filtram automaticamente as consultas do domínio.
 - Compatibilizar schema do consumidor, FKs e contratos dos adapters; garantir a
-  mesma transação para negócio, histórico e auditoria. O adapter PostgreSQL de
-  audit recebe `Sql`, o que não comprova uso transacional tipado na composição.
+  mesma transação para negócio, histórico e auditoria. Os adapters PostgreSQL
+  atuais recebem executor `query`; a garantia depende da composição explícita no
+  mesmo Client, validada em PostgreSQL real.
 - Verificar isolamento, concorrência, repetição de tentativas, exclusões e
   recuperação com dados sintéticos em ambiente isolado.
 - Confirmar consumo suportado de UI, textos em português brasileiro, runtime,
@@ -168,13 +177,13 @@ relatórios anteriores não reativam essas funcionalidades.
 
 ## Pendências reais
 
-| Tema | O que falta definir |
-| --- | --- |
-| Consultas | Inclusão de Inativos nos aniversariantes, tratamento de 29/02, exibição de idade/ano e recorte dos indicadores simples. |
-| Datas de negócio | Correção retroativa e apresentação de saída/retorno com data desconhecida. |
+| Tema                    | O que falta definir                                                                                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Consultas               | Inclusão de Inativos nos aniversariantes, tratamento de 29/02, exibição de idade/ano e recorte dos indicadores simples.                                                 |
+| Datas de negócio        | Correção retroativa e apresentação de saída/retorno com data desconhecida.                                                                                              |
 | Administração adicional | Quem pode adicionar/revogar administrador organizacional, convite ou vínculo a conta existente e recuperação do último administrador. Não altera o primeiro onboarding. |
-| Operação | Volume/latência esperados, responsáveis, RPO/RTO, retenção e custo de backup/recuperação. |
-| Dados reais | Agentes de tratamento, finalidades/bases legais, retenção por categoria, atendimento a titulares, menores e eventual evidência de representação. |
+| Operação                | Volume/latência esperados, responsáveis, RPO/RTO, retenção e custo de backup/recuperação.                                                                               |
+| Dados reais             | Agentes de tratamento, finalidades/bases legais, retenção por categoria, atendimento a titulares, menores e eventual evidência de representação.                        |
 
 Essas pendências não reabrem organização como tenant, PostgreSQL, campos opcionais,
 Ativo/Inativo, administradores exclusivamente organizacionais ou a sequência de
