@@ -33,7 +33,9 @@ origem da API, preservando cookies HttpOnly e os controles existentes de origem/
 `wrangler.jsonc` é exclusivamente preparatório: nome `levi-dev`, origem pretendida
 `https://levi.t00ls.dev`, sem rotas, workers.dev ou previews habilitados. O ID
 Hyperdrive composto de zeros é um **placeholder**, não um recurso existente. Nenhum
-comando npm publica recursos. `worker:build` sempre usa `--dry-run`.
+comando de build publica recursos. `worker:build` sempre usa `--dry-run`.
+O processo manual de publicação, com suas guardas e autenticação própria, está em
+[Deploy DEV](deploy-dev.md); `deploy:dev` é o único comando npm de publicação.
 
 | Binding/configuração       | Uso                                                                           |
 | -------------------------- | ----------------------------------------------------------------------------- |
