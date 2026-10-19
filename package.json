@@ -21,7 +21,7 @@
     "dev:api": "tsx src/local.ts",
     "dev:web": "vite",
     "test:e2e": "tsx tools/test-integration.ts --browser",
-    "worker:build": "wrangler deploy --dry-run --outdir dist/worker --metafile .local/worker-metafile.json",
+    "worker:build": "node -e \"require('node:fs').mkdirSync('.local', { recursive: true })\" && wrangler deploy --dry-run --outdir dist/worker --metafile .local/worker-metafile.json",
     "worker:dev": "wrangler dev --local --log-level none",
     "test:worker": "tsx tools/test-integration.ts --worker",
     "db:migrate:dev": "tsx tools/migrate-dev.ts",

@@ -50,6 +50,8 @@ do Levi, sem usar credenciais ou modificar recursos do Foundation.
 1. Projeto/banco Neon DEV identificado, host direto e TLS, roles separadas
    `levi_dev_migrator` e `levi_dev_runtime`; runtime sem DDL. Banco com histórico
    revisado e aplicado explicitamente por operação administrativa autorizada.
+   A role runtime precisa de SELECT/INSERT/UPDATE/DELETE em `abuse_counters`
+   (incluindo a limpeza), sem permissão para criar/alterar tabelas.
 2. Hyperdrive exclusivo `levi-dev`, host/banco DEV esperados, role runtime,
    TLS e **`caching.disabled=true` conferido pela API**. Sem query cache para
    sessões, memberships, contadores ou dados organizacionais.
