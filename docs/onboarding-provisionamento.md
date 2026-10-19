@@ -4,6 +4,8 @@ Esta primeira fatia implementa uma API local, consumida pela
 [interface React de onboarding](interface-onboarding.md). O escopo de produto
 continua em [Decisões do MVP](decisoes-mvp.md). Cadastro de membros, convites,
 administração adicional, deploy e infraestrutura de produção continuam pendentes.
+A composição e os limites de validação do runtime remoto estão em
+[Cloudflare Workers](cloudflare-workers.md).
 
 ## Execução local
 

@@ -49,12 +49,13 @@ export function createApp(options: AppOptions) {
       "Configure a origem e um segredo de ao menos 32 caracteres.",
     );
   const app = new Hono<Environment>();
-  app.use("*", foundationSecurityHeaders());
   app.use("*", async (c, next) => {
     await next();
     privateResponseHeaders(c.res.headers);
     c.header("Referrer-Policy", "no-referrer");
   });
+  // Executa antes na volta do middleware; a política mais restrita fica por último.
+  app.use("*", foundationSecurityHeaders());
   const csrf = csrfProtection({ trustedOrigins: [origin] });
   app.use("*", async (c, next) => {
     const denied = await csrf(c, next);

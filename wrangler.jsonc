@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "levi-dev",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // A origem pretendida não publica DNS nem cria uma rota.
+  "routes": [],
+  "vars": { "LEVI_PUBLIC_ORIGIN": "https://levi.t00ls.dev" },
+  "assets": {
+    "directory": "./dist/web",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // Placeholder deliberado: substituir somente após provisionamento autorizado.
+      // REQUISITO: query caching disabled na configuração remota do Hyperdrive.
+      "id": "00000000000000000000000000000000",
+    },
+  ],
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false },
+    "traces": { "enabled": false },
+  },
+  "dev": { "ip": "127.0.0.1", "port": 8787 },
+}
