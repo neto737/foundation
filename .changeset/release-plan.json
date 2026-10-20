@@ -1,53 +1,66 @@
 {
-  "baseSha": "b8fd95bc9aa109c5b82e03778bbfa49aaa5ee22f",
+  "baseSha": "09e61bbb2333bd7e8720f74cb516949f3c275a8c",
   "changesets": [
     {
-      "hash": "ac3ec9792d80717e5b48d70efba0cb13153ed2a75012803cd6d220416b18c758",
-      "id": "better-auth-native-uuid"
+      "hash": "52672bfeec2e38b82ce5c324b440b1a0aeafb8242bbdffa64107c32fc181428b",
+      "id": "auth-password-failure-order"
     },
     {
-      "hash": "e28f8ad801529f3859959264228f5974a2bd390ecc352f1d194edab9d05dcaa4",
-      "id": "postgresql-node-client"
+      "hash": "98d283599220ba114767ed9044c5327ed80a6567daa133d87cecfee7d226e8c6",
+      "id": "cloudflare-workers-types-update"
+    },
+    {
+      "hash": "801f9695ecace5a7b6403d6ef574fa64ed45abcb90e514b87c8439b4af22fce1",
+      "id": "config-zod-update"
     }
   ],
   "cliVersion": "3.0.3",
   "format": 1,
   "packages": [
     {
-      "changesets": ["postgresql-node-client"],
+      "changesets": ["cloudflare-workers-types-update"],
       "dependencies": [],
       "name": "@t00ls-dev/audit",
-      "oldVersion": "0.1.2",
+      "oldVersion": "1.0.0",
       "reason": "changeset",
-      "type": "major",
-      "version": "1.0.0"
+      "type": "patch",
+      "version": "1.0.1"
     },
     {
-      "changesets": ["better-auth-native-uuid"],
+      "changesets": ["auth-password-failure-order"],
       "dependencies": [],
       "name": "@t00ls-dev/auth",
-      "oldVersion": "0.2.0",
+      "oldVersion": "0.3.0",
       "reason": "changeset",
-      "type": "minor",
-      "version": "0.3.0"
+      "type": "patch",
+      "version": "0.3.1"
     },
     {
-      "changesets": ["postgresql-node-client"],
+      "changesets": ["config-zod-update"],
+      "dependencies": [],
+      "name": "@t00ls-dev/config",
+      "oldVersion": "0.1.2",
+      "reason": "changeset",
+      "type": "patch",
+      "version": "0.1.3"
+    },
+    {
+      "changesets": ["cloudflare-workers-types-update"],
       "dependencies": [],
       "name": "@t00ls-dev/db",
-      "oldVersion": "0.1.2",
+      "oldVersion": "1.0.0",
       "reason": "changeset",
-      "type": "major",
-      "version": "1.0.0"
+      "type": "patch",
+      "version": "1.0.1"
     },
     {
-      "changesets": ["postgresql-node-client"],
+      "changesets": ["cloudflare-workers-types-update"],
       "dependencies": [],
       "name": "@t00ls-dev/tenant",
-      "oldVersion": "0.1.2",
+      "oldVersion": "1.0.0",
       "reason": "changeset",
-      "type": "major",
-      "version": "1.0.0"
+      "type": "patch",
+      "version": "1.0.1"
     }
   ],
   "repository": "t00ls-dev/foundation"

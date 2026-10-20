@@ -1,5 +1,12 @@
 # @t00ls-dev/config
 
+## 0.1.3
+
+### Patch Changes
+
+- a430992: Atualiza a dependência Zod para ^4.6.7, preservando os contratos
+  existentes de parsing e validação da configuração.
+
 ## 0.1.2
 
 ### Patch Changes

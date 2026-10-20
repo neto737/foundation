@@ -1,5 +1,13 @@
 # @t00ls-dev/tenant
 
+## 1.0.1
+
+### Patch Changes
+
+- e2b2529: Atualiza os tipos do Cloudflare Workers para 5.20261016.1 nas
+  dependências públicas de audit, db e tenant, preservando os contratos
+  existentes de D1 e PostgreSQL.
+
 ## 1.0.0
 
 ### Major Changes
