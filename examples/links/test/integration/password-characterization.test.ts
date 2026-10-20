@@ -304,7 +304,7 @@ describe("security characterization: Better Auth password and sessions on real D
   });
 
   it.each(["revocation", "replacement session creation"] as const)(
-    "characterizes partial changePassword failure at %s after password update",
+    "characterizes changePassword failure at %s without assuming D1 rollback",
     async (stage) => {
       const [first, second] = await passwordSessions();
       const sessionTokens = [
@@ -338,9 +338,12 @@ describe("security characterization: Better Auth password and sessions on real D
       const oldSessionStatus = stage === "revocation" ? 200 : 401;
       await privateAccess(first, oldSessionStatus);
       await privateAccess(second, oldSessionStatus);
-      expect((await login(oldPassword)).status).toBe(401);
-      const recovered = await login(newPassword);
-      expect(recovered.status).toBe(200);
+      const oldPasswordLogin = await login(oldPassword);
+      const newPasswordLogin = await login(newPassword);
+      expect(oldPasswordLogin.status).toBe(stage === "revocation" ? 200 : 401);
+      expect(newPasswordLogin.status).toBe(stage === "revocation" ? 401 : 200);
+      const recovered =
+        stage === "revocation" ? oldPasswordLogin : newPasswordLogin;
       await privateAccess(sessionCookie(recovered), 200);
       const serialized = JSON.stringify(
         captured.flatMap((capture) => capture.mock.calls),
