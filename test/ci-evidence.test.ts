@@ -245,3 +245,39 @@ test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor
     );
   }
 });
+
+test("CI: preserva a exceção original mesmo quando o diagnóstico recebe Proxy e o sink falha", async () => {
+  let touched = 0;
+  const original = new Proxy(
+    {},
+    {
+      get() {
+        touched++;
+        throw new Error("private-diagnostic-error");
+      },
+    },
+  );
+  const diagnostics = new DeployDiagnostics(() => {
+    throw new Error("private-logger-error");
+  });
+  diagnostics.phase = "ci";
+  let caught: unknown;
+  try {
+    await requireSuccessfulCI(
+      env,
+      async () => {
+        throw original;
+      },
+      diagnostics,
+    );
+  } catch (error) {
+    caught = error;
+    diagnostics.report(error, () => {
+      throw new Error("private-logger-error");
+    });
+  }
+  assert.equal(caught, original);
+  assert.equal(touched, 0);
+  assert.ok(diagnostics.message(caught).includes("categoria: erro de rede"));
+  assert.ok(!diagnostics.message(caught).includes("private-"));
+});

@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { types } from "node:util";
+
+// Adaptado do Foundation PR #144 (22a4aa0): inspeção defensiva, contexto HTTP
+// e diagnóstico em melhor esforço. Catálogos e políticas permanecem do Levi.
 
 const phases = {
   configuration: "configuração",
@@ -68,6 +72,13 @@ const checks = {
 } as const;
 
 export type DeployCheck = keyof typeof checks;
+const categories = new Set([
+  "divergência de configuração",
+  "resposta inesperada",
+  "falha HTTP",
+  "erro de rede",
+  "falha de operação local",
+] as const);
 type Category =
   | "divergência de configuração"
   | "resposta inesperada"
@@ -94,8 +105,60 @@ const safeCauses = new Set([
   "ENOSPC",
 ]);
 
+// Inspeciona somente descritores próprios de dados; não invoca accessors,
+// coerção, métodos ou traps de proxies. Causas têm profundidade limitada.
+export function classifyDeployError(error: unknown): string {
+  try {
+    const seen = new Set<object>();
+    for (let depth = 0; depth < 8; depth++) {
+      if (
+        !error ||
+        typeof error !== "object" ||
+        types.isProxy(error) ||
+        seen.has(error)
+      )
+        break;
+      seen.add(error);
+      const current = error;
+      const own = (key: string): unknown =>
+        Object.getOwnPropertyDescriptor(current, key)?.value;
+      const code = own("code");
+      if (typeof code === "string" && safeCauses.has(code)) return code;
+      if (own("name") === "TimeoutError") return "TIMEOUT";
+      error = own("cause");
+    }
+  } catch {
+    // A inspeção não pode alterar a operação nem emitir a exceção recebida.
+  }
+  return "UNKNOWN";
+}
+
+function catalogKey<T extends object>(
+  catalog: T,
+  value: unknown,
+): value is Extract<keyof T, string> {
+  return typeof value === "string" && Object.hasOwn(catalog, value);
+}
+
+function httpStatus(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 100 &&
+    value <= 599
+    ? value
+    : undefined;
+}
+
 export class DeployDiagnostics {
-  phase: keyof typeof phases = "configuration";
+  private currentPhase: keyof typeof phases = "configuration";
+  private readonly reported = new WeakSet<object>();
+
+  get phase(): keyof typeof phases {
+    return this.currentPhase;
+  }
+  set phase(value: keyof typeof phases) {
+    this.currentPhase = catalogKey(phases, value) ? value : "configuration";
+  }
   private check: DeployCheck = "configuration";
   private category: Category = "divergência de configuração";
   private status: number | undefined;
@@ -109,12 +172,18 @@ export class DeployDiagnostics {
     category: Category = "divergência de configuração",
     status?: number,
   ) {
-    this.check = check;
-    this.category = category;
-    this.status = status;
-    this.progress(
-      `Deploy DEV: etapa: ${phases[this.phase]}; verificação: ${checks[check]}.`,
-    );
+    this.check = catalogKey(checks, check) ? check : "configuration";
+    this.category = categories.has(category)
+      ? category
+      : "divergência de configuração";
+    this.status = httpStatus(status);
+    try {
+      this.progress(
+        `Deploy DEV: etapa: ${phases[this.phase]}; verificação: ${checks[this.check]}.`,
+      );
+    } catch {
+      // Falha de apresentação não substitui sucesso ou erro operacional.
+    }
   }
 
   verify<T>(check: DeployCheck, operation: () => T): T {
@@ -131,11 +200,21 @@ export class DeployDiagnostics {
     this.start(check, category, this.status);
   }
 
-  async request(check: DeployCheck, operation: () => Promise<Response>) {
+  async request(
+    check: DeployCheck,
+    operation: () => Promise<Response>,
+    expectedStatus?: number,
+  ) {
     this.start(check, "erro de rede");
     const response = await operation();
-    this.status = response.status;
-    this.category = "resposta inesperada";
+    this.status = httpStatus(response.status);
+    this.category = (
+      expectedStatus === undefined
+        ? response.ok
+        : response.status === expectedStatus
+    )
+      ? "resposta inesperada"
+      : "falha HTTP";
     return response;
   }
 
@@ -152,25 +231,25 @@ export class DeployDiagnostics {
   }
 
   message(error: unknown) {
-    let category = this.category;
-    if (
-      category !== "erro de rede" &&
-      (error instanceof SyntaxError || error instanceof TypeError)
-    )
-      category = "resposta inesperada";
-    const candidate = error as {
-      code?: unknown;
-      cause?: { code?: unknown };
-    } | null;
-    const code = candidate?.code ?? candidate?.cause?.code;
-    const cause =
-      typeof code === "string" && safeCauses.has(code)
-        ? code
-        : category === "erro de rede" &&
-            error instanceof Error &&
-            error.name === "TimeoutError"
-          ? "timeout"
-          : "não detalhada";
-    return `Deploy DEV não confirmado na etapa: ${phases[this.phase]}; verificação: ${checks[this.check]}; categoria: ${category}; status HTTP: ${this.status ?? "indisponível"}; causa técnica: ${cause}. Nenhuma repetição ou contratação automática. Confira o estado remoto antes de tentar novamente.`;
+    const reason = classifyDeployError(error);
+    const cause = reason === "UNKNOWN" ? "não detalhada" : reason;
+    const cleanup =
+      this.phase === "cleanup"
+        ? " Limpeza privada incompleta. Não publique artifacts deste runner."
+        : "";
+    return `Deploy DEV não confirmado na etapa: ${phases[this.phase]}; verificação: ${checks[this.check]}; categoria: ${this.category}; status HTTP: ${this.status ?? "indisponível"}; causa técnica: ${cause}. Nenhuma repetição ou contratação automática. Confira o estado remoto antes de tentar novamente.${cleanup}`;
+  }
+
+  report(error: unknown, log: (message: string) => void = console.error) {
+    try {
+      const trackable =
+        error !== null &&
+        (typeof error === "object" || typeof error === "function");
+      if (trackable && this.reported.has(error)) return;
+      log(this.message(error));
+      if (trackable) this.reported.add(error);
+    } catch {
+      // Inclusive falha do classificador/sink: nunca substituir a exceção original.
+    }
   }
 }

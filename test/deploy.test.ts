@@ -5,7 +5,10 @@ import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import { DeployDiagnostics } from "../tools/deploy-diagnostics.js";
+import {
+  classifyDeployError,
+  DeployDiagnostics,
+} from "../tools/deploy-diagnostics.js";
 import {
   deploySettings,
   verifyHyperdrive,
@@ -157,6 +160,8 @@ async function simulatedDeploy(
   options: {
     respond?: (url: string, published: boolean) => Response | undefined;
     cleanupError?: Error;
+    failProgress?: boolean;
+    failReport?: boolean;
   } = {},
 ) {
   const source = await readFile("tools/deploy-dev.ts", "utf8");
@@ -302,8 +307,15 @@ async function simulatedDeploy(
     URL,
     AbortSignal,
     console: {
-      info: (message: string) => output.push(message),
-      error: (message: string) => output.push(message),
+      info: (message: string) => {
+        if (options.failProgress && message.startsWith("Deploy DEV:"))
+          throw new Error(sensitive);
+        output.push(message);
+      },
+      error: (message: string) => {
+        if (options.failReport) throw new Error(sensitive);
+        output.push(message);
+      },
     },
   });
   return {
@@ -532,4 +544,215 @@ test("diagnóstico: falha na limpeza preserva exit 1 e não expõe caminhos priv
   );
   assert.ok(result.output.includes("causa técnica: EACCES"));
   assert.ok(!result.output.includes("private-"));
+});
+
+test("diagnóstico alinhado ao Foundation: erros hostis não acionam getters, proxies ou coerção", () => {
+  let touched = 0;
+  const hostile = Object.create(
+    null,
+    Object.fromEntries(
+      ["code", "cause", "name", "message", "stack", "toJSON"].map((key) => [
+        key,
+        {
+          get() {
+            touched++;
+            throw new Error(sensitive);
+          },
+        },
+      ]),
+    ),
+  );
+  const proxy = new Proxy(
+    {},
+    {
+      get() {
+        touched++;
+        throw new Error(sensitive);
+      },
+      getOwnPropertyDescriptor() {
+        touched++;
+        throw new Error(sensitive);
+      },
+      getPrototypeOf() {
+        touched++;
+        throw new Error(sensitive);
+      },
+    },
+  );
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  const cycle: { cause?: unknown } = {};
+  cycle.cause = cycle;
+  for (const error of [
+    hostile,
+    proxy,
+    revoked.proxy,
+    cycle,
+    { cause: proxy },
+    Object.create({ code: "ENOENT" }),
+    sensitive,
+    null,
+    7,
+    { code: sensitive },
+  ]) {
+    assert.equal(classifyDeployError(error), "UNKNOWN");
+    const diagnostics = new DeployDiagnostics();
+    diagnostics.start("version-tag");
+    assert.ok(!diagnostics.message(error).includes("private-"));
+    assert.doesNotThrow(() =>
+      diagnostics.report(error, () => {
+        throw new Error(sensitive);
+      }),
+    );
+  }
+  assert.equal(touched, 0);
+});
+
+test("diagnóstico alinhado ao Foundation: causas são próprias, fechadas, limitadas e cíclicas-seguras", () => {
+  assert.equal(
+    classifyDeployError(
+      new Error(sensitive, { cause: { cause: { code: "ECONNRESET" } } }),
+    ),
+    "ECONNRESET",
+  );
+  assert.equal(
+    classifyDeployError({ name: "TimeoutError", message: sensitive }),
+    "TIMEOUT",
+  );
+  let deep: unknown = { code: "ENOENT" };
+  for (let i = 0; i < 9; i++) deep = { cause: deep };
+  assert.equal(classifyDeployError(deep), "UNKNOWN");
+});
+
+test("diagnóstico alinhado ao Foundation: catálogos e status são validados também em runtime", () => {
+  const output: string[] = [];
+  const diagnostics = new DeployDiagnostics((message) => output.push(message));
+  diagnostics.phase = sensitive as never;
+  for (const status of [sensitive, -1, 99, 600, 200.5, NaN, Infinity]) {
+    diagnostics.start(sensitive as never, sensitive as never, status as never);
+    const message = diagnostics.message({ status: 403, statusCode: 401 });
+    assert.ok(
+      message.includes(
+        "etapa: configuração; verificação: contexto e configuração DEV; categoria: divergência de configuração; status HTTP: indisponível",
+      ),
+    );
+    assert.ok(!message.includes("private-"));
+  }
+  assert.ok(output.every((line) => !line.includes("private-")));
+});
+
+test("diagnóstico alinhado ao Foundation: HTTP vem somente da resposta atual, incluindo 401 esperado do Levi", async () => {
+  const diagnostics = new DeployDiagnostics();
+  await diagnostics.request(
+    "deployments-read",
+    async () => new Response(sensitive, { status: 503 }),
+  );
+  assert.ok(
+    diagnostics
+      .message({ status: 401, statusCode: 403 })
+      .includes("categoria: falha HTTP; status HTTP: 503"),
+  );
+  diagnostics.inspect("deployment-shape", "resposta inesperada");
+  assert.ok(diagnostics.message(null).includes("status HTTP: 503"));
+  const original = { cause: { code: "ENOTFOUND" }, status: 502 };
+  await assert.rejects(
+    diagnostics.request("version-read", async () => {
+      throw original;
+    }),
+    (error) => error === original,
+  );
+  assert.ok(
+    diagnostics
+      .message(original)
+      .includes(
+        "categoria: erro de rede; status HTTP: indisponível; causa técnica: ENOTFOUND",
+      ),
+  );
+  await diagnostics.request(
+    "organizations-read",
+    async () => new Response(null, { status: 401 }),
+    401,
+  );
+  assert.ok(
+    diagnostics
+      .message(null)
+      .includes("categoria: resposta inesperada; status HTTP: 401"),
+  );
+  diagnostics.start("local-head", "falha de operação local");
+  assert.ok(
+    diagnostics
+      .message({ code: "ENOENT", status: 200 })
+      .includes("status HTTP: indisponível; causa técnica: ENOENT"),
+  );
+});
+
+test("diagnóstico alinhado ao Foundation: falha e duplicação do diagnóstico não alteram operações", async () => {
+  const diagnostics = new DeployDiagnostics(() => {
+    throw new Error(sensitive);
+  });
+  assert.equal(
+    diagnostics.verify("version-tag", () => 42),
+    42,
+  );
+  const original = Object.assign(new Error(sensitive), { code: "ECONNRESET" });
+  const output: string[] = [];
+  diagnostics.report(original, (line) => output.push(line));
+  diagnostics.report(original, (line) => output.push(line));
+  assert.equal(output.length, 1);
+  assert.ok(!output[0]!.includes("private-"));
+  const other = new Error(sensitive);
+  diagnostics.message = () => {
+    throw new Error(sensitive);
+  };
+  assert.doesNotThrow(() =>
+    diagnostics.report(other, () =>
+      assert.fail("Sem saída do classificador reprovado"),
+    ),
+  );
+  await assert.rejects(
+    diagnostics.request("version-read", async () => {
+      throw other;
+    }),
+    (error) => error === other,
+  );
+});
+
+test("diagnóstico: logger de progresso reprovado não impede sucesso e logger de erro não impede exit 1", async () => {
+  const success = await simulatedDeploy({ failProgress: true });
+  assert.equal(success.exitCode, 0);
+  assert.equal(success.uploads, 1);
+  assert.ok(success.output.includes("SHA ativo"));
+  for (const cleanup of [false, true]) {
+    const failure = await simulatedDeploy({
+      failReport: true,
+      ...(cleanup
+        ? { cleanupError: new Error(sensitive) }
+        : {
+            respond: (url: string) =>
+              url.endsWith("/deployments")
+                ? new Response(sensitive, { status: 403 })
+                : undefined,
+          }),
+    });
+    assert.equal(failure.exitCode, 1);
+    assert.equal(failure.uploads, 1);
+    assert.equal(failure.cleanups, 1);
+    assert.ok(!failure.output.includes("private-"));
+  }
+});
+
+test("diagnóstico: status público reprovado é HTTP mesmo se cabeçalhos faltarem", async () => {
+  const failure = await simulatedDeploy({
+    respond: (url) =>
+      url === "https://levi.t00ls.dev/"
+        ? new Response(sensitive, { status: 503 })
+        : undefined,
+  });
+  assert.equal(failure.exitCode, 1);
+  assert.ok(
+    failure.output.includes(
+      "status e cabeçalhos da página inicial; categoria: falha HTTP; status HTTP: 503",
+    ),
+  );
+  assert.ok(!failure.output.includes("private-"));
 });

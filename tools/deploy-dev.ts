@@ -225,19 +225,25 @@ try {
   );
   diagnostics.inspect("version-tag");
   assert.equal(version.annotations?.["workers/tag"], settings.sha);
-  for (const [path, requestCheck, responseCheck] of [
-    ["/", "home-read", "home-response"],
-    ["/api/onboarding", "onboarding-read", "onboarding-response"],
-    ["/api/organizations", "organizations-read", "organizations-response"],
-    ["/api/churches", "churches-read", "churches-response"],
+  for (const [path, requestCheck, responseCheck, expectedStatus] of [
+    ["/", "home-read", "home-response", 200],
+    ["/api/onboarding", "onboarding-read", "onboarding-response", 200],
+    ["/api/organizations", "organizations-read", "organizations-response", 401],
+    ["/api/churches", "churches-read", "churches-response", 401],
   ] as const) {
-    const response = await diagnostics.request(requestCheck, () =>
-      fetch(`${deployOrigin}${path}`, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(15_000),
-      }),
+    const response = await diagnostics.request(
+      requestCheck,
+      () =>
+        fetch(`${deployOrigin}${path}`, {
+          redirect: "manual",
+          signal: AbortSignal.timeout(15_000),
+        }),
+      expectedStatus,
     );
-    diagnostics.start(responseCheck, "resposta inesperada", response.status);
+    diagnostics.inspect(
+      responseCheck,
+      response.status === expectedStatus ? "resposta inesperada" : "falha HTTP",
+    );
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
     assert.ok(response.headers.get("content-security-policy"));
     if (path === "/") {
@@ -261,7 +267,7 @@ try {
     `Versão ${settings.sha} publicada; SHA ativo, acesso público e bloqueio de dados privados conferidos. E-mails, fluxo autenticado e CPU Free ainda exigem validação remota.`,
   );
 } catch (error) {
-  console.error(diagnostics.message(error));
+  diagnostics.report(error, console.error);
   process.exitCode = 1;
 } finally {
   if (directory) {
@@ -270,10 +276,7 @@ try {
     } catch (error) {
       diagnostics.phase = "cleanup";
       diagnostics.start("cleanup", "falha de operação local");
-      console.error(diagnostics.message(error));
-      console.error(
-        "Limpeza privada incompleta. Não publique artifacts deste runner.",
-      );
+      diagnostics.report(error, console.error);
       process.exitCode = 1;
     }
   }
