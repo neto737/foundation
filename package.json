@@ -19,7 +19,7 @@
     "test:e2e": "turbo run test:e2e",
     "test:distribution": "pnpm --filter './packages/*' -r build && node tests/distribution.mjs",
     "test:release": "node --test .github/scripts/release.test.mjs",
-    "test:migrations": "node --test .github/scripts/migrations.test.mjs .github/scripts/migration-recovery.test.mjs .github/scripts/deploy-summary.test.mjs",
+    "test:migrations": "node --test .github/scripts/deploy-diagnostics.test.mjs .github/scripts/migrations.test.mjs .github/scripts/migration-recovery.test.mjs .github/scripts/deploy-summary.test.mjs",
     "test:integration": "turbo run test:integration",
     "typecheck": "turbo run typecheck"
   },

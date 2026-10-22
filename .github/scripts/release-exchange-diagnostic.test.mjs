@@ -348,7 +348,8 @@ test("diagnostic module graph contains no publishing library or transport path",
     }
   }
   visit(new URL("./release-exchange-diagnostic.mjs", import.meta.url));
-  assert.equal(seen.size, 4);
+  assert.equal(seen.size, 5);
+  assert(seen.has(new URL("./deploy-diagnostics.mjs", import.meta.url).href));
   const entry = readFileSync(
     new URL("./release-exchange-diagnostic.mjs", import.meta.url),
     "utf8",
