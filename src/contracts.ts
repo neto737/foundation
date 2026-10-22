@@ -52,6 +52,14 @@ export function readString(
       churchName: "nome da igreja",
       organizationId: "organização",
       token: "link",
+      name: "nome",
+      churchId: "igreja",
+      birthDate: "data de nascimento",
+      phone: "telefone",
+      joinedOn: "data de ingresso conhecida",
+      address: "endereço",
+      baptismDate: "data de batismo",
+      churchRole: "função na igreja",
     };
     throw new RequestError(
       400,

@@ -1,3 +1,4 @@
+import { Members } from "./members.js";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type NamedItem, type ProvisionInput } from "./api.js";
 import { AccessForm } from "./forms.js";
@@ -15,7 +16,18 @@ type Screen =
         | "organization";
     }
   | { kind: "organizations"; items: NamedItem[] }
-  | { kind: "churches"; organization: NamedItem; items: NamedItem[] };
+  | {
+      kind: "churches";
+      organization: NamedItem;
+      items: NamedItem[];
+      membersEnabled: boolean;
+    }
+  | {
+      kind: "members";
+      organization: NamedItem;
+      churches: NamedItem[];
+      path: string;
+    };
 type Notice = { kind: "error" | "success" | "info"; text: string } | null;
 
 export function App({
@@ -86,7 +98,11 @@ export function App({
       attempt.current = null;
       denied.current = false;
       setUncertain(false);
-      if (resumeChurches && window.location.pathname === "/igrejas") {
+      if (
+        resumeChurches &&
+        (window.location.pathname === "/igrejas" ||
+          window.location.pathname.startsWith("/membros"))
+      ) {
         const context = await api.context();
         const organization = organizations.find(
           (item) => item.id === context.organizationId,
@@ -104,11 +120,28 @@ export function App({
             "CONTEXTO_ALTERADO",
             "Selecione novamente a organização para continuar.",
           );
-        if (sequence === generation.current)
+        if (
+          sequence === generation.current &&
+          window.location.pathname.startsWith("/membros")
+        ) {
+          if (!context.membersEnabled)
+            throw new ApiError(
+              403,
+              "ACESSO_NEGADO",
+              "O cadastro de membros não está habilitado neste ambiente.",
+            );
+          setScreen({
+            kind: "members",
+            organization,
+            churches: churches.churches,
+            path: window.location.pathname,
+          });
+        } else if (sequence === generation.current)
           setScreen({
             kind: "churches",
             organization,
             items: churches.churches,
+            membersEnabled: context.membersEnabled,
           });
       } else setScreen({ kind: "organizations", items: organizations });
     } catch (error) {
@@ -142,7 +175,8 @@ export function App({
     const onFocus = () => {
       if (
         !active.current &&
-        ["/igrejas", "/organizacoes"].includes(window.location.pathname)
+        (["/igrejas", "/organizacoes"].includes(window.location.pathname) ||
+          window.location.pathname.startsWith("/membros"))
       )
         void refresh();
     };
@@ -217,6 +251,12 @@ export function App({
     organization: "Um lugar para sua comunidade",
     organizations: "Suas organizações",
     churches: "Igrejas da organização",
+    members:
+      screen.kind === "members" && screen.path === "/membros/novo"
+        ? "Cadastrar membro"
+        : screen.kind === "members" && screen.path !== "/membros"
+          ? "Ficha do membro"
+          : "Membros da organização",
   };
   const step =
     screen.kind === "email" || screen.kind === "login"
@@ -582,6 +622,22 @@ export function App({
               </button>
             </>
           )}
+          {screen.kind === "members" && (
+            <Members
+              key={`${screen.organization.id}:${screen.path}`}
+              organization={screen.organization}
+              churches={screen.churches}
+              path={screen.path}
+              navigate={(path) => {
+                navigate(path);
+                update();
+              }}
+              onAccessChanged={() => {
+                denied.current = true;
+                void refresh(false);
+              }}
+            />
+          )}
           {screen.kind === "churches" && (
             <>
               <p className="organization-name">{screen.organization.nome}</p>
@@ -603,6 +659,18 @@ export function App({
                 <p>Nenhuma igreja disponível nesta organização.</p>
               )}
               <div className="actions">
+                {screen.membersEnabled && (
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => {
+                      navigate("/membros");
+                      update();
+                    }}
+                  >
+                    Membros
+                  </button>
+                )}
                 <button
                   className="secondary"
                   disabled={busy}

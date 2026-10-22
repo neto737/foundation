@@ -579,9 +579,13 @@ test("provisionamento é atômico, gera UUIDs e grava somente auditoria mínima"
     for (const row of rows.rows) assert.match(row.id, uuid);
   }
   assert.equal(
-    (await observer.client.query("SELECT to_regclass('members') AS members"))
-      .rows[0].members,
-    null,
+    (
+      await observer.client.query(
+        "SELECT count(*)::int AS members FROM members WHERE tenant_id=$1",
+        [account.organizationId],
+      )
+    ).rows[0].members,
+    0,
   );
   await assert.rejects(
     observer.client.query(
@@ -752,7 +756,11 @@ test("duas organizações ficam isoladas e administrador acessa múltiplas igrej
   );
   assert.deepEqual(
     await (await request("/api/context", undefined, first.cookie)).json(),
-    { organizationId: first.organizationId, role: "admin" },
+    {
+      organizationId: first.organizationId,
+      role: "admin",
+      membersEnabled: false,
+    },
   );
   // Contexto adulterado no banco também não concede autoridade sem vínculo.
   await observer.client.query(

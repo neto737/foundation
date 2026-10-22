@@ -12,6 +12,8 @@ import { RequestError } from "./contracts.js";
 
 export type Database = Awaited<ReturnType<typeof createPostgresDatabase>>;
 export interface AppOptions {
+  /** Somente validação sintética local. Worker não habilita esta fatia. */
+  membersEnabled?: boolean;
   databaseUrl: string;
   baseURL: string;
   secret: string;

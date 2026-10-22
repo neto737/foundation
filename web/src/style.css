@@ -18,7 +18,9 @@ body {
   line-height: 1.6;
 }
 button,
-input {
+select,
+input,
+select {
   font: inherit;
 }
 a {
@@ -210,7 +212,8 @@ label {
   line-height: 1.6;
   margin: 0.4rem 0 0.7rem;
 }
-input {
+input,
+select {
   width: 100%;
   min-height: 48px;
   border: 1px solid #77867c;
@@ -398,4 +401,26 @@ footer {
   .compact {
     width: 100%;
   }
+}
+
+.member-summary {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 0.2rem !important;
+}
+.member-summary span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.member-details dt {
+  font-weight: 650;
+  margin-top: 1rem;
+}
+.member-details dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+section > .actions {
+  margin-bottom: 1.5rem;
 }

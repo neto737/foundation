@@ -1,3 +1,11 @@
+import {
+  isCivilDate,
+  memberTextLimits,
+  type Member,
+  type MemberInput,
+  type MemberFilters,
+  type MemberPage,
+} from "../../src/member-types.js";
 export type Stage =
   "email" | "verificar-email" | "senha" | "organizacao" | "concluido";
 export interface NamedItem {
@@ -131,7 +139,11 @@ export const api = {
   async context() {
     const data = record(await request("/api/context"));
     if (data.role !== "admin") return contractError();
-    return { organizationId: id(data.organizationId) };
+    if (typeof data.membersEnabled !== "boolean") return contractError();
+    return {
+      organizationId: id(data.organizationId),
+      membersEnabled: data.membersEnabled,
+    };
   },
   async churches() {
     const data = record(await request("/api/churches"));
@@ -139,5 +151,109 @@ export const api = {
       organizationId: id(data.organizationId),
       churches: namedItems(data.churches),
     };
+  },
+};
+
+function memberSummary(value: unknown): MemberPage["members"][number] {
+  const data = record(value);
+  if (
+    typeof data.name !== "string" ||
+    !data.name.trim() ||
+    data.name.length > 160 ||
+    typeof data.churchName !== "string" ||
+    !data.churchName.trim() ||
+    (data.status !== "Ativo" && data.status !== "Inativo")
+  )
+    return contractError();
+  return {
+    id: id(data.id),
+    name: data.name,
+    churchId: id(data.churchId),
+    churchName: data.churchName,
+    status: data.status,
+  };
+}
+function memberReceipt(value: unknown) {
+  const data = record(value);
+  return {
+    organizationId: id(data.organizationId),
+    memberId: id(data.memberId),
+  };
+}
+export const memberApi = {
+  async list(filters: MemberFilters = {}): Promise<MemberPage> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters))
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    const data = record(await request(`/api/members?${params}`));
+    if (
+      !Array.isArray(data.members) ||
+      !Number.isInteger(data.page) ||
+      Number(data.page) < 1 ||
+      !Number.isInteger(data.pageSize) ||
+      Number(data.pageSize) < 1 ||
+      Number(data.pageSize) > 100 ||
+      typeof data.hasNext !== "boolean" ||
+      data.members.length > Number(data.pageSize)
+    )
+      return contractError();
+    return {
+      organizationId: id(data.organizationId),
+      members: data.members.map(memberSummary),
+      page: Number(data.page),
+      pageSize: Number(data.pageSize),
+      hasNext: data.hasNext,
+    };
+  },
+  async find(
+    memberId: string,
+  ): Promise<{ organizationId: string; member: Member }> {
+    const data = record(await request(`/api/members/${id(memberId)}`));
+    const value = record(data.member);
+    const summary = memberSummary(value);
+    for (const field of ["birthDate", "joinedOn", "baptismDate"])
+      if (
+        value[field] !== null &&
+        (typeof value[field] !== "string" ||
+          !isCivilDate(value[field] as string))
+      )
+        return contractError();
+    for (const field of ["phone", "email", "address", "churchRole"])
+      if (
+        value[field] !== null &&
+        (typeof value[field] !== "string" ||
+          (value[field] as string).length >
+            memberTextLimits[
+              field as "phone" | "email" | "address" | "churchRole"
+            ])
+      )
+        return contractError();
+    if (
+      typeof value.createdAt !== "string" ||
+      !Number.isFinite(Date.parse(value.createdAt))
+    )
+      return contractError();
+    return {
+      organizationId: id(data.organizationId),
+      member: {
+        ...summary,
+        birthDate: value.birthDate as string | null,
+        joinedOn: value.joinedOn as string | null,
+        baptismDate: value.baptismDate as string | null,
+        phone: value.phone as string | null,
+        email: value.email as string | null,
+        address: value.address as string | null,
+        churchRole: value.churchRole as string | null,
+        createdAt: value.createdAt,
+      },
+    };
+  },
+  async create(input: MemberInput, key: string) {
+    return memberReceipt(await request("/api/members", input, key));
+  },
+  async recover(key: string) {
+    return memberReceipt(
+      await request(`/api/members/requests/${encodeURIComponent(key)}`),
+    );
   },
 };

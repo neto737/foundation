@@ -38,6 +38,7 @@ test("Worker sem secrets/configuração completa responde 503 sanitizado, sem te
 });
 
 test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
+  assert.equal(workerOptions(env).membersEnabled, undefined);
   assert.equal(workerOptions(env).baseURL, "https://levi.t00ls.dev");
   assert.equal(workerOptions(env).onboardingReturnPath, "/onboarding");
   for (const changes of [

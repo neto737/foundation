@@ -23,7 +23,9 @@ export async function workerHarness(databaseUrl: string) {
   if (
     process.env.LEVI_LOCAL_DATABASE !== "1" ||
     url.hostname !== "127.0.0.1" ||
-    !["/levi_test", "/levi_worker_empty"].includes(url.pathname)
+    !["/levi_test", "/levi_worker_empty", "/levi_worker_previous"].includes(
+      url.pathname,
+    )
   )
     throw new Error("Use o PostgreSQL descartável.");
   const parsed = ts.parseConfigFileTextToJson(

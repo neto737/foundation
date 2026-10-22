@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
+  primaryKey,
   foreignKey,
   index,
   integer,
@@ -185,4 +187,86 @@ export const auditEvents = pgTable(
     result: text("result").notNull(),
   },
   (t) => [check("audit_metadata_minimal", sql`${t.metadata} = '{}'::jsonb`)],
+);
+
+// Entidades pessoais do Levi: não são contas de autenticação.
+export const members = pgTable(
+  "members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    churchId: uuid("church_id").notNull(),
+    name: text("name").notNull(),
+    status: text("status").$type<"Ativo" | "Inativo">().notNull(),
+    birthDate: date("birth_date", { mode: "string" }),
+    phone: text("phone"),
+    email: text("email"),
+    joinedOn: date("joined_on", { mode: "string" }),
+    address: text("address"),
+    baptismDate: date("baptism_date", { mode: "string" }),
+    churchRole: text("church_role"),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("members_tenant_id_unique").on(t.tenantId, t.id),
+    foreignKey({
+      name: "member_church_same_tenant",
+      columns: [t.tenantId, t.churchId],
+      foreignColumns: [churches.tenantId, churches.id],
+    }),
+    check("member_name_valid", sql`length(trim(${t.name})) BETWEEN 1 AND 160`),
+    check("member_status_valid", sql`${t.status} IN ('Ativo', 'Inativo')`),
+    index("members_tenant_order_idx").on(t.tenantId, t.name, t.id),
+    index("members_tenant_church_idx").on(t.tenantId, t.churchId),
+  ],
+);
+
+// Somente o fato inicial; ficha e histórico serão elimináveis em conjunto.
+export const memberHistory = pgTable(
+  "member_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id").notNull(),
+    memberId: uuid("member_id").notNull(),
+    actorId: uuid("actor_id").notNull(),
+    churchName: text("church_name").notNull(),
+    initialStatus: text("initial_status")
+      .$type<"Ativo" | "Inativo">()
+      .notNull(),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "member_history_same_tenant",
+      columns: [t.tenantId, t.memberId],
+      foreignColumns: [members.tenantId, members.id],
+    }).onDelete("cascade"),
+    unique("member_history_initial_unique").on(t.tenantId, t.memberId),
+    check(
+      "member_history_status_valid",
+      sql`${t.initialStatus} IN ('Ativo', 'Inativo')`,
+    ),
+  ],
+);
+
+// Recibo eliminável com a ficha; nenhuma deduplicação por dado pessoal.
+export const memberCreationRequests = pgTable(
+  "member_creation_requests",
+  {
+    tenantId: uuid("tenant_id").notNull(),
+    actorId: uuid("actor_id").notNull(),
+    requestKey: text("request_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    memberId: uuid("member_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenantId, t.actorId, t.requestKey] }),
+    foreignKey({
+      name: "member_request_same_tenant",
+      columns: [t.tenantId, t.memberId],
+      foreignColumns: [members.tenantId, members.id],
+    }).onDelete("cascade"),
+  ],
 );

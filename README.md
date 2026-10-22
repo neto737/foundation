@@ -11,8 +11,11 @@ primeira igreja, vínculo administrativo e auditoria, além de contexto
 organizacional e consulta de igrejas. Há migrations próprias e testes em
 PostgreSQL descartável. A SPA React permite concluir esse fluxo, selecionar uma
 organização e consultar suas igrejas. A composição Cloudflare Workers possui
-build/dry-run e testes locais em workerd; nenhum deploy foi realizado. Membros e ambiente de produção ainda não
-foram implementados.
+build/dry-run e testes locais em workerd. A primeira fatia de
+[gestão de membros](docs/gestao-membros.md) acrescenta cadastro,
+listagem com filtros/paginação e ficha, habilitados somente para validação
+sintética local. O Worker mantém essa fatia desabilitada. Ambiente de produção
+ainda não foi implementado.
 
 Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para
 execução local, endpoints, decisões técnicas e limites desta entrega.
