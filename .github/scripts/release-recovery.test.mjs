@@ -928,6 +928,7 @@ test("recovery audit import graph loads without any node_modules installation", 
       "release-core.mjs",
       "release-planning.mjs",
       "ci-evidence.mjs",
+      "deploy-diagnostics.mjs",
     ])
       writeFileSync(join(root, name), readFileSync(`.github/scripts/${name}`));
     execFileSync(
@@ -959,6 +960,7 @@ test("registry manifests remain mandatory and version-bound in the module checko
       "release-core.mjs",
       "release-planning.mjs",
       "ci-evidence.mjs",
+      "deploy-diagnostics.mjs",
     ]) {
       writeFileSync(
         join(scripts, file),

@@ -133,3 +133,46 @@ nomes canônicos pelo caller. Não há aprovação manual nova para DEV nem
 configuração automática dos secrets. Não há fallback para token de deploy em
 migration. O inventário do GitHub confirmado em 11/10/2026 contém somente o
 Environment `dev`; o Foundation não possui Environment nem operação PROD.
+
+## Diagnósticos operacionais sanitizados
+
+Os scripts internos de CI, smoke e migrations emitem uma linha JSON de falha com
+`code: FOUNDATION_DEPLOY_DIAGNOSTIC`. `phase` identifica `ci`, `health` ou
+`migrations`; `check` identifica a consulta ou validação definida no código. Por
+exemplo, `health-read` indica a consulta, `health-json` a leitura do JSON,
+`health-sha` o SHA e `health-database` a saúde do banco. Nas migrations,
+`d1-query`/`d1-result` identificam consulta/resposta administrativa;
+`deployments-read`, `version-read` e `deployment-validation` identificam as
+etapas de comprovação do deployment. O relatório de migration continua
+identificando a fase expand/backfill/contract/verify/recover.
+
+| `category`            | Interpretação operacional                                           |
+| --------------------- | ------------------------------------------------------------------- |
+| `http`                | A resposta HTTP foi rejeitada pelo validador existente.             |
+| `unexpected-response` | JSON ou estrutura/conteúdo da resposta não comprovou o esperado.    |
+| `configuration`       | Contexto, identidade, SHA ou outra condição obrigatória divergente. |
+| `network`             | A requisição falhou antes de fornecer uma resposta HTTP.            |
+| `local-operation`     | Falha em leitura/escrita local, comando ou preparação da operação.  |
+
+`http_status` pertence somente à consulta corrente e suas validações diretas. É
+`null` antes de obter resposta, nas operações locais e nas validações que
+combinam evidências de consultas distintas. Nunca é deduzido de propriedades do
+erro. `reason` contém somente um código técnico permitido, `TIMEOUT` ou
+`UNKNOWN`; não contém mensagens, URLs, corpos, stacks ou credenciais. Getters,
+proxies e causas cíclicas não são executados/serializados para gerar a linha.
+`UNKNOWN` significa que não há classificação segura disponível.
+
+Use `phase`/`check` para localizar a operação no script e consulte os resultados
+nativos e a evidência sanitizada existente. No smoke, a linha descreve a última
+falha após esgotar as seis tentativas existentes, mantendo as esperas de cinco
+segundos. O diagnóstico não aprova execução, não confirma ausência de efeitos e
+não autoriza retries ou recovery. Uma falha ao escrever o diagnóstico preserva o
+resultado operacional, inclusive o erro original nas funções internas.
+
+Para adaptar em outro produto, mantenha um auxiliar interno independente de
+npm/release, com fases, verificações, categorias e códigos técnicos fechados.
+Inicie contexto novo antes de cada operação independente; preserve o status
+somente ao inspecionar a resposta correspondente. Reutilize os validadores e as
+políticas de tentativas/timeouts do produto. Teste erros hostis, ausência de
+segredos, limpeza de contexto e preservação dos gates/resultados com dados
+sintéticos. Não há pacote npm, API pública ou dependência com o Levi.

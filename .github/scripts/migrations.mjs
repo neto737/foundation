@@ -28,6 +28,12 @@ import {
   validateStoppedRecovery,
 } from "./migration-core.mjs";
 
+import {
+  createDeployDiagnostics,
+  observeFetch,
+} from "./deploy-diagnostics.mjs";
+
+const diagnostics = createDeployDiagnostics("migrations");
 const app = "examples/links";
 const folder = `${app}/migrations`;
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
@@ -139,12 +145,19 @@ export function validateDevBindings(phase, plan, env = process.env, applied) {
   if (missing.length) throw new MissingDevSecretsError(missing);
 }
 
-async function cloudflare(path, token, body) {
+async function cloudflare(
+  path,
+  token,
+  body,
+  check = "d1-query",
+  diagnostic = diagnostics,
+) {
+  diagnostic.start("migration-bindings");
   assert(
     token && process.env.CLOUDFLARE_ACCOUNT_ID,
     "Scoped Cloudflare credentials required",
   );
-  const response = await fetch(
+  const response = await observeFetch(diagnostic, check)(
     `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/${path}`,
     {
       method: body ? "POST" : "GET",
@@ -181,15 +194,29 @@ export function withMigrationFile(plan, op, execute) {
   }
 }
 
-export function d1Driver(plan, token = process.env.CLOUDFLARE_API_TOKEN) {
-  const query = async (sql, params = []) =>
-    queryRows(
-      await cloudflare(
+export function d1Driver(
+  plan,
+  token = process.env.CLOUDFLARE_API_TOKEN,
+  diagnostic = diagnostics,
+) {
+  const query = async (sql, params = []) => {
+    try {
+      const value = await cloudflare(
         `d1/database/${plan.target.database.database_id}/query`,
         token,
         { sql, params },
-      ),
-    );
+        "d1-query",
+        diagnostic,
+      );
+      diagnostic.inspect("d1-result", "unexpected-response");
+      return queryRows(value);
+    } catch (error) {
+      diagnostic.report(error);
+      throw error;
+    } finally {
+      diagnostic.start("migration-execution");
+    }
+  };
   return {
     query,
     async initialize() {
@@ -303,35 +330,43 @@ export function d1Driver(plan, token = process.env.CLOUDFLARE_API_TOKEN) {
       await query("INSERT INTO d1_migrations (name) VALUES (?)", [name]);
     },
     async apply(op) {
-      // Wrangler still owns execution and d1_migrations. Expose exactly ONE file
-      // to it; never let a pre-deploy apply discover a CONTRACT in the app folder.
-      withMigrationFile(plan, op, (config) => {
-        execFileSync(
-          "pnpm",
-          [
-            "exec",
-            "wrangler",
-            "d1",
-            "migrations",
-            "apply",
-            "DB",
-            "--remote",
-            "--config",
-            config,
-          ],
-          {
-            cwd: app,
-            stdio: ["ignore", "pipe", "pipe"],
-            env: {
-              ...process.env,
-              CLOUDFLARE_API_TOKEN: token,
-              CI: "true",
-              WRANGLER_SEND_METRICS: "false",
+      diagnostic.start("migration-apply", "local-operation");
+      try {
+        // Wrangler still owns execution and d1_migrations. Expose exactly ONE file
+        // to it; never let a pre-deploy apply discover a CONTRACT in the app folder.
+        withMigrationFile(plan, op, (config) => {
+          execFileSync(
+            "pnpm",
+            [
+              "exec",
+              "wrangler",
+              "d1",
+              "migrations",
+              "apply",
+              "DB",
+              "--remote",
+              "--config",
+              config,
+            ],
+            {
+              cwd: app,
+              stdio: ["ignore", "pipe", "pipe"],
+              env: {
+                ...process.env,
+                CLOUDFLARE_API_TOKEN: token,
+                CI: "true",
+                WRANGLER_SEND_METRICS: "false",
+              },
+              maxBuffer: 4 * 1024 * 1024,
             },
-            maxBuffer: 4 * 1024 * 1024,
-          },
-        );
-      });
+          );
+        });
+      } catch (error) {
+        diagnostic.report(error);
+        throw error;
+      } finally {
+        diagnostic.start("migration-execution");
+      }
     },
   };
 }
@@ -363,15 +398,26 @@ export function validateContext(context) {
 }
 
 async function authorizedContext(phase) {
-  const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+  diagnostics.start("ci-event-read", "local-operation");
+  const eventText = readFileSync(process.env.GITHUB_EVENT_PATH, "utf8");
+  diagnostics.start("ci-event-json", "unexpected-response");
+  const event = JSON.parse(eventText);
+  diagnostics.start("ci-event");
   const sha = process.env.EXPECTED_SHA;
   if (process.env.GITHUB_EVENT_NAME === "workflow_run") {
     const origin = validateDeployEvent(event);
     assert.equal(origin.head_sha, sha);
-    await approvedCi(sha, { origin });
+    await approvedCi(sha, { origin, diagnostics });
   } else assert.equal(event.inputs?.execution_sha, sha);
   const masterUrl = `https://api.github.com/repos/${repository}/git/ref/heads/master`;
-  const master = await authenticatedJson(masterUrl, process.env.GITHUB_TOKEN);
+  const master = await authenticatedJson(
+    masterUrl,
+    process.env.GITHUB_TOKEN,
+    observeFetch(diagnostics, "master-read", fetch, 200),
+  );
+  diagnostics.start("local-head", "local-operation");
+  const head = git("rev-parse", "HEAD");
+  diagnostics.start("migration-context");
   validateContext({
     repository: process.env.GITHUB_REPOSITORY,
     workflow: process.env.GITHUB_WORKFLOW,
@@ -380,73 +426,112 @@ async function authorizedContext(phase) {
     confirmation: event.inputs?.confirmation,
     recovery: phase === "recover",
     sha,
-    head: git("rev-parse", "HEAD"),
+    head,
     master: master.object.sha,
   });
-  assert.equal(
-    git("status", "--porcelain", "--untracked-files=normal"),
-    "",
-    "Tracked execution workspace changed",
+  diagnostics.start("local-clean", "local-operation");
+  const clean = git("status", "--porcelain", "--untracked-files=normal");
+  diagnostics.start("local-clean");
+  assert.equal(clean, "", "Tracked execution workspace changed");
+  await approvedCi(sha, { diagnostics });
+  const currentMaster = await authenticatedJson(
+    masterUrl,
+    process.env.GITHUB_TOKEN,
+    observeFetch(diagnostics, "master-read", fetch, 200),
   );
-  await approvedCi(sha);
-  assert.equal(
-    (await authenticatedJson(masterUrl, process.env.GITHUB_TOKEN)).object.sha,
-    sha,
-  );
+  diagnostics.inspect("master-sha");
+  assert.equal(currentMaster.object.sha, sha);
 }
 
-async function deploymentEvidence(plan, expectedDeployment) {
-  const sha = process.env.EXPECTED_SHA;
-  const root = `https://api.github.com/repos/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-  const run = await authenticatedJson(root, process.env.GITHUB_TOKEN);
-  assert.equal(run.run_attempt, Number(process.env.GITHUB_RUN_ATTEMPT));
-  assert.equal(run.path, ".github/workflows/deploy-dev.yml");
-  const jobs = [];
-  for (let page = 1; ; page++) {
-    const value = await authenticatedJson(
-      `${root}/attempts/${run.run_attempt}/jobs?per_page=100&page=${page}`,
+export async function deploymentEvidence(
+  plan,
+  expectedDeployment,
+  diagnostic = diagnostics,
+) {
+  try {
+    diagnostic.start("deployment-run-read");
+    const sha = process.env.EXPECTED_SHA;
+    const root = `https://api.github.com/repos/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+    const run = await authenticatedJson(
+      root,
       process.env.GITHUB_TOKEN,
+      observeFetch(diagnostic, "deployment-run-read", fetch, 200),
     );
-    assert(Array.isArray(value.jobs));
-    jobs.push(...value.jobs);
-    if (value.jobs.length < 100) break;
+    diagnostic.inspect("deployment-run");
+    assert.equal(run.run_attempt, Number(process.env.GITHUB_RUN_ATTEMPT));
+    assert.equal(run.path, ".github/workflows/deploy-dev.yml");
+    const jobs = [];
+    for (let page = 1; ; page++) {
+      const value = await authenticatedJson(
+        `${root}/attempts/${run.run_attempt}/jobs?per_page=100&page=${page}`,
+        process.env.GITHUB_TOKEN,
+        observeFetch(diagnostic, "deployment-jobs-read", fetch, 200),
+      );
+      diagnostic.inspect("deployment-jobs", "unexpected-response");
+      assert(Array.isArray(value.jobs));
+      jobs.push(...value.jobs);
+      if (value.jobs.length < 100) break;
+    }
+    diagnostic.start("deployment-jobs");
+    const candidates = jobs.filter((j) => j.name === "deploy");
+    assert.equal(candidates.length, 1);
+    const token = process.env.CLOUDFLARE_WORKER_READ_TOKEN;
+    const prefix = `workers/scripts/${plan.target.worker}`;
+    const deployments = (
+      await cloudflare(
+        `${prefix}/deployments`,
+        token,
+        undefined,
+        "deployments-read",
+        diagnostic,
+      )
+    ).result.deployments;
+    diagnostic.inspect("deployment-shape", "unexpected-response");
+    assert(Array.isArray(deployments) && deployments.length);
+    const deployment = deployments[0];
+    assert(deployment.versions?.length === 1);
+    const version = (
+      await cloudflare(
+        `${prefix}/versions/${deployment.versions[0].version_id}`,
+        token,
+        undefined,
+        "version-read",
+        diagnostic,
+      )
+    ).result;
+    diagnostic.start("configuration");
+    const health = new URL(process.env.DEV_HEALTH_URL);
+    assert.equal(health.origin, "https://foundation.t00ls.dev");
+    const response = await observeFetch(diagnostic, "health-read")(
+      `${health.origin}/health`,
+      {
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    assert(response.ok, "Application not healthy");
+    diagnostic.inspect("health-json", "unexpected-response");
+    const body = await response.json();
+    diagnostic.inspect("health-database", "unexpected-response");
+    assert(body.checks?.database === "ok", "Application not healthy");
+    diagnostic.start("deployment-validation");
+    return validateDeployment({
+      deployment,
+      version,
+      healthSha: response.headers.get("X-Foundation-SHA"),
+      job: candidates[0],
+      sha,
+      runId: process.env.GITHUB_RUN_ID,
+      attempt: process.env.GITHUB_RUN_ATTEMPT,
+      expectedDeployment,
+    });
+  } catch (error) {
+    diagnostic.report(error);
+    throw error;
+  } finally {
+    diagnostic.start("migration-execution");
   }
-  const candidates = jobs.filter((j) => j.name === "deploy");
-  assert.equal(candidates.length, 1);
-  const token = process.env.CLOUDFLARE_WORKER_READ_TOKEN;
-  const prefix = `workers/scripts/${plan.target.worker}`;
-  const deployments = (await cloudflare(`${prefix}/deployments`, token)).result
-    .deployments;
-  assert(Array.isArray(deployments) && deployments.length);
-  const deployment = deployments[0];
-  assert(deployment.versions?.length === 1);
-  const version = (
-    await cloudflare(
-      `${prefix}/versions/${deployment.versions[0].version_id}`,
-      token,
-    )
-  ).result;
-  const health = new URL(process.env.DEV_HEALTH_URL);
-  assert.equal(health.origin, "https://foundation.t00ls.dev");
-  const response = await fetch(`${health.origin}/health`, {
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-  });
-  assert(
-    response.ok && (await response.json()).checks?.database === "ok",
-    "Application not healthy",
-  );
-  return validateDeployment({
-    deployment,
-    version,
-    healthSha: response.headers.get("X-Foundation-SHA"),
-    job: candidates[0],
-    sha,
-    runId: process.env.GITHUB_RUN_ID,
-    attempt: process.env.GITHUB_RUN_ATTEMPT,
-    expectedDeployment,
-  });
 }
 
 async function main(phase) {
@@ -464,6 +549,7 @@ async function main(phase) {
     operations: [],
   };
   try {
+    diagnostics.start("migration-plan", "local-operation");
     const plan = migrationPlan();
     Object.assign(report, {
       schemaDigest: plan.digest,
@@ -483,10 +569,12 @@ async function main(phase) {
       return;
     }
     await authorizedContext(phase);
+    diagnostics.start("migration-bindings");
     validateDevBindings(phase, plan);
     const driver = d1Driver(plan);
     if (phase === "verify") {
       const state = await driver.state();
+      diagnostics.start("migration-state");
       requireExpanded(plan, state);
       for (const op of plan.operations.filter((m) => m.phase === "expand")) {
         await verifyCurrentSchema(driver, plan, state, op);
@@ -495,6 +583,7 @@ async function main(phase) {
       const state = inspectState(plan, await driver.state(), {
         allowDirty: phase === "recover",
       });
+      diagnostics.start("migration-bindings");
       validateDevBindings(phase, plan, process.env, state.applied);
       await driver.initialize();
       const options = {
@@ -524,10 +613,13 @@ async function main(phase) {
           ...options,
           spec,
           assertRecoveryStopped: async (claim) => {
+            diagnostics.start("recovery-run-read");
             const run = await authenticatedJson(
               `https://api.github.com/repos/${repository}/actions/runs/${Number(claim.runId)}`,
               process.env.GITHUB_TOKEN,
+              observeFetch(diagnostics, "recovery-run-read", fetch, 200),
             );
+            diagnostics.inspect("recovery-run");
             return validateStoppedRecovery(run, claim);
           },
         });
@@ -541,6 +633,7 @@ async function main(phase) {
     if (phase === "recover") report.recoveryResult = report.result;
     report.result = "succeeded";
   } catch (error) {
+    diagnostics.report(error);
     if (error instanceof MissingDevSecretsError)
       report.missingSecrets = error.missing;
     throw error;
