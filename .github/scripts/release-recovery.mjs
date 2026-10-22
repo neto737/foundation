@@ -346,7 +346,12 @@ export async function recoveryRegistry(packet, context, fetcher = fetch) {
   for (const name of Object.keys(inventory)) {
     if (packet.record.packages.some((p) => p.name === name)) continue;
     const pkg = json(
-      readFileSync(`packages/${name.split("/")[1]}/package.json`),
+      readFileSync(
+        new URL(
+          `../../packages/${name.split("/")[1]}/package.json`,
+          import.meta.url,
+        ),
+      ),
     );
     assert.equal(
       inventory[name].latest,

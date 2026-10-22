@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
 import {
   recoverySource,
@@ -62,6 +63,19 @@ const certificate = JSON.parse(
   readSourceArchive(join(fixture, "recovery-approval.zip"), "approval").get(
     "approval.json",
   ),
+);
+const localVersions = new Map(
+  names.map((name) => [
+    name,
+    JSON.parse(
+      readFileSync(
+        new URL(
+          `../../packages/${name.split("/")[1]}/package.json`,
+          import.meta.url,
+        ),
+      ),
+    ).version,
+  ]),
 );
 const old = recoverySource.executionSha;
 const current = "e".repeat(40);
@@ -343,9 +357,6 @@ function fetchHarness({
       };
     }
     const target = source.record.packages.find((p) => p.name === name);
-    const local = JSON.parse(
-      readFileSync(`packages/${name.split("/")[1]}/package.json`),
-    );
     const versions = target
       ? [
           target.oldVersion,
@@ -354,7 +365,7 @@ function fetchHarness({
             ? []
             : [target.version]),
         ]
-      : [local.version];
+      : [localVersions.get(name)];
     return {
       ok: true,
       status: 200,
@@ -935,7 +946,69 @@ test("recovery audit import graph loads without any node_modules installation", 
   }
 });
 
-test("current consumer validates source and new approval, then sends only the captured config buffer synthetically", async () => {
+test("registry manifests remain mandatory and version-bound in the module checkout from either cwd", async () => {
+  const directory = mkdtempSync(
+    join(tmpdir(), "foundation-recovery-manifests-"),
+  );
+  const root = process.cwd();
+  const scripts = join(directory, ".github/scripts");
+  try {
+    mkdirSync(scripts, { recursive: true });
+    for (const file of [
+      "release-recovery.mjs",
+      "release-core.mjs",
+      "release-planning.mjs",
+      "ci-evidence.mjs",
+    ]) {
+      writeFileSync(
+        join(scripts, file),
+        readFileSync(new URL(file, import.meta.url)),
+      );
+    }
+    mkdirSync(join(directory, "packages/config"), { recursive: true });
+    for (const name of names.filter(
+      (name) => !source.record.packages.some((p) => p.name === name),
+    )) {
+      const path = join(directory, "packages", name.split("/")[1]);
+      mkdirSync(path, { recursive: true });
+      writeFileSync(
+        join(path, "package.json"),
+        JSON.stringify({ name, version: localVersions.get(name) }),
+      );
+    }
+    const { recoveryRegistry: isolatedRegistry } = await import(
+      pathToFileURL(join(scripts, "release-recovery.mjs"))
+    );
+    const manifest = join(directory, "packages/access/package.json");
+    const original = readFileSync(manifest);
+    const p = packet();
+    for (const cwd of [directory, join(directory, "packages/config")]) {
+      process.chdir(cwd);
+      await isolatedRegistry(p, context(), fetchHarness().fetcher);
+      rmSync(manifest);
+      await assert.rejects(
+        isolatedRegistry(p, context(), fetchHarness().fetcher),
+        { code: "ENOENT" },
+      );
+      writeFileSync(manifest, JSON.stringify({ version: "999.0.0" }));
+      await assert.rejects(
+        isolatedRegistry(p, context(), fetchHarness().fetcher),
+        /Unplanned registry version/,
+      );
+      writeFileSync(manifest, "invalid JSON");
+      await assert.rejects(
+        isolatedRegistry(p, context(), fetchHarness().fetcher),
+        SyntaxError,
+      );
+      writeFileSync(manifest, original);
+    }
+  } finally {
+    process.chdir(root);
+    rmSync(directory, { recursive: true });
+  }
+});
+
+test("current consumer validates authority from root and packages/config, then sends only the captured config buffer synthetically", async () => {
   const directory = sourceDirectory();
   const p = packet();
   const env = {
@@ -967,14 +1040,33 @@ test("current consumer validates source and new approval, then sends only the ca
       { login: owner.login, id: owner.id, permission: "admin" },
       202,
     );
-    const c = await validateConsumerAuthority(
-      env,
-      p,
-      approval,
-      apiHarness().request,
-      fetchHarness().fetcher,
-    );
-    assert.equal(c.recovery, true);
+    const root = process.cwd();
+    let c;
+    for (const cwd of [root, join(root, "packages/config")]) {
+      try {
+        process.chdir(cwd);
+        c = await validateConsumerAuthority(
+          env,
+          p,
+          approval,
+          apiHarness().request,
+          fetchHarness().fetcher,
+        );
+        assert.equal(c.recovery, true);
+        await assert.rejects(
+          validateConsumerAuthority(
+            env,
+            p,
+            { ...approval, executionSha: old },
+            apiHarness().request,
+            fetchHarness().fetcher,
+          ),
+          /Snapshot\/artifact approval mismatch/,
+        );
+      } finally {
+        process.chdir(root);
+      }
+    }
     const artifact = p.artifacts.find((p) => p.name === "@t00ls-dev/config");
     const original = sourceFiles.get(`packed/${artifact.path}`);
     await consumeApprovedArtifact({
