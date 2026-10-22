@@ -729,6 +729,47 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
       organizationId,
       churches: [{ id: churchId, nome: body.churchName }],
     });
+    // Configuração malformada ou recorte de outra organização não toca as tabelas pendentes.
+    for (const membersDevOrganizations of [
+      "",
+      organizationId + ",invalid",
+      randomUUID(),
+    ]) {
+      const restricted = await workerHarness(url.toString(), {
+        membersDevOrganizations,
+      });
+      try {
+        const response = await restricted.send(
+          "/api/context",
+          undefined,
+          loginCookie,
+        );
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).membersEnabled, false);
+        for (const path of [
+          "/api/members",
+          `/api/members/${randomUUID()}`,
+          `/api/members/requests/${randomUUID()}`,
+        ])
+          assert.equal(
+            (await restricted.send(path, undefined, loginCookie)).status,
+            404,
+          );
+        assert.equal(
+          (
+            await restricted.send(
+              "/api/members",
+              { name: "Pessoa sintética", churchId, status: "Ativo" },
+              loginCookie,
+              { "Idempotency-Key": randomUUID() },
+            )
+          ).status,
+          404,
+        );
+      } finally {
+        await restricted.mf.dispose();
+      }
+    }
     const tables = await previous.client.query(
       "SELECT to_regclass('members') members, to_regclass('member_history') history, to_regclass('member_creation_requests') receipts",
     );
@@ -740,5 +781,304 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
   } finally {
     await runtime?.mf.dispose();
     await previous.client.end();
+  }
+});
+
+test("workerd: recorte DEV usa tenant administrativo atual em capacidade, cadastro, consultas e recibos", async () => {
+  const allowed = await provisioned();
+  const denied = await provisioned();
+  const runtime = await workerHarness(databaseUrl!, {
+    membersDevOrganizations: allowed.organizationId,
+  });
+  const routes = [
+    "/api/members",
+    `/api/members/${randomUUID()}`,
+    `/api/members/requests/${randomUUID()}`,
+  ];
+  const input = {
+    name: "Pessoa sintética do recorte",
+    churchId: allowed.churchId,
+    status: "Ativo",
+  };
+  const key = randomUUID();
+  const headers = { "Idempotency-Key": key };
+  try {
+    for (const path of ["/api/context", ...routes])
+      assert.equal((await runtime.send(path)).status, 401);
+    assert.equal(
+      (await runtime.send("/api/members", input, "", headers)).status,
+      401,
+    );
+    for (const [account, enabled] of [
+      [allowed, true],
+      [denied, false],
+    ] as const) {
+      const context = await runtime.send(
+        "/api/context",
+        undefined,
+        account.cookie,
+      );
+      assert.equal(context.status, 200);
+      assert.deepEqual(await context.json(), {
+        organizationId: account.organizationId,
+        role: "admin",
+        membersEnabled: enabled,
+      });
+      assert.equal(
+        (await runtime.send("/api/churches", undefined, account.cookie)).status,
+        200,
+      );
+    }
+    const created = await runtime.send(
+      "/api/members",
+      input,
+      allowed.cookie,
+      headers,
+    );
+    assert.equal(created.status, 201);
+    const result = (await created.json()) as {
+      organizationId: string;
+      memberId: string;
+    };
+    assert.equal(result.organizationId, allowed.organizationId);
+    const replay = await runtime.send(
+      "/api/members",
+      input,
+      allowed.cookie,
+      headers,
+    );
+    assert.equal(replay.status, 201);
+    assert.deepEqual(await replay.json(), result);
+    const receipt = await runtime.send(
+      `/api/members/requests/${key}`,
+      undefined,
+      allowed.cookie,
+    );
+    assert.equal(receipt.status, 200);
+    assert.deepEqual(await receipt.json(), result);
+    const list = await runtime.send(
+      "/api/members?name=recorte&status=Ativo&pageSize=1",
+      undefined,
+      allowed.cookie,
+    );
+    assert.equal(list.status, 200);
+    assert.deepEqual(
+      (await list.json()).members.map((member: { id: string }) => member.id),
+      [result.memberId],
+    );
+    const detail = await runtime.send(
+      `/api/members/${result.memberId}`,
+      undefined,
+      allowed.cookie,
+    );
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).member.name, input.name);
+    assert.equal(
+      (
+        await runtime.send(
+          "/api/members",
+          { ...input, churchId: denied.churchId },
+          allowed.cookie,
+          { "Idempotency-Key": randomUUID() },
+        )
+      ).status,
+      404,
+    );
+    const allRoutes = [
+      ...routes,
+      `/api/members/${result.memberId}`,
+      `/api/members/requests/${key}`,
+    ];
+    const forged = {
+      "x-organization-id": allowed.organizationId,
+      LEVI_MEMBERS_DEV_ORGANIZATIONS: allowed.organizationId,
+      "x-members-enabled": "true",
+    };
+    for (const path of allRoutes) {
+      const response = await runtime.send(
+        path,
+        undefined,
+        denied.cookie,
+        forged,
+      );
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), {
+        erro: "NAO_ENCONTRADO",
+        mensagem: "Recurso não encontrado.",
+      });
+    }
+    assert.equal(
+      (
+        await runtime.send(
+          `/api/members?organizationId=${allowed.organizationId}&membersEnabled=true`,
+          undefined,
+          denied.cookie,
+          forged,
+        )
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await runtime.send(
+          "/api/members",
+          {
+            ...input,
+            organizationId: allowed.organizationId,
+            membersEnabled: true,
+          },
+          denied.cookie,
+          { ...forged, ...headers },
+        )
+      ).status,
+      404,
+    );
+    // Mesmo usuário pode ter vínculo legítimo nas duas organizações: a sessão ativa decide.
+    await observer.client.query(
+      "INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES($1,$2,'admin')",
+      [denied.organizationId, allowed.id],
+    );
+    assert.equal(
+      (
+        await runtime.send(
+          "/api/tenant",
+          { organizationId: denied.organizationId },
+          allowed.cookie,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await (
+          await runtime.send("/api/context", undefined, allowed.cookie)
+        ).json()
+      ).membersEnabled,
+      false,
+    );
+    for (const path of allRoutes)
+      assert.equal(
+        (await runtime.send(path, undefined, allowed.cookie)).status,
+        404,
+      );
+    assert.equal(
+      (await runtime.send("/api/members", input, allowed.cookie, headers))
+        .status,
+      404,
+    );
+    assert.equal(
+      (
+        await runtime.send(
+          "/api/tenant",
+          { organizationId: allowed.organizationId },
+          allowed.cookie,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await (
+          await runtime.send("/api/context", undefined, allowed.cookie)
+        ).json()
+      ).membersEnabled,
+      true,
+    );
+    // Uma URL de requisição alternativa também não pode aproveitar o binding DEV.
+    assert.equal(
+      (
+        await (
+          await runtime.send(
+            "https://other.example.test/api/context",
+            undefined,
+            allowed.cookie,
+          )
+        ).json()
+      ).membersEnabled,
+      false,
+    );
+    for (const path of allRoutes)
+      assert.equal(
+        (
+          await runtime.send(
+            `https://other.example.test${path}`,
+            undefined,
+            allowed.cookie,
+          )
+        ).status,
+        404,
+      );
+    for (const revoke of [
+      "UPDATE tenant_memberships SET role='unknown-role' WHERE tenant_id=$1 AND user_id=$2",
+      "DELETE FROM tenant_memberships WHERE tenant_id=$1 AND user_id=$2",
+    ]) {
+      await observer.client.query(revoke, [allowed.organizationId, allowed.id]);
+      for (const path of ["/api/context", ...allRoutes])
+        assert.equal(
+          (await runtime.send(path, undefined, allowed.cookie)).status,
+          403,
+        );
+      assert.equal(
+        (await runtime.send("/api/members", input, allowed.cookie, headers))
+          .status,
+        403,
+      );
+    }
+    const counts = await observer.client.query(
+      "SELECT tenant_id, count(*)::int n FROM members WHERE tenant_id IN ($1,$2) GROUP BY tenant_id",
+      [allowed.organizationId, denied.organizationId],
+    );
+    assert.deepEqual(counts.rows, [
+      { tenant_id: allowed.organizationId, n: 1 },
+    ]);
+  } finally {
+    await runtime.mf.dispose();
+  }
+});
+
+test("workerd: origem configurada fora de DEV recusa recorte válido sem afetar igrejas", async () => {
+  const account = await provisioned();
+  const runtime = await workerHarness(databaseUrl!, {
+    membersDevOrganizations: account.organizationId,
+    publicOrigin: "https://other.example.test",
+  });
+  try {
+    const context = await runtime.send(
+      "/api/context",
+      undefined,
+      account.cookie,
+    );
+    assert.equal(context.status, 200);
+    assert.equal((await context.json()).membersEnabled, false);
+    assert.equal(
+      (await runtime.send("/api/churches", undefined, account.cookie)).status,
+      200,
+    );
+    for (const path of [
+      "/api/members",
+      `/api/members/${randomUUID()}`,
+      `/api/members/requests/${randomUUID()}`,
+    ])
+      assert.equal(
+        (await runtime.send(path, undefined, account.cookie)).status,
+        404,
+      );
+    assert.equal(
+      (
+        await runtime.send(
+          "/api/members",
+          {
+            name: "Pessoa sintética",
+            churchId: account.churchId,
+            status: "Ativo",
+          },
+          account.cookie,
+          { "Idempotency-Key": randomUUID() },
+        )
+      ).status,
+      404,
+    );
+  } finally {
+    await runtime.mf.dispose();
   }
 });

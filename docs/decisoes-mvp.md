@@ -26,7 +26,9 @@ execuções e não são necessários para compreender ou definir o escopo atual.
 A primeira fatia local de membros (cadastro, listagem e ficha) está descrita em
 [Gestão de membros](gestao-membros.md). Esta etapa foi autorizada em 2026-10-22
 somente para implementação e validação sintética, sem migration persistente,
-deploy ou liberação para dados reais. Edição, exclusão e transferências continuam
+deploy ou liberação para dados reais. A preparação do recorte DEV sintético por
+organização também foi autorizada em 2026-10-22, sem habilitação ou operação remota;
+regras no mesmo guia. Edição, exclusão e transferências continuam
 pendentes.
 
 ## Organização, acesso e identidade

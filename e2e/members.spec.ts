@@ -358,3 +358,54 @@ test("membros: resposta de tenant divergente e perda de sessão não mantêm dad
     page.getByText("Pessoa protegida sintética", { exact: true }),
   ).toHaveCount(0);
 });
+
+test("membros: capacidade desabilitada remove dados e navegação e impede abertura direta", async ({
+  page,
+}) => {
+  await openMembers(page);
+  await startCreate(page, "Pessoa sintética com acesso removido");
+  await page
+    .getByRole("button", { name: "Salvar membro", exact: true })
+    .click();
+  await expect(
+    page.getByText("Pessoa sintética com acesso removido", { exact: true }),
+  ).toBeVisible();
+  // Teste do contrato visual: a política real por organização é exercitada em workerd.
+  await page.route("**/api/context", async (route) => {
+    const response = await route.fetch();
+    const context = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...context, membersEnabled: false },
+    });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(
+    page.getByRole("heading", { name: "Suas organizações", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Pessoa sintética com acesso removido", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: "Acessar Organização sintética de pessoas",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Trocar organização", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Membros", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/membros");
+  await expect(
+    page.getByRole("heading", { name: "Suas organizações", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Pessoa sintética com acesso removido", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Cadastrar membro", exact: true }),
+  ).toHaveCount(0);
+});

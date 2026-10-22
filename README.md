@@ -14,7 +14,8 @@ organização e consultar suas igrejas. A composição Cloudflare Workers possui
 build/dry-run e testes locais em workerd. A primeira fatia de
 [gestão de membros](docs/gestao-membros.md) acrescenta cadastro,
 listagem com filtros/paginação e ficha, habilitados somente para validação
-sintética local. O Worker mantém essa fatia desabilitada. Ambiente de produção
+sintética local. O Worker permanece desabilitado por padrão, com recorte DEV
+preparado para organizações sintéticas autorizadas, conforme o guia. Ambiente de produção
 ainda não foi implementado.
 
 Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para

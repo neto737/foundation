@@ -1,3 +1,4 @@
+import { membersAvailable } from "./member-access.js";
 import { Hono } from "hono";
 import {
   createMember,
@@ -280,7 +281,7 @@ export function createApp(options: AppOptions) {
     return c.json({
       organizationId: context.tenantId,
       role: context.role,
-      membersEnabled: options.membersEnabled === true,
+      membersEnabled: membersAvailable(options, context.tenantId),
     });
   });
   app.get("/api/churches", async (c) =>
@@ -301,7 +302,16 @@ export function createApp(options: AppOptions) {
     ),
   );
   app.use("/api/members*", async (c, next) => {
-    if (!options.membersEnabled) return c.notFound();
+    if (
+      options.membersEnabled !== true &&
+      !options.membersDevOrganizations?.length
+    )
+      return c.notFound();
+    const context = await organizationContext(
+      c.get("database"),
+      await readySession(c.get("database"), c.get("identity")),
+    );
+    if (!membersAvailable(options, context.tenantId)) return c.notFound();
     await next();
   });
   app.post("/api/members", async (c) => {
@@ -312,6 +322,7 @@ export function createApp(options: AppOptions) {
         identity,
         await readMember(c.req.raw),
         readMemberRequestKey(c.req.raw),
+        options,
       ),
       201,
     );
@@ -323,6 +334,7 @@ export function createApp(options: AppOptions) {
         c.get("database"),
         identity,
         readMemberFilters(new URL(c.req.url)),
+        options,
       ),
     );
   });
@@ -335,7 +347,9 @@ export function createApp(options: AppOptions) {
         "ENTRADA_INVALIDA",
         "A tentativa informada é inválida.",
       );
-    return c.json(await findMemberRequest(c.get("database"), identity, key));
+    return c.json(
+      await findMemberRequest(c.get("database"), identity, key, options),
+    );
   });
   app.get("/api/members/:id", async (c) => {
     const identity = await readySession(c.get("database"), c.get("identity"));
@@ -344,6 +358,7 @@ export function createApp(options: AppOptions) {
         c.get("database"),
         identity,
         requireUuid(c.req.param("id")),
+        options,
       ),
     );
   });

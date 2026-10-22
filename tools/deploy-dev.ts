@@ -153,7 +153,11 @@ try {
   const parsed = ts.parseConfigFileTextToJson("wrangler.jsonc", baseConfig);
   assert.ok(!parsed.error);
   const config = diagnostics.verify("bundle-config", () =>
-    deploymentConfig(parsed.config, settings.hyperdrive),
+    deploymentConfig(
+      parsed.config,
+      settings.hyperdrive,
+      env.LEVI_MEMBERS_DEV_ORGANIZATIONS,
+    ),
   );
   config.vars.LEVI_EMAIL_FROM = env.LEVI_EMAIL_FROM;
   diagnostics.start("bundle-directory", "falha de operação local");
