@@ -33,6 +33,7 @@ import {
   validateConsumerAuthority,
 } from "./release-consumer.mjs";
 import { validatePublisherEnvironment } from "./release-core.mjs";
+import { classifyPublicationFailure } from "./release-credential.mjs";
 import {
   approvalCertificate,
   confirmation,
@@ -74,6 +75,7 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
     ["checkout", "snapshot"],
     ["npm-config", "configuration"],
     ["npm-exchange", "authentication"],
+    ["provenance-transport", "publication"],
   ]) {
     const secret =
       "JWT.secret Authorization:Bearer secret https://secret/?token=secret";
@@ -102,6 +104,11 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
           diagnostics.exchange(201, "EXPIRATION_INVALID", "TYPE");
           fail();
         }
+        if (gate === "provenance-transport") {
+          diagnostics.enter("provenance-transport");
+          diagnostics.publication("SIGSTORE_LOG");
+          fail();
+        }
         uploads++;
       },
       console: {
@@ -127,7 +134,9 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
       "code",
       ...(gate === "npm-exchange" ? ["expiration_check", "http_status"] : []),
       "message",
-      ...(gate === "npm-exchange" ? ["reason"] : []),
+      ...(["npm-exchange", "provenance-transport"].includes(gate)
+        ? ["reason"]
+        : []),
       "stage",
     ]);
     if (gate === "npm-exchange") {
@@ -135,6 +144,8 @@ test("consumer CLI reports only fixed diagnostics and exits blocked at each oute
       assert.equal(error.http_status, 201);
       assert.equal(error.reason, "EXPIRATION_INVALID");
     }
+    if (gate === "provenance-transport")
+      assert.equal(error.reason, "SIGSTORE_LOG");
     assert(!output[0].includes("secret"));
   }
 });
@@ -146,6 +157,327 @@ test("consumer diagnostics isolate invocations and reject unlisted stage values"
   assert.throws(() => first.enter("token=secret"));
   assert.equal(first.failure().error.stage, "npm-exchange");
   assert.equal(second.failure().error.stage, "arguments");
+});
+
+const diagnosticSecret =
+  "JWT.sentinel Authorization:Bearer sentinel https://user:pass@secret/?token=sentinel";
+const diagnosticNpmRequire = createRequire(
+  createRequire(import.meta.url).resolve("npm/package.json"),
+);
+const diagnosticHttpErrors = diagnosticNpmRequire(
+  "npm-registry-fetch/lib/errors.js",
+);
+const diagnosticName = "@t00ls-dev/config";
+const diagnosticOptions = {
+  name: diagnosticName,
+  npmHttpErrorClass: diagnosticHttpErrors.HttpErrorBase,
+};
+function diagnosticHttpError(status = 403) {
+  return new diagnosticHttpErrors.HttpErrorGeneral(
+    "PUT",
+    {
+      status,
+      statusText: diagnosticSecret,
+      url: `${registry}/@t00ls-dev%2fconfig`,
+      headers: { secret: diagnosticSecret },
+    },
+    { error: diagnosticSecret },
+  );
+}
+
+test("publication classification maps only recognized structured codes", () => {
+  const cases = [
+    ...["EPRIVATE", "EBADSEMVER", "EUNSCOPED", "EUSAGE"].map((code) => [
+      code,
+      "LOCAL_VALIDATION",
+    ]),
+    ["IDENTITY_TOKEN_READ_ERROR", "SIGSTORE_IDENTITY"],
+    ["IDENTITY_TOKEN_PARSE_ERROR", "SIGSTORE_IDENTITY_FORMAT"],
+    ["CA_CREATE_SIGNING_CERTIFICATE_ERROR", "SIGSTORE_CERTIFICATE"],
+    ["TLOG_CREATE_ENTRY_ERROR", "SIGSTORE_LOG"],
+    ...[
+      "ECONNRESET",
+      "ECONNREFUSED",
+      "ETIMEDOUT",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "CERT_HAS_EXPIRED",
+      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "ERR_TLS_CERT_ALTNAME_INVALID",
+    ].map((code) => [code, "TRANSPORT_UNATTRIBUTED"]),
+    [diagnosticSecret, "UNKNOWN"],
+  ];
+  for (const [code, reason] of cases) {
+    const error = Object.assign(new Error(diagnosticSecret), { code });
+    error.cause = error;
+    const result = classifyPublicationFailure(error, diagnosticOptions);
+    assert.deepEqual(result, { reason });
+    assert(!JSON.stringify(result).includes("sentinel"));
+  }
+  for (const code of [
+    "MODULE_NOT_FOUND",
+    "ERR_MODULE_NOT_FOUND",
+    "ERR_REQUIRE_ESM",
+    "ERR_DLOPEN_FAILED",
+  ]) {
+    assert.deepEqual(classifyPublicationFailure({ code }, { loading: true }), {
+      reason: "LOCAL_LOAD",
+    });
+    assert.deepEqual(classifyPublicationFailure({ code }), {
+      reason: "UNKNOWN",
+    });
+  }
+  assert.deepEqual(
+    classifyPublicationFailure(
+      { code: "EUSAGE" },
+      {
+        loading: true,
+      },
+    ),
+    { reason: "UNKNOWN" },
+  );
+});
+
+test("npm HTTP classification requires the trusted error type, PUT and exact destination", () => {
+  for (const status of [400, 401, 403, 404, 409, 422, 429, 500, 503, 599]) {
+    const result = classifyPublicationFailure(
+      diagnosticHttpError(status),
+      diagnosticOptions,
+    );
+    assert.deepEqual(result, {
+      reason: "NPM_HTTP_REJECTED",
+      http_status: status,
+    });
+    assert(!JSON.stringify(result).includes("sentinel"));
+  }
+  for (const Class of [
+    diagnosticHttpErrors.HttpErrorAuthOTP,
+    diagnosticHttpErrors.HttpErrorAuthIPAddress,
+  ]) {
+    const error = new Class(
+      "PUT",
+      {
+        status: 401,
+        url: `${registry}/@t00ls-dev%2fconfig`,
+        headers: {},
+      },
+      {},
+    );
+    assert.deepEqual(classifyPublicationFailure(error, diagnosticOptions), {
+      reason: "NPM_HTTP_REJECTED",
+      http_status: 401,
+    });
+  }
+  for (const patch of [
+    { statusCode: 200 },
+    { statusCode: 600 },
+    { statusCode: "403" },
+    { statusCode: NaN },
+    { code: "E404" },
+    { code: diagnosticSecret },
+    { method: "GET" },
+    { uri: "not a URL" },
+    { uri: "https://example.com/@t00ls-dev%2fconfig" },
+    { uri: `${registry}/@t00ls-dev%2faudit` },
+    { uri: `${registry}/@t00ls-dev%2fconfig?secret=sentinel` },
+    { uri: `${registry}/@t00ls-dev%2fconfig#sentinel` },
+    { uri: "https://user:pass@registry.npmjs.org/@t00ls-dev%2fconfig" },
+  ]) {
+    assert.deepEqual(
+      classifyPublicationFailure(
+        Object.assign(diagnosticHttpError(), patch),
+        diagnosticOptions,
+      ),
+      { reason: "UNKNOWN" },
+    );
+  }
+  assert.deepEqual(
+    classifyPublicationFailure(
+      {
+        code: "E403",
+        method: "PUT",
+        statusCode: 403,
+        uri: `${registry}/@t00ls-dev%2fconfig`,
+      },
+      diagnosticOptions,
+    ),
+    { reason: "UNKNOWN" },
+  );
+  assert.deepEqual(classifyPublicationFailure(diagnosticHttpError()), {
+    reason: "UNKNOWN",
+  });
+});
+
+test("publication classification never invokes getters, proxies, coercion or cyclic causes", () => {
+  let inspected = 0;
+  const dangerous = () => {
+    inspected++;
+    throw new Error(diagnosticSecret);
+  };
+  const malformed = [
+    null,
+    undefined,
+    true,
+    403,
+    diagnosticSecret,
+    Symbol("sentinel"),
+    [],
+    { code: { toString: dangerous } },
+    Object.create({ code: "EUSAGE" }),
+    Object.defineProperty({}, "code", { get: dangerous }),
+  ];
+  for (const key of ["statusCode", "method", "uri"]) {
+    malformed.push(
+      Object.defineProperty(diagnosticHttpError(), key, {
+        get: dangerous,
+      }),
+    );
+  }
+  malformed.push(
+    new Proxy(
+      {},
+      {
+        get: dangerous,
+        getOwnPropertyDescriptor: dangerous,
+        getPrototypeOf: dangerous,
+      },
+    ),
+  );
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  malformed.push(revoked.proxy);
+  const proxyPrototype = diagnosticHttpError();
+  Object.setPrototypeOf(
+    proxyPrototype,
+    new Proxy({}, { getPrototypeOf: dangerous }),
+  );
+  malformed.push(proxyPrototype);
+  for (const error of malformed) {
+    assert.deepEqual(classifyPublicationFailure(error, diagnosticOptions), {
+      reason: "UNKNOWN",
+    });
+  }
+  for (const code of ["TLOG_CREATE_ENTRY_ERROR", "ECONNRESET"]) {
+    const error = { code };
+    for (const key of [
+      "message",
+      "stack",
+      "headers",
+      "body",
+      "cause",
+      "toJSON",
+    ])
+      Object.defineProperty(error, key, { get: dangerous });
+    assert.equal(
+      classifyPublicationFailure(error).reason,
+      code === "ECONNRESET" ? "TRANSPORT_UNATTRIBUTED" : "SIGSTORE_LOG",
+    );
+  }
+  const cyclic = { code: "TLOG_CREATE_ENTRY_ERROR" };
+  cyclic.cause = { cause: cyclic, message: diagnosticSecret };
+  assert.deepEqual(classifyPublicationFailure(cyclic), {
+    reason: "SIGSTORE_LOG",
+  });
+  assert.equal(inspected, 0);
+});
+
+test("publication diagnostics reset and accept only closed reasons and safe HTTP status", () => {
+  const trace = createConsumerDiagnostics();
+  assert.throws(() => trace.publication("UNKNOWN"));
+  trace.enter("provenance-transport");
+  assert.equal(trace.failure().error.reason, "UNKNOWN");
+  assert.throws(() => trace.publication(diagnosticSecret));
+  trace.publication("NPM_HTTP_REJECTED", 403);
+  assert.equal(trace.failure().error.http_status, 403);
+  trace.publication("SIGSTORE_LOG", 403);
+  assert(!Object.hasOwn(trace.failure().error, "http_status"));
+  trace.publication("NPM_HTTP_REJECTED", "403");
+  assert(!Object.hasOwn(trace.failure().error, "http_status"));
+  trace.enter("artifacts");
+  assert(!Object.hasOwn(trace.failure().error, "reason"));
+  trace.enter("provenance-transport");
+  assert.equal(trace.failure().error.reason, "UNKNOWN");
+  assert(!Object.hasOwn(trace.failure().error, "http_status"));
+  assert(!JSON.stringify(trace.failure()).includes("sentinel"));
+});
+
+test("consumer records publication failures and rethrows the identical error without retry", async () => {
+  for (const [error, reason] of [
+    [{ code: "EUSAGE" }, "LOCAL_VALIDATION"],
+    [{ code: "IDENTITY_TOKEN_READ_ERROR" }, "SIGSTORE_IDENTITY"],
+    [{ code: "IDENTITY_TOKEN_PARSE_ERROR" }, "SIGSTORE_IDENTITY_FORMAT"],
+    [{ code: "CA_CREATE_SIGNING_CERTIFICATE_ERROR" }, "SIGSTORE_CERTIFICATE"],
+    [{ code: "TLOG_CREATE_ENTRY_ERROR" }, "SIGSTORE_LOG"],
+    [{ code: "ECONNRESET" }, "TRANSPORT_UNATTRIBUTED"],
+    [
+      Object.assign(diagnosticHttpError(), {
+        uri: `${registry}/@t00ls-dev%2faccess`,
+      }),
+      "NPM_HTTP_REJECTED",
+    ],
+    [new Error(diagnosticSecret), "UNKNOWN"],
+  ]) {
+    const f = fixture();
+    const trace = createConsumerDiagnostics();
+    let calls = 0;
+    await assert.rejects(
+      consumeApprovedArtifact({
+        ...f,
+        diagnostics: trace,
+        publishBuffer: async (_, bytes, options) => {
+          calls++;
+          assert.deepEqual(bytes, f.bytes);
+          assert.equal(options.provenance, true);
+          assert.deepEqual(options.forceAuth, { token: "synthetic" });
+          throw error;
+        },
+      }),
+      (caught) => caught === error,
+    );
+    assert.equal(calls, 1);
+    assert.equal(trace.failure().error.reason, reason);
+    assert.equal(trace.failure().error.stage, "provenance-transport");
+    assert(!JSON.stringify(trace.failure()).includes("sentinel"));
+  }
+});
+
+test("consumer classifies load failures and preserves the original failure if diagnosis fails", async () => {
+  const library = diagnosticNpmRequire("libnpmpublish");
+  const original = Object.getOwnPropertyDescriptor(library, "publish");
+  const error = Object.assign(new Error(diagnosticSecret), {
+    code: "MODULE_NOT_FOUND",
+  });
+  try {
+    Object.defineProperty(library, "publish", {
+      configurable: true,
+      get() {
+        throw error;
+      },
+    });
+    const trace = createConsumerDiagnostics();
+    await assert.rejects(
+      consumeApprovedArtifact({ ...fixture(), diagnostics: trace }),
+      (caught) => caught === error,
+    );
+    assert.equal(trace.failure().error.reason, "LOCAL_LOAD");
+  } finally {
+    Object.defineProperty(library, "publish", original);
+  }
+  const trace = createConsumerDiagnostics();
+  trace.publication = () => {
+    throw new Error(diagnosticSecret);
+  };
+  await assert.rejects(
+    consumeApprovedArtifact({
+      ...fixture(),
+      diagnostics: trace,
+      publishBuffer: async () => {
+        throw error;
+      },
+    }),
+    (caught) => caught === error,
+  );
+  assert.equal(trace.failure().error.reason, "UNKNOWN");
 });
 
 test("fresh numeric OIDC metadata is opaque and never converted to an expiration date", async (t) => {

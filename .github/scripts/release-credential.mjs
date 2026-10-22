@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { types } from "node:util";
 import {
   authenticationMethod,
   npmVersion,
@@ -41,6 +42,122 @@ const expirationChecks = new Set([
   "PARSE",
 ]);
 
+const publicationReasons = new Set([
+  "LOCAL_LOAD",
+  "LOCAL_VALIDATION",
+  "SIGSTORE_IDENTITY",
+  "SIGSTORE_IDENTITY_FORMAT",
+  "SIGSTORE_CERTIFICATE",
+  "SIGSTORE_LOG",
+  "NPM_HTTP_REJECTED",
+  "TRANSPORT_UNATTRIBUTED",
+  "UNKNOWN",
+]);
+
+const publicationCodes = new Map([
+  ...["EPRIVATE", "EBADSEMVER", "EUNSCOPED", "EUSAGE"].map((code) => [
+    code,
+    "LOCAL_VALIDATION",
+  ]),
+  ["IDENTITY_TOKEN_READ_ERROR", "SIGSTORE_IDENTITY"],
+  ["IDENTITY_TOKEN_PARSE_ERROR", "SIGSTORE_IDENTITY_FORMAT"],
+  ["CA_CREATE_SIGNING_CERTIFICATE_ERROR", "SIGSTORE_CERTIFICATE"],
+  ["TLOG_CREATE_ENTRY_ERROR", "SIGSTORE_LOG"],
+  ...[
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "CERT_HAS_EXPIRED",
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "ERR_TLS_CERT_ALTNAME_INVALID",
+  ].map((code) => [code, "TRANSPORT_UNATTRIBUTED"]),
+]);
+
+// Inspect only own data fields. Never invoke accessors, inspect causes, coerce
+// values or serialize an exception. Proxy traps are not diagnostic input.
+export function classifyPublicationFailure(
+  error,
+  { loading = false, npmHttpErrorClass, name } = {},
+) {
+  const unknown = { reason: "UNKNOWN" };
+  try {
+    if (!error || typeof error !== "object" || types.isProxy(error))
+      return unknown;
+    const own = (key) => {
+      const field = Object.getOwnPropertyDescriptor(error, key);
+      return field && Object.hasOwn(field, "value") ? field.value : undefined;
+    };
+    const code = own("code");
+    if (typeof code !== "string") return unknown;
+    if (loading)
+      return {
+        reason: [
+          "MODULE_NOT_FOUND",
+          "ERR_MODULE_NOT_FOUND",
+          "ERR_REQUIRE_ESM",
+          "ERR_DLOPEN_FAILED",
+        ].includes(code)
+          ? "LOCAL_LOAD"
+          : "UNKNOWN",
+      };
+    const reason = publicationCodes.get(code);
+    if (reason) return { reason };
+
+    // A bare E403/status is not evidence of a response from the npm PUT.
+    if (
+      typeof npmHttpErrorClass !== "function" ||
+      types.isProxy(npmHttpErrorClass) ||
+      own("method") !== "PUT"
+    )
+      return unknown;
+    const expected = Object.getOwnPropertyDescriptor(
+      npmHttpErrorClass,
+      "prototype",
+    )?.value;
+    let current = error;
+    let recognized = false;
+    // Bound traversal and reject proxy prototypes before invoking any traps.
+    for (let depth = 0; current && depth < 8; depth++) {
+      if (types.isProxy(current)) return unknown;
+      current = Object.getPrototypeOf(current);
+      if (current === expected) {
+        recognized = true;
+        break;
+      }
+    }
+    if (!recognized) return unknown;
+    const status = own("statusCode");
+    const uri = own("uri");
+    if (
+      !Number.isInteger(status) ||
+      status < 400 ||
+      status > 599 ||
+      !(
+        code === `E${status}` ||
+        (status === 401 && ["EOTP", "EAUTHIP"].includes(code))
+      ) ||
+      typeof uri !== "string" ||
+      typeof name !== "string"
+    )
+      return unknown;
+    const url = new URL(uri);
+    if (
+      url.origin !== registry ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      decodeURIComponent(url.pathname) !== `/${name}`
+    )
+      return unknown;
+    return { reason: "NPM_HTTP_REJECTED", http_status: status };
+  } catch {
+    return unknown;
+  }
+}
+
 export function createConsumerDiagnostics() {
   let stage = "arguments";
   let httpStatus = null;
@@ -69,6 +186,18 @@ export function createConsumerDiagnostics() {
       reason = nextReason;
       expirationCheck = nextExpirationCheck;
     },
+    publication(nextReason, status) {
+      assert.equal(stage, "provenance-transport");
+      assert(publicationReasons.has(nextReason));
+      reason = nextReason;
+      httpStatus =
+        nextReason === "NPM_HTTP_REJECTED" &&
+        Number.isInteger(status) &&
+        status >= 400 &&
+        status <= 599
+          ? status
+          : null;
+    },
     failure() {
       // Deliberately accepts no exception: messages, causes and server responses
       // must never reach the public diagnostic, even for unexpected failures.
@@ -87,7 +216,12 @@ export function createConsumerDiagnostics() {
                   ? { expiration_check: expirationCheck }
                   : {}),
               }
-            : {}),
+            : stage === "provenance-transport"
+              ? {
+                  reason: publicationReasons.has(reason) ? reason : "UNKNOWN",
+                  ...(httpStatus === null ? {} : { http_status: httpStatus }),
+                }
+              : {}),
         },
       };
     },
