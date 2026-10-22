@@ -20,6 +20,7 @@ import {
 } from "./release-core.mjs";
 import { approvedCi } from "./ci-evidence.mjs";
 import {
+  classifyPublicationFailure,
   createConsumerDiagnostics,
   publicationCredential,
 } from "./release-credential.mjs";
@@ -159,19 +160,38 @@ export async function consumeApprovedArtifact({
   diagnostics.enter("artifacts");
   validateArtifactBuffer(bytes, artifact);
   diagnostics.enter("provenance-transport");
-  publishBuffer ??= npmRequire("libnpmpublish").publish;
-  await publishBuffer(metadata, bytes, {
-    registry,
-    "access": "public",
-    "defaultTag": "latest",
-    "algorithms": ["sha512"],
-    npmVersion,
-    // Only the explicitly established credential is used. No CLI/config flatten,
-    // tokenHelper, ambient auth or npm's optional OIDC/fallback path is involved.
-    "forceAuth": { token },
-    "//registry.npmjs.org/:_authToken": token,
-    "provenance": true,
-  });
+  let loading = !publishBuffer;
+  try {
+    publishBuffer ??= npmRequire("libnpmpublish").publish;
+    loading = false;
+    await publishBuffer(metadata, bytes, {
+      registry,
+      "access": "public",
+      "defaultTag": "latest",
+      "algorithms": ["sha512"],
+      npmVersion,
+      // Only the explicitly established credential is used. No CLI/config flatten,
+      // tokenHelper, ambient auth or npm's optional OIDC/fallback path is involved.
+      "forceAuth": { token },
+      "//registry.npmjs.org/:_authToken": token,
+      "provenance": true,
+    });
+  } catch (error) {
+    // Observability must never replace the original rejection or change IO.
+    try {
+      const result = classifyPublicationFailure(error, {
+        loading,
+        name: artifact.name,
+        npmHttpErrorClass: loading
+          ? undefined
+          : npmRequire("npm-registry-fetch/lib/errors.js").HttpErrorBase,
+      });
+      diagnostics.publication(result.reason, result.http_status);
+    } catch {
+      // The stage's default UNKNOWN remains safe if diagnosis itself fails.
+    }
+    throw error;
+  }
   return { name: artifact.name, version: artifact.version };
 }
 
