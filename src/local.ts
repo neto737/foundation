@@ -27,6 +27,7 @@ if (
   );
 }
 const app = createApp({
+  membersEnabled: process.env.LEVI_LOCAL_DATABASE === "1",
   databaseUrl,
   baseURL: publicOrigin,
   onboardingReturnPath: "/onboarding",

@@ -4,4 +4,7 @@ export const spaPaths = [
   "/entrar",
   "/organizacoes",
   "/igrejas",
+  "/membros",
+  "/membros/novo",
+  "/membros/:id",
 ] as const;

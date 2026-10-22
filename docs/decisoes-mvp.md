@@ -1,6 +1,6 @@
 # Decisões do MVP
 
-**Escopo aprovado em 2026-10-16; estado atualizado em 2026-10-19.** O MVP completo
+**Escopo aprovado em 2026-10-16; estado atualizado em 2026-10-22.** O MVP completo
 ainda não está implementado. A primeira fatia de onboarding e provisionamento
 está descrita em [Onboarding e provisionamento](onboarding-provisionamento.md).
 Este documento registra o escopo e suas invariantes, sem autorizar operação.
@@ -17,11 +17,17 @@ aqui. Fatos técnicos descrevem capacidades e limites; recomendações não se t
 requisitos por repetição. Relatórios históricos permanecem como evidência de suas
 execuções e não são necessários para compreender ou definir o escopo atual.
 
-| Classificação         | Estado                                                                                                                                                                                                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                            |
-| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                       |
-| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers validada localmente, sem deploy ou serviços remotos comprovados. Demais funcionalidades do MVP ainda não implementadas. |
+| Classificação         | Estado                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                                                                                                                   |
+| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                                                                                                              |
+| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers validada localmente, sem deploy ou serviços remotos comprovados. Primeira fatia de membros disponível apenas para validação sintética local, conforme o guia próprio. Demais funcionalidades do MVP pendentes. |
+
+A primeira fatia local de membros (cadastro, listagem e ficha) está descrita em
+[Gestão de membros](gestao-membros.md). Esta etapa foi autorizada em 2026-10-22
+somente para implementação e validação sintética, sem migration persistente,
+deploy ou liberação para dados reais. Edição, exclusão e transferências continuam
+pendentes.
 
 ## Organização, acesso e identidade
 

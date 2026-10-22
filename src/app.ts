@@ -1,4 +1,15 @@
 import { Hono } from "hono";
+import {
+  createMember,
+  listMembers,
+  findMember,
+  findMemberRequest,
+} from "./members.js";
+import {
+  readMember,
+  readMemberFilters,
+  readMemberRequestKey,
+} from "./member-contracts.js";
 import { createAbuseProtection } from "./abuse.js";
 import { bodyLimit } from "hono/body-limit";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
@@ -266,7 +277,11 @@ export function createApp(options: AppOptions) {
       c.get("database"),
       await readySession(c.get("database"), c.get("identity")),
     );
-    return c.json({ organizationId: context.tenantId, role: context.role });
+    return c.json({
+      organizationId: context.tenantId,
+      role: context.role,
+      membersEnabled: options.membersEnabled === true,
+    });
   });
   app.get("/api/churches", async (c) =>
     c.json(
@@ -285,6 +300,53 @@ export function createApp(options: AppOptions) {
       ),
     ),
   );
+  app.use("/api/members*", async (c, next) => {
+    if (!options.membersEnabled) return c.notFound();
+    await next();
+  });
+  app.post("/api/members", async (c) => {
+    const identity = await readySession(c.get("database"), c.get("identity"));
+    return c.json(
+      await createMember(
+        c.get("database"),
+        identity,
+        await readMember(c.req.raw),
+        readMemberRequestKey(c.req.raw),
+      ),
+      201,
+    );
+  });
+  app.get("/api/members", async (c) => {
+    const identity = await readySession(c.get("database"), c.get("identity"));
+    return c.json(
+      await listMembers(
+        c.get("database"),
+        identity,
+        readMemberFilters(new URL(c.req.url)),
+      ),
+    );
+  });
+  app.get("/api/members/requests/:key", async (c) => {
+    const identity = await readySession(c.get("database"), c.get("identity"));
+    const key = c.req.param("key");
+    if (!/^[a-zA-Z0-9_-]{16,128}$/.test(key))
+      throw new RequestError(
+        400,
+        "ENTRADA_INVALIDA",
+        "A tentativa informada é inválida.",
+      );
+    return c.json(await findMemberRequest(c.get("database"), identity, key));
+  });
+  app.get("/api/members/:id", async (c) => {
+    const identity = await readySession(c.get("database"), c.get("identity"));
+    return c.json(
+      await findMember(
+        c.get("database"),
+        identity,
+        requireUuid(c.req.param("id")),
+      ),
+    );
+  });
   // Allowlist exata: signup, mudança de e-mail/senha e novos plugins não vazam.
   app.all("/api/auth/*", (c) =>
     c.json(

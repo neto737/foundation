@@ -81,7 +81,13 @@ try {
       throw new Error("A validação no navegador falhou.");
   } else if (process.argv.includes("--worker")) {
     run(["--test", "--test-concurrency=1", "test/worker.integration.test.ts"]);
-  } else run(["--test", "--test-concurrency=1", "test/integration.test.ts"]);
+  } else
+    run([
+      "--test",
+      "--test-concurrency=1",
+      "test/integration.test.ts",
+      "test/members.integration.test.ts",
+    ]);
 } finally {
   execFileSync("docker", ["stop", container], { stdio: "ignore" });
   if (mailDirectory) await rm(mailDirectory, { recursive: true, force: true });

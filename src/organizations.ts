@@ -27,7 +27,9 @@ import {
   session,
 } from "./data/schema.js";
 
-const access = createAccessControl({ admin: ["churches:read"] as const });
+export const access = createAccessControl({
+  admin: ["churches:read", "members:read", "members:create"] as const,
+});
 function assertAdministrator(role: string): asserts role is "admin" {
   if (role !== "admin" || !access.can(role, "churches:read")) {
     throw new RequestError(

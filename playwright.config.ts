@@ -14,12 +14,12 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testMatch: "onboarding.spec.ts",
+      testMatch: /(?:onboarding|members)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:4317" },
     },
     {
       name: "mobile",
-      testMatch: "onboarding.spec.ts",
+      testMatch: /(?:onboarding|members)\.spec\.ts/,
       use: { ...devices["Pixel 7"], baseURL: "http://localhost:4317" },
     },
     {
