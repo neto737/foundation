@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
+import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { DeployDiagnostics } from "../tools/deploy-diagnostics.js";
 import {
   deploySettings,
   verifyHyperdrive,
@@ -142,6 +145,391 @@ test("CLI sem contexto autorizado falha antes de qualquer rede e sanitiza valore
   assert.equal(result.status, 1);
   const output = result.stdout + result.stderr;
   assert.ok(output.includes("etapa: configuração"));
+  assert.ok(output.includes("verificação: contexto e configuração DEV"));
+  assert.ok(output.includes("categoria: divergência de configuração"));
   assert.ok(!output.includes(valid.LEVI_AUTH_SECRET!));
   assert.ok(!output.includes("AssertionError"));
+});
+
+// Executa o script real com todas as fronteiras de I/O substituídas: nenhum
+// subprocesso, arquivo privado ou request real pode ser criado pelo harness.
+async function simulatedDeploy(
+  options: {
+    respond?: (url: string, published: boolean) => Response | undefined;
+    cleanupError?: Error;
+  } = {},
+) {
+  const source = await readFile("tools/deploy-dev.ts", "utf8");
+  const baseConfig = await readFile("wrangler.jsonc", "utf8");
+  const output: string[] = [];
+  const requests: string[] = [];
+  const writes: { path: string; mode: number }[] = [];
+  let uploads = 0;
+  let cleanups = 0;
+  const fakeProcess = {
+    env: { ...valid },
+    execPath: process.execPath,
+    exitCode: 0,
+  };
+  const headers = {
+    "referrer-policy": "no-referrer",
+    "content-security-policy": "default-src 'self'",
+  };
+  const cloudflare = (result: unknown) =>
+    Response.json({ success: true, result });
+  const request = async (input: string) => {
+    requests.push(input);
+    const override = options.respond?.(input, uploads > 0);
+    if (override) return override;
+    const url = new URL(input);
+    if (url.hostname === "api.github.com")
+      return Response.json({ object: { sha: valid.GITHUB_SHA } });
+    if (url.pathname.includes("/hyperdrive/configs/"))
+      return cloudflare(hyperdrive);
+    if (url.pathname.endsWith("/subdomain"))
+      return uploads
+        ? cloudflare({ enabled: false, previews_enabled: false })
+        : new Response(null, { status: 404 });
+    if (url.pathname.endsWith("/workers/domains"))
+      return cloudflare(
+        uploads
+          ? [
+              {
+                hostname: "levi.t00ls.dev",
+                service: "levi-dev",
+                zone_id: valid.CLOUDFLARE_ZONE_ID,
+              },
+            ]
+          : [],
+      );
+    if (url.pathname.endsWith("/workers/routes")) return cloudflare([]);
+    if (url.pathname.includes("/zones/"))
+      return cloudflare({
+        name: "t00ls.dev",
+        account: { id: valid.CLOUDFLARE_ACCOUNT_ID },
+      });
+    if (url.pathname.endsWith("/deployments"))
+      return cloudflare({
+        deployments: [
+          { versions: [{ version_id: "synthetic-version", percentage: 100 }] },
+        ],
+      });
+    if (url.pathname.includes("/versions/"))
+      return cloudflare({ annotations: { "workers/tag": valid.GITHUB_SHA } });
+    if (url.hostname === "levi.t00ls.dev") {
+      if (url.pathname === "/")
+        return new Response("<html></html>", {
+          headers: { ...headers, "content-type": "text/html" },
+        });
+      if (url.pathname === "/api/onboarding")
+        return Response.json({ etapa: "email" }, { headers });
+      if (["/api/organizations", "/api/churches"].includes(url.pathname))
+        return new Response(null, { status: 401, headers });
+    }
+    throw new Error("Request não previsto no harness");
+  };
+  const modules: Record<string, unknown> = {
+    // Literais do VM e JSON do Response pertencem a realms distintos. Igualar
+    // apenas seus protótipos no harness mantém o deepEqual estrutural do script.
+    "node:assert/strict": new Proxy(assert, {
+      get(target, key, receiver) {
+        if (key === "deepEqual")
+          return (actual: unknown, expected: unknown) =>
+            assert.deepEqual(
+              JSON.parse(JSON.stringify(actual)),
+              JSON.parse(JSON.stringify(expected)),
+            );
+        return Reflect.get(target, key, receiver);
+      },
+    }),
+    "node:path": { join, resolve },
+    "node:child_process": {
+      execFileSync: (_cmd: string, args: string[]) =>
+        args[0] === "rev-parse" ? valid.GITHUB_SHA : "",
+      spawnSync: () => {
+        uploads++;
+        return { status: 0 };
+      },
+    },
+    "node:fs/promises": {
+      readFile: async () => baseConfig,
+      mkdir: async () => {},
+      mkdtemp: async () => ".local/deploy-synthetic-only",
+      writeFile: async (
+        path: string,
+        _contents: string,
+        settings: { mode: number },
+      ) => {
+        writes.push({ path, mode: settings.mode });
+      },
+      rm: async () => {
+        cleanups++;
+        if (options.cleanupError) throw options.cleanupError;
+      },
+    },
+    typescript: ts,
+    "./deploy-config.js": {
+      deploySettings,
+      verifyHyperdrive,
+      deploymentConfig,
+      deployOrigin: "https://levi.t00ls.dev",
+      deployWorker: "levi-dev",
+    },
+    "./deploy-diagnostics.js": { DeployDiagnostics },
+    "./ci-evidence.js": {
+      requireSuccessfulCI: async () => ({
+        sha: valid.GITHUB_SHA,
+        runId: 1,
+        attempt: 1,
+      }),
+    },
+  };
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2023,
+      esModuleInterop: true,
+    },
+  });
+  await runInNewContext(`(async () => { ${compiled.outputText} })()`, {
+    require: (name: string) => {
+      assert.ok(name in modules);
+      return modules[name];
+    },
+    exports: {},
+    process: fakeProcess,
+    fetch: request,
+    URL,
+    AbortSignal,
+    console: {
+      info: (message: string) => output.push(message),
+      error: (message: string) => output.push(message),
+    },
+  });
+  return {
+    output: output.join("\n"),
+    requests,
+    uploads,
+    cleanups,
+    writes,
+    exitCode: fakeProcess.exitCode,
+  };
+}
+
+const sensitive =
+  "postgres://user:private-password@private.invalid/db?token=private-token\nAuthorization: Bearer private-token\nCookie: session=private-cookie";
+
+test("diagnóstico: sucesso conserva publicação única, checks, arquivos privados e limpeza", async () => {
+  const result = await simulatedDeploy();
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.uploads, 1);
+  assert.equal(result.cleanups, 1);
+  assert.equal(result.writes.length, 2);
+  assert.ok(result.writes.every((file) => file.mode === 0o600));
+  assert.ok(
+    result.output.includes(
+      "SHA ativo, acesso público e bloqueio de dados privados conferidos",
+    ),
+  );
+  for (const path of [
+    "/",
+    "/api/onboarding",
+    "/api/organizations",
+    "/api/churches",
+  ])
+    assert.ok(result.requests.includes(`https://levi.t00ls.dev${path}`));
+  assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET!));
+});
+
+test("diagnóstico: HTTP pós-upload identifica operação/status e interrompe sem retry", async () => {
+  const result = await simulatedDeploy({
+    respond: (url) =>
+      url.endsWith("/deployments")
+        ? new Response(sensitive, { status: 403 })
+        : undefined,
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 1);
+  assert.equal(result.cleanups, 1);
+  assert.ok(
+    result.output.includes(
+      "etapa: verificação após publicação; verificação: consulta dos deployments do Worker; categoria: falha HTTP; status HTTP: 403",
+    ),
+  );
+  assert.equal(
+    result.requests.filter((url) => url.endsWith("/deployments")).length,
+    1,
+  );
+  assert.ok(
+    !result.requests.some(
+      (url) =>
+        url.includes("/versions/") || url.startsWith("https://levi.t00ls.dev"),
+    ),
+  );
+  assert.ok(!result.output.includes("private-"));
+});
+
+test("diagnóstico: HTTP anterior ao upload interrompe sem chamar o publicador", async () => {
+  const result = await simulatedDeploy({
+    respond: (url) =>
+      url.includes("/hyperdrive/configs/")
+        ? new Response(sensitive, { status: 503 })
+        : undefined,
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 0);
+  assert.ok(
+    result.output.includes(
+      "etapa: proteções remotas; verificação: consulta do Hyperdrive; categoria: falha HTTP; status HTTP: 503",
+    ),
+  );
+  assert.ok(!result.output.includes("private-"));
+});
+
+test("diagnóstico: JSON inválido e envelope reprovado são respostas inesperadas sem corpo privado", async () => {
+  for (const response of [
+    new Response(sensitive),
+    Response.json({ success: false, errors: [{ message: sensitive }] }),
+  ]) {
+    const result = await simulatedDeploy({
+      respond: (url) => (url.endsWith("/deployments") ? response : undefined),
+    });
+    assert.equal(result.exitCode, 1);
+    assert.ok(
+      result.output.includes(
+        "consulta dos deployments do Worker; categoria: resposta inesperada; status HTTP: 200",
+      ),
+    );
+    assert.ok(!result.output.includes("private-"));
+  }
+});
+
+test("diagnóstico: formato inválido e tráfego divergente mantêm HTTP sem aceitar deployment incompleto", async () => {
+  for (const [resultBody, category, check] of [
+    [
+      { deployments: [] },
+      "resposta inesperada",
+      "estrutura das versões do deployment",
+    ],
+    [
+      {
+        deployments: [
+          { versions: [{ version_id: "synthetic-version", percentage: 50 }] },
+        ],
+      },
+      "divergência de configuração",
+      "versão única com 100% do tráfego",
+    ],
+  ] as const) {
+    const result = await simulatedDeploy({
+      respond: (url) =>
+        url.endsWith("/deployments")
+          ? Response.json({ success: true, result: resultBody })
+          : undefined,
+    });
+    assert.equal(result.exitCode, 1);
+    assert.ok(
+      result.output.includes(
+        `verificação: ${check}; categoria: ${category}; status HTTP: 200`,
+      ),
+    );
+    assert.ok(!result.requests.some((url) => url.includes("/versions/")));
+  }
+});
+
+test("diagnóstico: divergências de proteção e tag localizam check sem imprimir valores recebidos", async () => {
+  for (const [operation, expected] of [
+    ["hyperdrive", "origem e cache do Hyperdrive"],
+    ["tag", "tag da versão ativa igual ao SHA"],
+  ]) {
+    const result = await simulatedDeploy({
+      respond: (url, published) => {
+        if (
+          operation === "hyperdrive" &&
+          published &&
+          url.includes("/hyperdrive/configs/")
+        )
+          return Response.json({
+            success: true,
+            result: { ...hyperdrive, caching: { disabled: false } },
+          });
+        if (operation === "tag" && url.includes("/versions/"))
+          return Response.json({
+            success: true,
+            result: { annotations: { "workers/tag": sensitive } },
+          });
+        return undefined;
+      },
+    });
+    assert.equal(result.exitCode, 1);
+    assert.ok(
+      result.output.includes(
+        `etapa: verificação após publicação; verificação: ${expected}; categoria: divergência de configuração`,
+      ),
+    );
+    assert.ok(!result.output.includes("private-"));
+  }
+});
+
+test("diagnóstico: falha de rede preserva apenas código técnico conhecido", async () => {
+  const result = await simulatedDeploy({
+    respond: (url) => {
+      if (url.endsWith("/deployments"))
+        throw new Error(sensitive, {
+          cause: { code: "ENOTFOUND", message: sensitive },
+        });
+      return undefined;
+    },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.ok(
+    result.output.includes(
+      "categoria: erro de rede; status HTTP: indisponível; causa técnica: ENOTFOUND",
+    ),
+  );
+  assert.ok(!result.output.includes("private-"));
+  const diagnostics = new DeployDiagnostics();
+  diagnostics.start("version-tag");
+  assert.ok(
+    !diagnostics
+      .message({ code: sensitive, message: sensitive, stack: sensitive })
+      .includes("private-"),
+  );
+});
+
+test("diagnóstico: resposta pública divergente mantém 401 obrigatório e interrompe o smoke", async () => {
+  const result = await simulatedDeploy({
+    respond: (url) =>
+      url === "https://levi.t00ls.dev/api/organizations"
+        ? new Response(sensitive, {
+            status: 200,
+            headers: {
+              "referrer-policy": "no-referrer",
+              "content-security-policy": "default-src 'self'",
+            },
+          })
+        : undefined,
+  });
+  assert.equal(result.exitCode, 1);
+  assert.ok(
+    result.output.includes(
+      "bloqueio anônimo e cabeçalhos de organizações; categoria: falha HTTP; status HTTP: 200",
+    ),
+  );
+  assert.ok(!result.requests.includes("https://levi.t00ls.dev/api/churches"));
+  assert.ok(!result.output.includes("private-"));
+});
+
+test("diagnóstico: falha na limpeza preserva exit 1 e não expõe caminhos privados", async () => {
+  const result = await simulatedDeploy({
+    cleanupError: Object.assign(new Error(sensitive), { code: "EACCES" }),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.ok(
+    result.output.includes(
+      "etapa: limpeza privada; verificação: remoção dos arquivos privados temporários; categoria: falha de operação local",
+    ),
+  );
+  assert.ok(result.output.includes("causa técnica: EACCES"));
+  assert.ok(!result.output.includes("private-"));
 });

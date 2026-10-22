@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { DeployDiagnostics } from "./deploy-diagnostics.js";
+import type { DeployCheck } from "./deploy-diagnostics.js";
 
 const repository = "t00ls-dev/levi";
 export function validateCIRun(
@@ -23,7 +25,9 @@ export function validateCIRun(
 export async function requireSuccessfulCI(
   env: NodeJS.ProcessEnv,
   request: typeof fetch = fetch,
+  diagnostics = new DeployDiagnostics(),
 ) {
+  diagnostics.start("ci-context");
   assert.equal(env.GITHUB_ACTIONS, "true");
   assert.equal(env.GITHUB_REPOSITORY, repository);
   assert.equal(env.GITHUB_REF, "refs/heads/main");
@@ -34,29 +38,32 @@ export async function requireSuccessfulCI(
   assert.match(sha, /^[a-f0-9]{40}$/);
   assert.equal(sha, env.GITHUB_SHA);
   assert.ok(env.GITHUB_TOKEN);
-  async function github(path: string): Promise<any> {
-    const response = await request(
-      `https://api.github.com/repos/${repository}/${path}`,
-      {
+  async function github(check: DeployCheck, path: string): Promise<any> {
+    const response = await diagnostics.request(check, () =>
+      request(`https://api.github.com/repos/${repository}/${path}`, {
         headers: {
           Authorization: `Bearer ${env.GITHUB_TOKEN}`,
           Accept: "application/vnd.github+json",
         },
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
-      },
+      }),
     );
-    assert.ok(response.ok);
+    diagnostics.httpOk(response);
     return response.json();
   }
-  assert.equal((await github("git/ref/heads/main")).object?.sha, sha);
-  const workflow = await github("actions/workflows/ci.yml");
+  const main = await github("main-read", "git/ref/heads/main");
+  diagnostics.inspect("main-sha");
+  assert.equal(main.object?.sha, sha);
+  const workflow = await github("ci-workflow-read", "actions/workflows/ci.yml");
+  diagnostics.inspect("ci-workflow");
   assert.equal(workflow.path, ".github/workflows/ci.yml");
   assert.equal(workflow.state, "active");
   assert.ok(Number.isSafeInteger(workflow.id));
   let runId: number;
   let triggeringAttempt: number | undefined;
   if (env.GITHUB_EVENT_NAME === "workflow_run") {
+    diagnostics.start("ci-event", "resposta inesperada");
     const event = JSON.parse(
       await readFile(env.GITHUB_EVENT_PATH ?? "", "utf8"),
     );
@@ -65,25 +72,33 @@ export async function requireSuccessfulCI(
     assert.ok(Number.isSafeInteger(triggeringAttempt));
   } else {
     const runs = await github(
+      "ci-runs-read",
       `actions/workflows/${workflow.id}/runs?event=push&branch=main&head_sha=${sha}&per_page=10`,
     );
+    diagnostics.inspect("ci-runs", "resposta inesperada");
     assert.ok(
       Array.isArray(runs.workflow_runs) && runs.workflow_runs.length > 0,
     );
     runId = runs.workflow_runs[0].id;
   }
+  diagnostics.inspect("ci-run-id");
   assert.ok(Number.isSafeInteger(runId) && runId > 0);
-  const run = await github(`actions/runs/${runId}`);
+  const run = await github("ci-run-read", `actions/runs/${runId}`);
+  diagnostics.inspect("ci-run");
   validateCIRun(run, sha, workflow.id);
+  diagnostics.inspect("ci-attempt");
   if (triggeringAttempt !== undefined)
     assert.equal(run.run_attempt, triggeringAttempt);
   const jobs = await github(
+    "ci-jobs-read",
     `actions/runs/${runId}/attempts/${run.run_attempt}/jobs?per_page=100`,
   );
+  diagnostics.inspect("ci-jobs-shape", "resposta inesperada");
   assert.ok(Array.isArray(jobs.jobs) && jobs.total_count === jobs.jobs.length);
   const checks = jobs.jobs.filter(
     (job: Record<string, any>) => job.name === "checks",
   );
+  diagnostics.inspect("ci-job");
   assert.equal(checks.length, 1);
   assert.equal(checks[0].status, "completed");
   assert.equal(checks[0].conclusion, "success");
