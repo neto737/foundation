@@ -46,6 +46,130 @@ export const infrastructurePaths = [
   "docs/runbooks/packages.md",
 ];
 
+// One recovery only. These are immutable trust anchors, not caller-selected input.
+export const recoverySource = Object.freeze({
+  releasePr: 136,
+  executionSha: "93fb7de21ce3b57db025a1c8605d65ad75b25798",
+  auditRun: 39516571800,
+  approvalRun: 39517695207,
+  auditArtifact: 12306989280,
+  approvalArtifact: 12309375138,
+  auditZipHash:
+    "4cbff2f867f167885fc738eb2058f1964a7b90ada5a98ffd0c56849b0e235e15",
+  approvalZipHash:
+    "eefc7863d65b1bca024cbbfd6cdd7f0df4fe25dc942ad79195480b29ad7b2119",
+  planDigest:
+    "a50aef4ff731865544775da7f3ea24384d9b696d4c1ff6b7e52c9ee104d68c2e",
+  changesDigest:
+    "18abfe4930f69b79b882ec91b924377dbc09586f2397cc6ab8fd30652dec076d",
+  protectedInputsDigest:
+    "aaccef6eb9924512b32079c4b4e4e18576967c58dcffcfa3ca382f8e951e064f",
+  artifactsDigest:
+    "14212e61fb5202955800dfd989cf6f28588898d0d71bafb335ad4f66af3a6399",
+  recordDigest:
+    "c27c99c6577673f8608146f835c167632ef6713c5917d71a7c782dd8a99cea03",
+  approvalDigest:
+    "97ff8eb3957c83283b21dd76f23d85f9ca76330bbff2a230ac53769eded24f07",
+});
+
+export function releaseMode(mode) {
+  const recovery = [
+    "recovery-audit",
+    "recovery-approve",
+    "recovery-resume",
+  ].includes(mode);
+  return { mode: recovery ? mode.slice("recovery-".length) : mode, recovery };
+}
+
+export function validateRecoveryContext(context) {
+  assert.equal(context.recovery, true, "Explicit recovery mode required");
+  assert.equal(context.distribution, "release");
+  assert.equal(context.releasePr, recoverySource.releasePr);
+  assert.equal(context.releaseSha, recoverySource.executionSha);
+  assert(shaPattern.test(context.executionSha));
+  assert.notEqual(context.executionSha, recoverySource.executionSha);
+  assert(
+    ["audit", "approve", "resume"].includes(context.mode),
+    "Recovery only allows audit, approval and resume",
+  );
+}
+
+// This does not expand the ordinary six infrastructure exceptions. Every leaf
+// outside this closed recovery-only list must remain identical to its source.
+const recoveryPaths = new Set([
+  ...infrastructurePaths,
+  ".github/scripts/release-consumer.mjs",
+  ".github/scripts/release-consumer.test.mjs",
+  ".github/scripts/release-credential.mjs",
+  ".github/scripts/release-recovery.mjs",
+  ".github/scripts/release-recovery.test.mjs",
+  ".github/scripts/fixtures/release/recovery-audit.zip",
+  ".github/scripts/fixtures/release/recovery-approval.zip",
+]);
+
+export function recoveryBinding(sourceTree, executionTree, context) {
+  validateRecoveryContext(context);
+  protectedInputs(sourceTree);
+  const inputs = protectedInputs(executionTree);
+  const changes = snapshotChanges(sourceTree, executionTree);
+  assert(changes.length, "Recovery executor delta required");
+  for (const change of changes) {
+    assert(recoveryPaths.has(change.path), "Recovery changed artifact inputs");
+    assert(
+      change.after &&
+        change.after.type === "blob" &&
+        ["100644", "100755"].includes(change.after.mode),
+      "Recovery executor must be a regular file",
+    );
+  }
+  assert.equal(
+    digest(protectedInputs(sourceTree)),
+    recoverySource.protectedInputsDigest,
+  );
+  return {
+    changes,
+    changesDigest: digest({
+      releaseSha: context.releaseSha,
+      snapshotSha: context.executionSha,
+      changes,
+    }),
+    protectedInputsDigest: digest(inputs),
+  };
+}
+
+export function validateRecoveryTarget(artifact, context) {
+  if (!context.recovery) return;
+  validateRecoveryContext(context);
+  assert.equal(
+    artifact.name,
+    "@t00ls-dev/config",
+    "Recovery cannot republish completed packages",
+  );
+  assert.equal(artifact.version, "0.1.3");
+  assert.equal(
+    artifact.hash,
+    "d8831160f65313d662e12e02555b841930ffb3346b66b666887773862cc52f0a",
+  );
+}
+
+export function recoveryRemaining(record, states, context) {
+  validateRecoveryContext(context);
+  assert.equal(digest(record), recoverySource.recordDigest);
+  const remaining = remainingPlan(record, states, "resume");
+  assert.equal(
+    remaining.length,
+    1,
+    "Recovery requires config absent; stop for human reconciliation",
+  );
+  assert.equal(
+    remaining[0].name,
+    "@t00ls-dev/config",
+    "Recovery cannot republish completed packages",
+  );
+  assert.equal(remaining[0].version, "0.1.3");
+  return remaining;
+}
+
 export function protectedInputs(tree) {
   assert.equal(tree.truncated, false, "Incomplete protected-input tree");
   assert(shaPattern.test(tree.sha), "Invalid tree identity");
@@ -215,8 +339,11 @@ export function validateReleaseActor(run, workflow, permission, context) {
 
 export function approvalCertificate(packet, actor, runId) {
   return {
-    format: 2,
-    domain: "foundation-npm-snapshot-approval",
+    format: packet.format === 5 ? 3 : 2,
+    domain:
+      packet.format === 5
+        ? "foundation-npm-recovery-approval"
+        : "foundation-npm-snapshot-approval",
     registry,
     access: "public",
     distribution: packet.distribution,
@@ -342,6 +469,19 @@ export function validateAuditRun(audit, jobs, workflowId, context) {
     "Audit used a different executor; new audit required",
   );
   assert.equal(audit.workflow_id, workflowId);
+  if (context.recovery) {
+    assert.equal(audit.status, "completed");
+    assert.equal(audit.repository?.full_name, repository);
+    assert.equal(audit.head_repository?.full_name, repository);
+    assert.equal(audit.path, ".github/workflows/release.yml");
+    const audits = jobs.filter((job) => job.name === "audit");
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].run_id, audit.id);
+    assert.equal(audits[0].run_attempt, 1);
+    assert.equal(audits[0].head_sha, context.executionSha);
+    assert.equal(audits[0].status, "completed");
+    assert.equal(audits[0].conclusion, "success");
+  }
   assert(
     Array.isArray(jobs) &&
       jobs.some((job) => job.name === "audit" && job.conclusion === "success"),
@@ -723,6 +863,11 @@ export function recordFromStatus(
 
 export function validateContext(context, authorization = false) {
   assert(
+    context.recovery === undefined || typeof context.recovery === "boolean",
+    "Invalid recovery mode",
+  );
+  if (context.recovery) validateRecoveryContext(context);
+  assert(
     !Object.hasOwn(context, "expectedSha") &&
       !Object.hasOwn(context, "expected_sha") &&
       context.legacyExpectedSha === undefined,
@@ -1057,6 +1202,7 @@ export function remainingPlan(record, states, mode) {
 }
 
 export function envelopeDigest(packet) {
+  if (packet.format === 5) return digest(packet);
   return digest({
     format: packet.format,
     repository: packet.repository,
@@ -1100,9 +1246,43 @@ export function validatePublishPlan(plan, approved) {
 export function validatePacket(packet, context, record) {
   assert.equal(
     packet.format,
-    4,
+    context.recovery ? 5 : 4,
     "Legacy/unknown authorization envelope; new audit required",
   );
+  if (context.recovery) {
+    validateRecoveryContext(context);
+    assert.equal(packet.recovery?.format, 1);
+    assert.deepEqual(Object.keys(packet.recovery).sort(), [
+      "changes",
+      "format",
+      "source",
+    ]);
+    assert.deepEqual(
+      packet.recovery.source,
+      recoverySource,
+      "Recovery source mismatch",
+    );
+    assert.equal(digest(record), recoverySource.recordDigest);
+    assert.equal(
+      digest(packet.artifacts),
+      recoverySource.artifactsDigest,
+      "Original candidates changed",
+    );
+    assert.equal(
+      digest({
+        releaseSha: context.releaseSha,
+        snapshotSha: context.executionSha,
+        changes: packet.recovery.changes,
+      }),
+      context.changesDigest,
+      "Recovery delta mismatch",
+    );
+  } else {
+    assert(
+      !Object.hasOwn(packet, "recovery"),
+      "Recovery envelope requires explicit mode",
+    );
+  }
   assert.equal(packet.repository, repository);
   assert.equal(packet.registry, registry, "Wrong authorization registry");
   assert.equal(packet.access, "public", "Public authorization required");

@@ -39,6 +39,10 @@ import {
   validateReviewEvidence,
   authenticationMethod,
   observePublication,
+  releaseMode,
+  recoveryRemaining,
+  recoverySource,
+  digest,
 } from "./release-core.mjs";
 import {
   loadNpmConfiguration,
@@ -50,6 +54,10 @@ import {
   treeAtCommit,
 } from "./release-planning.mjs";
 import { approvedCi } from "./ci-evidence.mjs";
+import {
+  validateRecoveryBinding,
+  verifyRecovery,
+} from "./release-recovery.mjs";
 
 const require = createRequire(import.meta.url);
 const recordPath = ".changeset/release-plan.json";
@@ -99,7 +107,7 @@ async function context() {
         ? json(process.env.GITHUB_EVENT_PATH).inputs?.expected_sha
         : undefined),
     masterSha: master.object.sha,
-    mode: process.env.RELEASE_MODE,
+    ...releaseMode(process.env.RELEASE_MODE),
     releasePr: Number(process.env.RELEASE_PR),
     confirmation: process.env.RELEASE_CONFIRMATION,
     planDigest: process.env.PLAN_DIGEST,
@@ -110,6 +118,10 @@ async function context() {
     reviewedChangesDigest: process.env.CHANGES_DIGEST,
   };
   validateContext(value, value.mode !== "audit");
+  assert(
+    !(value.recovery && value.mode === "audit"),
+    "Recovery audit requires the import-only entrypoint",
+  );
   assert.equal(
     run("git", ["rev-parse", "HEAD"]).trim(),
     value.executionSha,
@@ -145,6 +157,10 @@ async function provenance(value) {
     record,
     "Checkout release record differs from release_sha",
   );
+  if (value.recovery) {
+    assert.equal(digest(record), recoverySource.recordDigest);
+    return { record, ...(await validateRecoveryBinding(value, request)) };
+  }
   const pr = await request(`${gh}/pulls/${value.releasePr}`);
   validatePr(pr, value, record);
   assert.deepEqual(
@@ -541,6 +557,7 @@ async function prepare(directory) {
     );
     validateAuditRun(audit, jobs, workflow.id, value);
     validatePacket(packet, value, record);
+    if (value.recovery) await verifyRecovery(directory, packet, value, request);
     if (value.mode !== "approve") {
       const approval = json(join(directory, "approval.json"));
       const run = await request(`${gh}/actions/runs/${value.approvalRun}`);
@@ -582,11 +599,13 @@ async function prepare(directory) {
   const fresh = await inventory(value);
   unchangedPackages(record, fresh);
   const states = reconcile(record, fresh, packet.artifacts, value);
-  const remaining = remainingPlan(
-    record,
-    states,
-    value.mode === "approve" ? "audit" : value.mode,
-  );
+  const remaining = value.recovery
+    ? recoveryRemaining(record, states, value)
+    : remainingPlan(
+        record,
+        states,
+        value.mode === "approve" ? "audit" : value.mode,
+      );
   const computed = changesetsPlan(directory, remaining).plan;
   sourceGates(record);
   await context();
@@ -607,11 +626,17 @@ async function publish(directory) {
   );
   const latest = await inventory(value);
   unchangedPackages(record, latest);
-  const remaining = remainingPlan(
-    record,
-    reconcile(record, latest, packet.artifacts, value),
-    value.mode,
-  );
+  const remaining = value.recovery
+    ? recoveryRemaining(
+        record,
+        reconcile(record, latest, packet.artifacts, value),
+        value,
+      )
+    : remainingPlan(
+        record,
+        reconcile(record, latest, packet.artifacts, value),
+        value.mode,
+      );
   const computed = changesetsPlan(directory, remaining).plan;
   // This exact validated pack directory is consumed; no re-packing or automatic
   // retry. A new remaining plan never includes an already-confirmed version.

@@ -69,6 +69,7 @@ import {
 import { distributionAttempts } from "../../tests/distribution-attempts.mjs";
 import "./ci-reporting.test.mjs";
 import "./release-consumer.test.mjs";
+import "./release-recovery.test.mjs";
 import "./release-exchange-diagnostic.test.mjs";
 import { loadNpmConfiguration } from "./release-consumer.mjs";
 

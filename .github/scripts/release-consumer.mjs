@@ -17,8 +17,11 @@ import {
   validateContext,
   validateReleaseActor,
   validateApproval,
+  releaseMode,
+  validateRecoveryTarget,
 } from "./release-core.mjs";
 import { approvedCi } from "./ci-evidence.mjs";
+import { verifyRecovery } from "./release-recovery.mjs";
 import {
   classifyPublicationFailure,
   createConsumerDiagnostics,
@@ -145,6 +148,7 @@ export async function consumeApprovedArtifact({
     (a) => resolve(packDirectory, a.path) === resolve(path),
   );
   assert(artifact, "Unapproved artifact path");
+  validateRecoveryTarget(artifact, context);
   // Capture a private buffer once. Filesystem changes after capture cannot alter
   // the bytes passed to npm's buffer API, even during authentication/provenance IO.
   const bytes = Buffer.from(await readBytes(path));
@@ -223,6 +227,7 @@ export async function validateConsumerAuthority(
   packet,
   certificate,
   request = (url) => authenticatedJson(url, env.GITHUB_TOKEN),
+  fetcher = fetch,
 ) {
   const api = `https://api.github.com/repos/${repository}`;
   const master = await request(`${api}/git/ref/heads/master`);
@@ -235,7 +240,7 @@ export async function validateConsumerAuthority(
     executionSha: env.EXECUTION_SHA,
     releaseSha: env.RELEASE_SHA,
     releasePr: Number(env.RELEASE_PR),
-    mode: env.RELEASE_MODE,
+    ...releaseMode(env.RELEASE_MODE),
     distribution: env.DISTRIBUTION_MODE,
     confirmation: env.RELEASE_CONFIRMATION,
     planDigest: env.PLAN_DIGEST,
@@ -290,6 +295,15 @@ export async function validateConsumerAuthority(
     packet,
     context,
   );
+  if (context.recovery) {
+    await verifyRecovery(
+      dirname(env.FOUNDATION_APPROVED_PACKET),
+      packet,
+      context,
+      request,
+      fetcher,
+    );
+  }
   assert.equal(
     (await request(`${api}/git/ref/heads/master`)).object.sha,
     context.executionSha,
