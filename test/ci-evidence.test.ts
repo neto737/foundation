@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requireSuccessfulCI, validateCIRun } from "../tools/ci-evidence.js";
+import { DeployDiagnostics } from "../tools/deploy-diagnostics.js";
 
 const sha = "a".repeat(40);
 const run = {
@@ -190,4 +191,93 @@ test("workflows públicos: CI sem secrets, deploy guardado, checkout confiável 
         !file.includes("pull_request_target"),
     );
   }
+});
+
+test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor respostas", async () => {
+  for (const [request, check, category, status] of [
+    [
+      async () => new Response("private-response", { status: 403 }),
+      "consulta da main remota",
+      "falha HTTP",
+      "403",
+    ],
+    [
+      async () => new Response("private-invalid-json"),
+      "consulta da main remota",
+      "resposta inesperada",
+      "200",
+    ],
+    [
+      api({
+        "actions/runs/101/attempts/2/jobs?per_page=100": {
+          total_count: 1,
+          jobs: [
+            {
+              name: "checks",
+              status: "completed",
+              conclusion: "failure",
+              head_sha: sha,
+            },
+          ],
+        },
+      }),
+      "job checks aprovado no SHA",
+      "divergência de configuração",
+      "200",
+    ],
+  ] as const) {
+    const diagnostics = new DeployDiagnostics();
+    diagnostics.phase = "ci";
+    await assert.rejects(
+      requireSuccessfulCI(env, request, diagnostics),
+      (error) => {
+        const message = diagnostics.message(error);
+        assert.ok(
+          message.includes(
+            `etapa: CI aprovada do SHA atual; verificação: ${check}; categoria: ${category}; status HTTP: ${status}`,
+          ),
+        );
+        assert.ok(
+          !message.includes("private-") && !message.includes("synthetic-only"),
+        );
+        return true;
+      },
+    );
+  }
+});
+
+test("CI: preserva a exceção original mesmo quando o diagnóstico recebe Proxy e o sink falha", async () => {
+  let touched = 0;
+  const original = new Proxy(
+    {},
+    {
+      get() {
+        touched++;
+        throw new Error("private-diagnostic-error");
+      },
+    },
+  );
+  const diagnostics = new DeployDiagnostics(() => {
+    throw new Error("private-logger-error");
+  });
+  diagnostics.phase = "ci";
+  let caught: unknown;
+  try {
+    await requireSuccessfulCI(
+      env,
+      async () => {
+        throw original;
+      },
+      diagnostics,
+    );
+  } catch (error) {
+    caught = error;
+    diagnostics.report(error, () => {
+      throw new Error("private-logger-error");
+    });
+  }
+  assert.equal(caught, original);
+  assert.equal(touched, 0);
+  assert.ok(diagnostics.message(caught).includes("categoria: erro de rede"));
+  assert.ok(!diagnostics.message(caught).includes("private-"));
 });
