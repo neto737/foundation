@@ -6,16 +6,13 @@ registry é `https://registry.npmjs.org`; os manifests e Changesets usam
 `public`. Cada package mantém sua versão independente. Raiz, UI, examples, tests
 e tooling, incluindo create-app/doctor, continuam privados para publicação.
 
-**Estado operacional:** os nove targets do bootstrap #30 estão públicos no npm,
-com integridade e `latest` confirmados. A tentativa foi encerrada por decisão
-excepcional do mantenedor, conforme o registro abaixo; o workflow permanece em
-failure e OIDC remoto não está comprovado por essa publicação. Os nove pacotes
-privados duplicados do GitHub Packages, que continham as versões históricas
-`0.1.0`/`0.1.1`, foram excluídos em **15/10/2026**. Os nove pacotes oficiais
-permanecem publicados no npmjs.com. A exclusão não alterou os workflows nem o
-fluxo de publicação; não republique as versões históricas como preparação.
-MIT/notices seguem [Licenças](licensing.md). O deploy continua DEV-only e o
-gerador `basic-d1` não é alterado por esta correção.
+**Estado operacional em 22/10/2026:** os nove pacotes estão públicos no npm. A
+recuperação parcial do PR #136 foi concluída com OIDC, bytes, assinaturas e
+proveniência verificados; seu freeze foi encerrado por autorização do
+mantenedor. Veja o
+[registro histórico](#encerramento-da-recuperação-136--22102026). Esse
+encerramento não autoriza outra publicação nem reutilização de certificados.
+MIT/notices seguem [Licenças](licensing.md); o deploy continua DEV-only.
 
 ## Desenvolvimento e Version Packages
 
@@ -37,6 +34,133 @@ PRs gerados com GITHUB_TOKEN não iniciam CI automaticamente. Valide o head pela
 intervenção humana documentada, revise o plano e espere a CI do merge. O
 checkout do job version preserva temporariamente a credencial para aprofundar o
 histórico Changesets; Release mantém `persist-credentials: false`.
+
+## Roteiro operacional para próximas releases
+
+Este é o **fluxo normal**, com `distribution=release`. Bootstrap e os modos
+`recovery-*` abaixo são exceções com origens fixadas no código; não são o padrão
+para novas versões. Cada operação exige autorização específica do mantenedor.
+
+1. Prepare os Changesets dos pacotes públicos afetados, com bump adequado aos
+   contratos, e integre as alterações pela revisão/CI normais. Aguarde o bot
+   Version Packages, confira versões, changelogs e
+   `.changeset/release-plan.json`. Se a CI do PR bot exigir intervenção humana,
+   revise sua origem antes de autorizar o workflow; aprovação de CI não é
+   aprovação npm. Integre somente o PR de versões validado e aguarde CI/master e
+   DEV do merge.
+2. Registre `release_pr` e seu merge imutável `release_sha`; obtenha o SHA atual
+   de master como `execution_sha`. Confira owner/admin, CI exata, ausência de
+   operação concorrente e o registry dos nove pacotes. Confirme no npm a conta,
+   controle dos nomes e Trusted Publishers por pacote: owner `t00ls-dev`, repo
+   `foundation`, workflow `release.yml`, environment compatível e permissão de
+   publish. Mantenha o pin npm e o runner oficial; não injete tokens de
+   fallback.
+3. Coordene o freeze da master e execute **audit**. Aguarde o run terminal e
+   confira jobs, ZIP/digest, envelope, plano, deltas e cada candidato
+   selecionado no record, com seus manifests e hashes. Registre o `audit_run`,
+   `plan_digest` e `changes_digest` dessa auditoria; não reutilize exemplos
+   antigos.
+4. Após revisão humana dos bytes/deltas e autorização separada, execute
+   **approve** no mesmo executor. Aguarde success e confira o novo
+   `approval.json`, identidade, `approval_run` e vínculo com
+   audit/plano/candidatos. Não troque seu SHA ou digest.
+5. Somente com autorização de envio, execute **publish** pelo workflow oficial.
+   Preflight e publisher revalidam os gates; o consumidor envia os buffers
+   aprovados. Aguarde também a reconciliação terminal, não apenas o dispatch.
+6. Baixe os tarballs publicamente e compare bytes, SHA-256, SHA-512/SRI e
+   metadata com os candidatos. Confira `latest`, assinaturas npm e attestations
+   Sigstore/SLSA: subject/digest, repo/workflow/ref, commit e run/tentativa. Os
+   pacotes fora do plano devem permanecer inalterados. Metadata isolada ou
+   workflow verde não basta. Preserve as evidências e encerre o freeze somente
+   após reconciliação completa e autorização; em falha, siga a seção de resume.
+
+### Inputs e confirmações
+
+Todos os dispatches usam `.github/workflows/release.yml`, ref **master**. Base
+**B** = `mode`, `release_pr`, `release_sha`, `execution_sha`, `distribution`.
+**A** = `audit_run`, `plan_digest`, `changes_digest` obtidos da auditoria
+concluída com success. **P** = `approval_run` concluído com success para esse
+mesmo plano. São strings no payload; nas etapas de release/recuperação, os
+validadores exigem SHAs completos, IDs positivos e os digests exatos. Não envie
+`approval_run` ao aprovar.
+
+| Modalidade           | Inputs                                                        | `confirmation`                              |
+| -------------------- | ------------------------------------------------------------- | ------------------------------------------- |
+| `audit`              | B                                                             | Não exigida; não autoriza envio             |
+| `approve`            | B + A                                                         | `APPROVE_PUBLIC_FOUNDATION_SNAPSHOT`        |
+| `publish` / `resume` | B + A + P                                                     | `PUBLISH_PUBLIC_FOUNDATION_PACKAGES`        |
+| `recovery-audit`     | B, origem excepcional suportada                               | Não exigida                                 |
+| `recovery-approve`   | B + novo A, mesmo executor                                    | `APPROVE_PUBLIC_FOUNDATION_SNAPSHOT`        |
+| `recovery-resume`    | B + novo A + novo P                                           | `PUBLISH_PUBLIC_FOUNDATION_PACKAGES`        |
+| `diagnose-exchange`  | B; `release_pr`/`release_sha` são apenas campos do formulário | `DIAGNOSE_NPM_EXCHANGE_WITHOUT_PUBLICATION` |
+
+O formulário também exige `release_pr`/`release_sha` no diagnóstico, mas eles
+não autorizam publicação nesse modo; o pacote é fixo no script. Não há
+`recovery-publish`, `expected_sha` ou confirmação intercambiável. Tentativa 1 é
+obrigatória nos modos de autorização; um rerun não renova autoridade.
+
+### Exemplos ilustrativos, sem autoridade de publicação
+
+Preencha os valores a partir da release **atual**, não de um incidente anterior.
+Os placeholders abaixo são deliberadamente inválidos até a revisão. O exemplo é
+somente um audit normal; os outros modos acrescentam os inputs da tabela.
+
+```json
+{
+  "ref": "master",
+  "inputs": {
+    "mode": "audit",
+    "release_pr": "NUMERO_DO_PR_REVISADO",
+    "release_sha": "SHA_COMPLETO_DO_MERGE_DE_VERSOES",
+    "execution_sha": "SHA_COMPLETO_ATUAL_DA_MASTER",
+    "distribution": "release"
+  }
+}
+```
+
+Salve como `release-dispatch.json` fora do projeto. **O primeiro comando abaixo
+é uma operação autorizável, não uma verificação de leitura**: execute-o somente
+após os gates e a autorização específica da etapa. Os demais consultam
+evidências. Não repita o POST se a resposta for ambígua; procure o run criado
+antes de decidir.
+
+```sh
+gh api --method POST repos/t00ls-dev/foundation/actions/workflows/release.yml/dispatches --input release-dispatch.json
+gh run list --repo t00ls-dev/foundation --workflow release.yml
+gh run watch "$RUN_ID" --repo t00ls-dev/foundation --exit-status
+gh api "repos/t00ls-dev/foundation/actions/artifacts/$ARTIFACT_ID" --jq '{id,name,digest,expired,expires_at,workflow_run}'
+pnpm exec npm view "$PACOTE@$VERSAO" version dist-tags dist --json --registry=https://registry.npmjs.org
+```
+
+Para conferir o ZIP, baixe o ID oficial com `gh api` no endpoint
+`actions/artifacts/<id>/zip` e compare SHA-256 com `digest` da API antes de ler
+entradas nomeadas. Não execute conteúdo nem extraia paths arbitrários. Para o
+tarball, use a URL HTTPS do registry validada no metadata, sem Authorization, e
+compare `cmp`/SHA-256/SRI com o arquivo aprovado. Assinaturas/proveniência
+exigem verificação criptográfica, além da leitura do JSON: nesta recuperação foi
+usada `pacote.manifest` do npm instalado, com `verifySignatures: true`,
+`verifyAttestations: true`, `fetchRetries: 0` e as chaves públicas de
+`https://registry.npmjs.org/-/npm/v1/keys`, fornecidas em
+`//registry.npmjs.org/:_keys` com o `pemkey` PEM correspondente; depois foram
+conferidos subject, workflow, commit e invocationId SLSA. Não instale
+ferramentas ou use tokens alternativos para contornar uma verificação
+indisponível.
+
+**Antes:** autorização da etapa, master/CI/admin, concorrência/freeze, registry,
+Trusted Publisher e artifacts/certificado/bytes corretos. **Depois:** run
+terminal, plano realmente enviado, reconciliação,
+download/bytes/latest/assinaturas/proveniência e preservação dos demais pacotes.
+Sucesso exige todos esses fatos; inconclusão, divergência ou falha implica
+parada, preservação das evidências e decisão humana.
+
+As referências de implementação são
+[workflow](../../.github/workflows/release.yml),
+[orquestrador](../../.github/scripts/release.mjs),
+[contratos](../../.github/scripts/release-core.mjs),
+[binding Git](../../.github/scripts/release-planning.mjs),
+[CI](../../.github/scripts/ci-evidence.mjs),
+[consumidor](../../.github/scripts/release-consumer.mjs) e
+[credencial/diagnóstico](../../.github/scripts/release-credential.mjs).
 
 ## Primeira distribuição: bootstrap do #30
 
@@ -263,12 +387,11 @@ publishers somente quando os packages existirem e uma release legítima estiver
 pronta para validar a configuração na janela oficial. Não fabricar bumps para
 testar OIDC.
 
-**Pendência atual:** a configuração externa do Trusted Publishing nos nove
-pacotes e a validação remota de OIDC permanecem reservadas para a próxima
-release legítima, na janela oficial. A publicação do bootstrap usou
-`bootstrap-token`; sua proveniência não comprova autenticação de upload por
-OIDC. Não configurar nem testar Trusted Publishing antecipadamente, nem criar
-versões apenas para essa validação.
+A publicação histórica do bootstrap usou `bootstrap-token`, portanto sua
+proveniência não comprova autenticação de upload por OIDC. A release #136 e sua
+recuperação posterior comprovaram OIDC para seus cinco alvos; isso não substitui
+a conferência administrativa dos Trusted Publishers de cada pacote nas próximas
+releases, nem autoriza versões artificiais para testar a configuração.
 
 ## Reconciliação e resume
 
@@ -304,21 +427,33 @@ PR/release_sha/execution_sha/distribuição/digests/audit_run/approval_run.
 Publica somente o restante; se tudo chegou, só reconcilia. Não sobrescreve
 versões, reempacota artifacts ou fabrica bumps.
 
-Master fica congelada desde audit até publicação/resume completos. Avanço depois
-do audit requer novo audit e nova aprovação antes da primeira tentativa. Após
-falha parcial, avanço/exclusão/expiração de artifacts exige recuperação
-explícita dos mesmos bytes, não regeneração. Retenção é 30 dias. Consultas de
-master e registry não são transação atômica; avanço durante tentativa pode
-resultar em publicação parcial e falha de verificação, nunca sucesso silencioso.
+O **freeze é coordenação operacional do mantenedor**, registrada nas evidências:
+manter master no executor auditado e suspender integrações/novos dispatches
+incompatíveis. Não existe flag, comando de unfreeze ou bloqueio de branch criado
+por Release. A concurrency `foundation-private-release` apenas serializa jobs
+Release/version e não substitui essa coordenação. Não altere proteções para
+iniciar ou encerrar o freeze. Após todos os alvos comprovados, ausência de
+Release concorrente e autorização explícita, registre seu encerramento e libere
+somente a coordenação daquela operação; preserve artifacts/certificados e gates
+futuros.
+
+Avanço depois do audit requer nova auditoria/aprovação antes do primeiro envio,
+respeitando protected inputs. Após falha parcial, mantenha executor e originais:
+`resume` normal usa o mesmo snapshot/IDs/digests e não reempacota. Se o executor
+mudar ou a origem estiver indisponível/expirada, pare: não existe recuperação
+genérica por troca de SHA. Os modos excepcionais abaixo aceitam somente a origem
+fixada no código; outras releases exigem avaliação e mecanismo explicitamente
+suportado, não adaptação de certificados. Retenção de artifacts é 30 dias.
+Master e registry não são transação atômica: revalide em cada operação.
 
 ### Recuperação restrita da release #136 após o #140
 
-A release de origem foi parcialmente publicada no executor
-`93fb7de21ce3b57db025a1c8605d65ad75b25798`: audit/auth/db/tenant foram
-concluídos, config `0.1.3` ficou ausente. A integração do #140 altera o executor
-protegido; o certificado antigo **não autoriza** o novo commit. O freeze npm
-continua ativo. Esta capacidade técnica não concede autorização operacional, de
-merge ou de publicação.
+**Caso histórico encerrado em 22/10/2026, não executar novamente.** A origem
+`93fb7de21ce3b57db025a1c8605d65ad75b25798` publicou audit/auth/db/tenant; config
+`0.1.3` foi concluído depois. O #140 e correções posteriores alteraram o
+executor protegido; certificados antigos **não autorizavam** os novos commits. O
+contrato abaixo permanece restrito a essa origem, não é um procedimento genérico
+para a próxima release. Veja o registro de encerramento a seguir.
 
 Somente essa recuperação é suportada. Os anchors imutáveis em `recoverySource`
 fixam o PR #136, os runs audit `39516571800` e approve `39517695207`, artifacts
@@ -402,6 +537,27 @@ freeze e o diagnóstico sanitizado do #140; exige decisão nova, sem retries ou
 token tradicional. Encerre o freeze somente com autorização operacional e
 comprovação integral dos cinco alvos.
 
+### Encerramento da recuperação #136 — 22/10/2026
+
+Por autorização expressa do mantenedor, após reconciliação pública integral, **a
+recuperação e seu freeze operacional estão encerrados**. Os cinco alvos são
+audit `1.0.1`, auth `0.3.1`, config `0.1.3`, db `1.0.1` e tenant `1.0.1`;
+`latest`, bytes originais, SHA-256/SHA-512, assinaturas npm e proveniência foram
+verificados. Os outros quatro pacotes e as attestations dos alvos anteriores
+permanecem inalterados. Não há upload restante autorizado.
+
+Evidências históricas: executor `54601cbdc8fc05bcfcd1d36706afa297e69b0601`,
+[audit 39727767628](https://github.com/t00ls-dev/foundation/actions/runs/39727767628),
+[approve 39728618759](https://github.com/t00ls-dev/foundation/actions/runs/39728618759)
+e
+[resume 39779715207](https://github.com/t00ls-dev/foundation/actions/runs/39779715207),
+todos success/tentativa 1. Apenas config foi enviado pelo último run; seu
+SHA-256 é `d8831160f65313d662e12e02555b841930ffb3346b66b666887773862cc52f0a`. Os
+IDs, hashes, certificados e artifacts permanecem como evidência, **nunca como
+inputs de uma nova release**. Este encerramento libera
+desenvolvimento/integrações normais, não publica pacotes e não dispensa novos
+gates/autorizações no futuro.
+
 ### Encerramento excepcional do bootstrap #30 — 15/10/2026
 
 Por autorização expressa do mantenedor em 15/10/2026, a primeira tentativa de
@@ -476,3 +632,36 @@ de falha.
 Esse diagnóstico não inicia audit/approve/publish/resume e não cria autorização
 para publicar. Mudanças em código de credencial continuam sendo protected inputs
 e invalidam a reutilização de snapshots/certificados incompatíveis.
+
+## Diagnóstico de incidentes conhecidos
+
+Primeiro consulte run/job/step, `npm-release-result`, reconciliation.json e o
+registry por leitura. `FOUNDATION_PUBLISH_BLOCKED` é uma decisão do consumidor,
+não prova de rejeição npm. Preserve os artifacts e a fase/reason sanitizados;
+não registre mensagens/objetos arbitrários, JWTs, tokens, headers ou corpos
+HTTP.
+
+| Evidência                                                  | Interpretação e próximo passo seguro                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trusted Publisher ausente/divergente                       | Mantenedor confere autenticado no npm provider, owner/repo/workflow, environment, permissão publish e validade. Um 401 administrativo anônimo não valida nem invalida essa associação. Pending validation não é expiração por si só; confira a janela exibida. Não altere configuração ou credencial sem autorização.                                                                                                                                                                               |
+| `npm-exchange` com HTTP_REJECTED, 404 ou resposta inválida | Identifique status/reason e compare a associação declarada; 404 sozinho não comprova qual campo está errado. Token ausente/tipo/expiração inválidos são causas distintas. A incompatibilidade histórica de `expires` foi corrigida no #120; não inferir unidade do número nem revogar credenciais por hipótese.                                                                                                                                                                                     |
+| `provenance-transport`                                     | Abrange carregar libnpmpublish, validação local, identidade Sigstore, certificado Fulcio, log Rekor e transporte/rejeição npm. Use `LOCAL_LOAD`, `LOCAL_VALIDATION`, `SIGSTORE_IDENTITY`, `SIGSTORE_IDENTITY_FORMAT`, `SIGSTORE_CERTIFICATE`, `SIGSTORE_LOG`, `NPM_HTTP_REJECTED`, `TRANSPORT_UNATTRIBUTED` ou `UNKNOWN` conforme o enum real. Só NPM_HTTP_REJECTED identifica rejeição HTTP npm reconhecida; rede não identifica o serviço que falhou. Não atribua causa a Sigstore sem evidência. |
+| `authority` / `authorization`                              | Gate amplo: identidade/admin, CI, SHA, certificado, origem, protected inputs, registry e IO local. Não prova falha de Trusted Publishing. Compare contrato e artifacts, reproduza com fixtures sintéticas/cwd equivalente e pare se a causa continuar inconclusiva.                                                                                                                                                                                                                                 |
+| ENOENT do manifest em packages/config                      | Defeito histórico corrigido no #142: recoveryRegistry usava cwd, enquanto Changesets/pnpm chama o consumidor no pacote. A leitura agora é relativa ao módulo/checkout; testes cobrem raiz e packages/config, sem suprimir manifest ausente ou divergente. Não generalize esse diagnóstico para outro erro authority.                                                                                                                                                                                |
+| Incorrect public release confirmation                      | Confira a tabela de inputs antes do dispatch: approve usa APPROVE_PUBLIC_FOUNDATION_SNAPSHOT; publish/resume usam PUBLISH_PUBLIC_FOUNDATION_PACKAGES. Não troque campos de certificado ou guards para aceitar outro valor.                                                                                                                                                                                                                                                                          |
+
+Na recuperação #136, o erro de provenance-transport anterior não preservava a
+exceção original: não se comprovou retrospectivamente sua causa interna. O #140
+adicionou categorias fechadas; o sucesso posterior não demonstra uma correção
+especulativa em Sigstore/npm. Um FileNotFoundError em helper externo de
+relatório também não significa artifact oficial ausente: confira primeiro qual
+arquivo e qual produtor falhou, sem fabricar substitutos. O guard oficial
+continuou intacto.
+
+Falha de upload/exchange, metadata/bytes divergentes, config já existente na
+recuperação restrita, origem expirada, executor/CI/autoridade inválidos ou
+observação inconclusiva exigem **parada**, preservação do freeze e nova decisão.
+Uma falha não autoriza retry, rerun, outro dispatch, token alternativo, nova
+versão ou regeneração. Se o subprocesso aceitou o envio, aguarde somente as
+observações de leitura limitadas já implementadas; ausência persistente não vira
+sucesso.

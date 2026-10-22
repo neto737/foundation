@@ -5,7 +5,8 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão do estado de publicação e automação: 16 de outubro de 2026.
+Última revisão: publicação npm em 22 de outubro de 2026; demais registros de
+automação em 16 de outubro de 2026.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
@@ -65,16 +66,20 @@ da primeira entrega.
 
 Os nove pacotes tiveram as versões históricas `0.1.0` e `0.1.1` privadas no
 GitHub Packages; esses pacotes duplicados foram excluídos em **15/10/2026**.
-Internamente são consumidos com `workspace:*`. Os nove pacotes oficiais
-permanecem públicos no npmjs.com, no scope do usuário `t00ls-dev`, sem
-organização/publicação dupla: `auth`/`security` `0.2.0`, demais `0.1.2`. A
-exclusão não alterou os workflows nem o fluxo de publicação. A configuração
-externa do Trusted Publishing e a validação remota de OIDC permanecem pendentes,
-reservadas para a próxima release legítima, sem ativação ou teste antecipado.
-Release permanece manual e explicitamente autorizado. Código-fonte público não
-torna automaticamente os pacotes públicos; seu acesso depende das permissões e
-da herança administrativas. Os demais workspaces com `private: true` não são
-publicados no registry, embora seu código esteja público.
+Internamente são consumidos com `workspace:*`. Os nove pacotes oficiais têm
+acesso público no npmjs.com, no scope do usuário `t00ls-dev`, sem
+organização/publicação dupla: audit/db/tenant `1.0.1`, auth `0.3.1`, config
+`0.1.3`, security `0.2.0` e access/email/observability `0.1.2`.
+
+Em **22/10/2026**, a recuperação do PR #136 concluiu os cinco alvos com OIDC,
+bytes, assinaturas e proveniência verificados; o freeze operacional dessa
+recuperação foi encerrado por autorização do mantenedor. O
+[runbook de pacotes](runbooks/packages.md#roteiro-operacional-para-próximas-releases)
+registra o fluxo normal e as evidências históricas. Isso não autoriza novo envio
+nem dispensa a conferência atual dos Trusted Publishers de cada alvo. Release
+permanece manual e explicitamente autorizado. Os demais workspaces com
+`private: true` não são publicados no registry, embora seu código esteja
+público.
 
 Os nove registros adicionais `0.0.0-stage` são placeholders de staging do npm,
 sem a API operacional Foundation. A decisão de 16/10/2026 é mantê-los, sem
