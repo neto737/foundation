@@ -7,7 +7,15 @@ on:
         description:
           Audit, approval, publication or isolated credential diagnostic
         type: choice
-        options: [audit, approve, publish, resume, diagnose-exchange]
+        options:
+          - audit
+          - approve
+          - publish
+          - resume
+          - recovery-audit
+          - recovery-approve
+          - recovery-resume
+          - diagnose-exchange
         default: audit
         required: true
       release_pr:
@@ -74,7 +82,9 @@ env:
 
 jobs:
   audit:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'audit'
+    if: >-
+      github.event_name == 'workflow_dispatch' && (inputs.mode == 'audit' ||
+      inputs.mode == 'recovery-audit')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,28 +95,48 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+        if: inputs.mode == 'audit'
+      - uses: actions/setup-node@v7
+        if: inputs.mode == 'recovery-audit'
+        with:
+          node-version: 22.23.3
       - name: Validate historical provenance and proposed exact snapshot
+        if: inputs.mode == 'audit'
         run: node .github/scripts/release.mjs context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build the proposed audit artifacts
+        if: inputs.mode == 'audit'
         run: pnpm --filter './packages/*' -r build
       - name:
           Inspect public registry and prepare exact artifacts and review
           evidence
+        if: inputs.mode == 'audit'
         id: plan
         run: node .github/scripts/release.mjs prepare "$RUNNER_TEMP/npm-release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name:
+          Import and audit original recovery candidates without install or pack
+        if: inputs.mode == 'recovery-audit'
+        id: recovery
+        run:
+          node .github/scripts/release-recovery.mjs "$RUNNER_TEMP/npm-release"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: foundation-release-${{ steps.plan.outputs.plan_digest }}
+          name:
+            foundation-release-${{ steps.plan.outputs.plan_digest ||
+            steps.recovery.outputs.plan_digest }}
           path: ${{ runner.temp }}/npm-release/
           if-no-files-found: error
           retention-days: 30
 
   approve:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'approve'
+    if: >-
+      github.event_name == 'workflow_dispatch' && (inputs.mode == 'approve' ||
+      inputs.mode == 'recovery-approve')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -142,7 +172,7 @@ jobs:
   preflight:
     if: >-
       github.event_name == 'workflow_dispatch' && (inputs.mode == 'publish' ||
-      inputs.mode == 'resume')
+      inputs.mode == 'resume' || inputs.mode == 'recovery-resume')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -183,7 +213,8 @@ jobs:
     if: >-
       ${{ github.event_name == 'workflow_dispatch' && github.ref ==
       'refs/heads/master'
-          && (inputs.mode == 'publish' || inputs.mode == 'resume')
+          && (inputs.mode == 'publish' || inputs.mode == 'resume' || inputs.mode
+      == 'recovery-resume')
           && inputs.confirmation == 'PUBLISH_PUBLIC_FOUNDATION_PACKAGES'
           && inputs.execution_sha == github.sha && needs.preflight.result ==
       'success' }}

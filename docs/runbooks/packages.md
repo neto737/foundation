@@ -68,7 +68,8 @@ exigem predecessor e `latest` realmente existentes no npm.
 Release continua exclusivamente `workflow_dispatch` em master. Os inputs são:
 
 - `mode`: `audit`, `approve`, `publish`, `resume` ou o diagnóstico isolado
-  `diagnose-exchange`;
+  `diagnose-exchange`; recuperação explícita usa `recovery-audit`,
+  `recovery-approve` e `recovery-resume`, conforme a seção específica;
 - `release_pr` e `release_sha`: PR Version Packages e seu merge imutável;
 - `execution_sha`: snapshot/executor exato, igual ao workflow, checkout e
   master;
@@ -309,6 +310,97 @@ falha parcial, avanço/exclusão/expiração de artifacts exige recuperação
 explícita dos mesmos bytes, não regeneração. Retenção é 30 dias. Consultas de
 master e registry não são transação atômica; avanço durante tentativa pode
 resultar em publicação parcial e falha de verificação, nunca sucesso silencioso.
+
+### Recuperação restrita da release #136 após o #140
+
+A release de origem foi parcialmente publicada no executor
+`93fb7de21ce3b57db025a1c8605d65ad75b25798`: audit/auth/db/tenant foram
+concluídos, config `0.1.3` ficou ausente. A integração do #140 altera o executor
+protegido; o certificado antigo **não autoriza** o novo commit. O freeze npm
+continua ativo. Esta capacidade técnica não concede autorização operacional, de
+merge ou de publicação.
+
+Somente essa recuperação é suportada. Os anchors imutáveis em `recoverySource`
+fixam o PR #136, os runs audit `39516571800` e approve `39517695207`, artifacts
+`12306989280` e `12309375138`, hashes dos ZIPs, envelope, certificado, record e
+cinco candidatos originais. O restante precisa ser exclusivamente
+`@t00ls-dev/config@0.1.3`, com SHA-256
+`d8831160f65313d662e12e02555b841930ffb3346b66b666887773862cc52f0a`. Não existe
+input para trocar a origem ou escolher outro pacote.
+
+O workflow e os inputs históricos permanecem os mesmos. A modalidade é explícita
+e exige três dispatches **separadamente autorizados**:
+
+1. Após revisão e integração autorizada da implementação, aguarde a CI
+   push/master e DEV do executor final **E**. Congele master em E. Revise
+   integralmente o delta entre o snapshot original e E.
+2. `mode=recovery-audit`, `release_pr=136`, `release_sha` original,
+   `execution_sha=E`, `distribution=release`: importa os ZIPs oficiais por IDs,
+   confere metadata/origem, hashes, identidade/jobs/tentativa/autoridade,
+   certificado e plano históricos. Não instala dependências, executa build,
+   pack, scripts dos artifacts ou exchange OIDC. Usa Node e unzip do runner;
+   copia os cinco .tgz sem alterar bytes e verifica os quatro tarballs públicos.
+3. Revise o artifact `foundation-release-<novo plan_digest>`, summary,
+   `reviewed-changes.json`, `recovery-inventory.json`, os cinco hashes e a
+   cadeia de origem. Registre o **novo audit_run**, plan_digest e
+   changes_digest.
+4. `mode=recovery-approve`, mesmos SHAs/distribuição e **novos** audit_run e
+   digests, `confirmation=APPROVE_PUBLIC_FOUNDATION_SNAPSHOT`: o owner/admin
+   atual emite nova aprovação. Não executa publicação. Revise o certificado e
+   registre o **novo approval_run** concluído com success.
+5. Somente após autorização adicional: `mode=recovery-resume`, os mesmos inputs
+   novos, novo approval_run e `confirmation=PUBLISH_PUBLIC_FOUNDATION_PACKAGES`.
+   Preflight, publisher e consumidor validam a cadeia completa novamente. O
+   transporte existente recebe somente config `0.1.3`; os outros quatro são
+   bloqueados também no consumidor, antes da credencial. Não há modo
+   recovery-publish.
+
+O envelope de recuperação é **format 5**, com `recovery.format=1`. Seu digest
+inclui o objeto inteiro: origem fixada, lista completa de deltas, executor,
+protected inputs atuais, novo audit e os cinco candidatos. `snapshotSha` é o
+executor atual; o snapshot original de construção permanece explícito em
+`recovery.source.executionSha`. O certificado novo é **format 3**, domínio
+`foundation-npm-recovery-approval`, e vincula esse envelope integral. Os ZIPs,
+envelope e certificado originais permanecem intactos em `source/` como prova
+histórica; não são reutilizados como autoridade de upload no novo executor.
+
+A projeção ordinária e suas seis exceções não mudam. Só a recuperação aceita um
+delta em uma lista fechada de arquivos do executor, testes/fixtures e este
+runbook; todos os outros inputs, inclusive packages, manifests, lockfile e
+record, permanecem idênticos à origem. Paths/modos/tipos/OIDs de **todo** delta
+entram no changes_digest revisado e na nova aprovação. Avançar E depois da nova
+auditoria volta a invalidar a autoridade. Não substitua um SHA ou digest antigo
+pelo novo em um certificado existente.
+
+A importação mantém a disponibilidade/proveniência dos artifacts originais como
+gate, inclusive expiração. As cópias ZIP em fixtures são apenas evidências
+públicas imutáveis para testes offline, não fallback operacional. Não se aceita
+recuperar de fixtures, cache ou cópia local quando a origem oficial estiver
+indisponível. Requer decisão separada antes de qualquer outro mecanismo.
+
+Antes de cada operação, reconcilie os nove pacotes e confirme os quatro
+concluídos/latest/bytes e config ausente/latest `0.1.2`. Se config já existir,
+**pare para reconciliação humana**, mesmo com bytes iguais. Divergência,
+artifact expirado/ausente, falta de autoridade, outro restante, CI inválida ou
+mudança de master bloqueia. Uma falha de recuperação não autoriza novo dispatch:
+não há retry, fallback ou rerun automático.
+
+O publisher continua em GitHub-hosted runner com OIDC por pacote,
+provenance=true, registry oficial/public/latest e o consumidor buffer-only. A
+configuração externa de Trusted Publishing deve ser conferida pelo mantenedor;
+não há alteração administrativa nem ensaio de autenticação neste mecanismo. A
+proveniência nova referenciará E e o novo run; o subject deve conferir com o
+tarball original, e a evidência de recuperação preserva a ligação com o audit de
+construção histórico. Não altere as variáveis GitHub para simular o run antigo
+nem as attestations dos quatro pacotes publicados.
+
+Após eventual envio, aguarde o workflow integral e reconciliação. Baixe config
+publicamente, compare os bytes originais, SHA-256/SHA-512, latest, assinaturas e
+proveniência. Reconfirme os outros quatro e os quatro pacotes fora da release.
+Metadados isolados não comprovam sucesso. Falha de OIDC/transporte conserva o
+freeze e o diagnóstico sanitizado do #140; exige decisão nova, sem retries ou
+token tradicional. Encerre o freeze somente com autorização operacional e
+comprovação integral dos cinco alvos.
 
 ### Encerramento excepcional do bootstrap #30 — 15/10/2026
 
