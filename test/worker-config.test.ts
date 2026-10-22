@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
+import {
+  membersAvailable,
+  readMembersDevOrganizations,
+} from "../src/member-access.js";
 import { workerOptions, type WorkerEnv } from "../src/worker-config.js";
 import { devMigrationTarget } from "../tools/dev-migration-config.js";
 import { createApp } from "../src/app.js";
@@ -129,4 +133,90 @@ test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem
       /Migração DEV recusada/,
     );
   assert.throws(() => devMigrationTarget({}));
+});
+
+const syntheticOrganization = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
+test("recorte DEV: configuração ausente, vazia ou parcialmente inválida falha fechada", () => {
+  for (const value of [
+    undefined,
+    "",
+    " ",
+    "*",
+    "invalid",
+    "[]",
+    syntheticOrganization + ",",
+    syntheticOrganization + ",invalid",
+    "0".repeat(36),
+    (syntheticOrganization + ",").repeat(120),
+    null,
+    [syntheticOrganization],
+  ]) {
+    assert.deepEqual(readMembersDevOrganizations(value), []);
+  }
+  for (const value of [
+    undefined,
+    "",
+    " ",
+    "invalid",
+    syntheticOrganization + ",invalid",
+  ]) {
+    const options = workerOptions({
+      ...env,
+      ...(value === undefined ? {} : { LEVI_MEMBERS_DEV_ORGANIZATIONS: value }),
+    });
+    assert.equal(membersAvailable(options, syntheticOrganization), false);
+  }
+});
+test("recorte DEV: CSV válido normaliza UUIDs, sem conceder acesso a outras organizações/origens", () => {
+  const options = workerOptions({
+    ...env,
+    LEVI_MEMBERS_DEV_ORGANIZATIONS:
+      " " + syntheticOrganization.toUpperCase() + "," + syntheticOrganization,
+  });
+  assert.deepEqual(options.membersDevOrganizations, [syntheticOrganization]);
+  assert.equal(options.membersEnabled, undefined);
+  assert.equal(membersAvailable(options, syntheticOrganization), true);
+  assert.equal(
+    membersAvailable(options, "1a61d0dd-ea54-4f23-9550-d8ca4b353b71"),
+    false,
+  );
+  for (const origin of [
+    "https://other.example.test",
+    "https://levi.t00ls.dev.example.test",
+    "https://www.levi.t00ls.dev",
+    "https://levi.t00ls.dev:8443",
+  ]) {
+    assert.equal(
+      membersAvailable(
+        workerOptions({
+          ...env,
+          LEVI_PUBLIC_ORIGIN: origin,
+          LEVI_MEMBERS_DEV_ORGANIZATIONS: syntheticOrganization,
+        }),
+        syntheticOrganization,
+      ),
+      false,
+    );
+    assert.equal(
+      membersAvailable(
+        workerOptions(
+          { ...env, LEVI_MEMBERS_DEV_ORGANIZATIONS: syntheticOrganization },
+          origin,
+        ),
+        syntheticOrganization,
+      ),
+      false,
+    );
+    assert.equal(
+      membersAvailable({ ...options, baseURL: origin }, syntheticOrganization),
+      false,
+    );
+  }
+  assert.equal(
+    membersAvailable(
+      { ...options, baseURL: "http://localhost:3000", membersEnabled: true },
+      syntheticOrganization,
+    ),
+    true,
+  );
 });

@@ -3,6 +3,7 @@ import type { FoundationSession } from "@t00ls-dev/auth";
 import { createAuditEvent } from "@t00ls-dev/audit";
 import { createPostgresAuditStore } from "@t00ls-dev/audit/postgres";
 import { and, asc, eq, gt, ilike } from "drizzle-orm";
+import { membersAvailable, type MemberAccessOptions } from "./member-access.js";
 import type { Database } from "./auth.js";
 import { RequestError } from "./contracts.js";
 import { access, organizationContext } from "./organizations.js";
@@ -22,6 +23,7 @@ async function context(
   database: Database,
   identity: FoundationSession,
   permission: "members:read" | "members:create",
+  options: MemberAccessOptions,
 ) {
   const current = await organizationContext(database, identity);
   if (current.role !== "admin" || !access.can(current.role, permission))
@@ -30,6 +32,7 @@ async function context(
       "ACESSO_NEGADO",
       "O vínculo administrativo não permite esta operação.",
     );
+  if (!membersAvailable(options, current.tenantId)) notFound();
   return current;
 }
 const churchJoin = and(
@@ -43,8 +46,9 @@ export async function listMembers(
   database: Database,
   identity: FoundationSession,
   filters: ReturnType<typeof readMemberFilters>,
+  options: MemberAccessOptions,
 ) {
-  const current = await context(database, identity, "members:read");
+  const current = await context(database, identity, "members:read", options);
   // Escapa curingas: nome é trecho literal, sem distinção de caixa e sem busca global.
   const literalName = filters.name.replace(/[\\%_]/g, "\\$&");
   const rows = await database.db
@@ -80,8 +84,9 @@ export async function findMember(
   database: Database,
   identity: FoundationSession,
   id: string,
+  options: MemberAccessOptions,
 ) {
-  const current = await context(database, identity, "members:read");
+  const current = await context(database, identity, "members:read", options);
   const [row] = await database.db
     .select({ member: members, churchName: churches.name })
     .from(members)
@@ -103,8 +108,9 @@ export async function createMember(
   identity: FoundationSession,
   input: Required<MemberInput>,
   requestKey: string,
+  options: MemberAccessOptions,
 ) {
-  const current = await context(database, identity, "members:create");
+  const current = await context(database, identity, "members:create", options);
   const requestHash = createHash("sha256")
     .update(JSON.stringify(input))
     .digest("hex");
@@ -225,8 +231,9 @@ export async function findMemberRequest(
   database: Database,
   identity: FoundationSession,
   requestKey: string,
+  options: MemberAccessOptions,
 ) {
-  const current = await context(database, identity, "members:read");
+  const current = await context(database, identity, "members:read", options);
   const [receipt] = await database.db
     .select({ memberId: memberCreationRequests.memberId })
     .from(memberCreationRequests)

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
+import { readMembersDevOrganizations } from "../src/member-access.js";
 import { workerOptions } from "../src/worker-config.js";
 
 export const deployOrigin = "https://levi.t00ls.dev";
@@ -62,6 +63,7 @@ export function verifyHyperdrive(
 export function deploymentConfig(
   base: Record<string, any>,
   hyperdrive: string,
+  membersDevOrganizations?: string,
 ) {
   assert.equal(base.name, deployWorker);
   assert.equal(base.workers_dev, false);
@@ -83,6 +85,12 @@ export function deploymentConfig(
     assets: { ...base.assets, directory: resolve(base.assets.directory) },
     hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdrive }],
     routes: [{ pattern: new URL(deployOrigin).hostname, custom_domain: true }],
-    vars: { ...base.vars, LEVI_PUBLIC_ORIGIN: deployOrigin },
+    vars: {
+      ...base.vars,
+      LEVI_PUBLIC_ORIGIN: deployOrigin,
+      LEVI_MEMBERS_DEV_ORGANIZATIONS: readMembersDevOrganizations(
+        membersDevOrganizations,
+      ).join(","),
+    },
   };
 }

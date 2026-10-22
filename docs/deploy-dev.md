@@ -89,7 +89,10 @@ solicita o valor interativamente.
 
 Variables do environment `dev`: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`,
 `LEVI_DEV_DATABASE_HOST`, `LEVI_DEV_DATABASE_NAME`, `LEVI_EMAIL_FROM` e
-`LEVI_DEV_READY`. Os IDs são obtidos de recursos reais; host direto Neon e banco
+`LEVI_DEV_READY`. A variable opcional `LEVI_MEMBERS_DEV_ORGANIZATIONS` controla
+somente o recorte sintético de membros, conforme [Gestão de membros](gestao-membros.md#habilitação-e-limites);
+ausente/vazia/inválida mantém o módulo desabilitado e não altera a chave de deploy.
+Os IDs são obtidos de recursos reais; host direto Neon e banco
 `levi_dev` ou prefixo permitido. A habilitação `LEVI_DEV_DEPLOY_ENABLED` é uma
 variable **do repositório**, avaliada antes de entrar no environment.
 

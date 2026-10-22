@@ -162,6 +162,7 @@ async function simulatedDeploy(
     cleanupError?: Error;
     failProgress?: boolean;
     failReport?: boolean;
+    membersDevOrganizations?: string;
   } = {},
 ) {
   const source = await readFile("tools/deploy-dev.ts", "utf8");
@@ -169,10 +170,14 @@ async function simulatedDeploy(
   const output: string[] = [];
   const requests: string[] = [];
   const writes: { path: string; mode: number }[] = [];
+  let writtenMembersDevOrganizations: string | undefined;
   let uploads = 0;
   let cleanups = 0;
   const fakeProcess = {
-    env: { ...valid },
+    env: {
+      ...valid,
+      LEVI_MEMBERS_DEV_ORGANIZATIONS: options.membersDevOrganizations,
+    },
     execPath: process.execPath,
     exitCode: 0,
   };
@@ -262,10 +267,13 @@ async function simulatedDeploy(
       mkdtemp: async () => ".local/deploy-synthetic-only",
       writeFile: async (
         path: string,
-        _contents: string,
+        contents: string,
         settings: { mode: number },
       ) => {
         writes.push({ path, mode: settings.mode });
+        if (path.endsWith("wrangler.json"))
+          writtenMembersDevOrganizations = JSON.parse(contents).vars
+            .LEVI_MEMBERS_DEV_ORGANIZATIONS as string;
       },
       rm: async () => {
         cleanups++;
@@ -324,6 +332,7 @@ async function simulatedDeploy(
     uploads,
     cleanups,
     writes,
+    writtenMembersDevOrganizations,
     exitCode: fakeProcess.exitCode,
   };
 }
@@ -755,4 +764,53 @@ test("diagnóstico: status público reprovado é HTTP mesmo se cabeçalhos falta
     ),
   );
   assert.ok(!failure.output.includes("private-"));
+});
+
+test("deploy propaga apenas o recorte explícito e limpa configuração herdada quando ausente/inválida", async () => {
+  const parsed = ts.parseConfigFileTextToJson(
+    "wrangler.jsonc",
+    await readFile("wrangler.jsonc", "utf8"),
+  );
+  const id = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
+  const base = {
+    ...parsed.config,
+    vars: { ...parsed.config.vars, LEVI_MEMBERS_DEV_ORGANIZATIONS: id },
+  };
+  for (const value of [undefined, "", "invalid", id + ",invalid"]) {
+    assert.equal(
+      deploymentConfig(base, valid.LEVI_HYPERDRIVE_ID!, value).vars
+        .LEVI_MEMBERS_DEV_ORGANIZATIONS,
+      "",
+    );
+  }
+  assert.equal(
+    deploymentConfig(
+      base,
+      valid.LEVI_HYPERDRIVE_ID!,
+      " " + id.toUpperCase() + " ",
+    ).vars.LEVI_MEMBERS_DEV_ORGANIZATIONS,
+    id,
+  );
+  const workflow = await readFile(".github/workflows/deploy-dev.yml", "utf8");
+  assert.ok(
+    workflow.includes(
+      "LEVI_MEMBERS_DEV_ORGANIZATIONS: ${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}",
+    ),
+  );
+  assert.ok(workflow.includes("environment: dev"));
+});
+
+test("script de deploy transmite o recorte à configuração temporária sem publicar no harness", async () => {
+  const id = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
+  for (const value of [undefined, "invalid", " " + id.toUpperCase() + " "]) {
+    const result = await simulatedDeploy(
+      value === undefined ? {} : { membersDevOrganizations: value },
+    );
+    assert.equal(result.exitCode, 0);
+    assert.equal(
+      result.writtenMembersDevOrganizations,
+      value?.trim().toLowerCase() === id ? id : "",
+    );
+    assert.ok(!result.output.includes(id));
+  }
 });

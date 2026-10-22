@@ -1,4 +1,4 @@
-# Gestão de membros — primeira fatia local
+# Gestão de membros — primeira fatia
 
 Implementa cadastro, listagem paginada, filtros e ficha individual. O escopo
 pessoal e as invariantes continuam em [Decisões do MVP](decisoes-mvp.md).
@@ -10,10 +10,47 @@ aniversariantes, indicadores, convites ou associação automática a contas.
 A composição `createApp` recebe `membersEnabled`, desabilitado por padrão.
 O executável Node local habilita a fatia apenas com `LEVI_LOCAL_DATABASE=1`,
 conservando suas guardas de origem/banco local e servidor em loopback. Os harnesses
-sintéticos a habilitam explicitamente. **O Worker não a habilita**, não há binding
-ou configuração remota nova: as APIs de membros retornam `404` e a navegação não
-oferece membros nesse ambiente. `/api/context` informa `membersEnabled` ao cliente.
-A presença das rotas da SPA no bundle não concede acesso às APIs.
+sintéticos a habilitam explicitamente. O Worker nunca recebe esse booleano.
+
+No Worker, `LEVI_MEMBERS_DEV_ORGANIZATIONS` é uma configuração **não secreta** do
+environment `dev`, com UUIDs de organizações sintéticas separados por vírgula.
+Espaços nas extremidades e letras maiúsculas são normalizados; duplicatas são
+removidas. Ausente, vazia, acima de 4096 caracteres ou com qualquer item inválido
+(inclusive item vazio, separador final, JSON ou curinga) desabilita o conjunto
+inteiro. Aceita UUIDs canônicos com versão 1–8 e variante RFC, compatíveis com os
+UUIDs gerados pelo servidor. Não colocar UUIDs de ambientes no repositório.
+
+A lista só tem efeito quando tanto a origem configurada quanto a origem da URL da
+requisição são exatamente `https://levi.t00ls.dev`. Outras origens permanecem
+bloqueadas. Headers, query e corpo não fornecem essa configuração. O Worker deriva
+a configuração dos bindings; ela não vem do cliente. Produção não recebe uma
+habilitação global.
+
+`/api/context` informa `membersEnabled` somente após sessão pronta, organização
+ativa e membership administrativo atual. A mesma decisão é aplicada a todas as
+APIs de membros, inclusive recibos. O middleware recusa antes de validar entrada;
+cada operação revalida o recorte no contexto que usará na persistência, evitando
+que uma troca concorrente de tenant aproveite uma decisão anterior. Sem recorte,
+as APIs retornam `404` sem consultar tabelas de membros, mantendo compatibilidade
+com o schema anterior. Com recorte válido, anônimo recebe `401`, vínculo revogado
+ou role desconhecida `403`, e administrador fora do recorte `404`. A SPA oculta a
+navegação quando a capacidade é falsa e limpa dados ao revalidar contexto/acesso;
+sem canal de push, mudanças externas são conhecidas na próxima revalidação.
+
+A lista não concede membership, não prova que uma organização contém apenas dados
+sintéticos e não substitui a autorização Foundation. A seleção e verificação das
+fixtures são responsabilidade operacional. Antes de qualquer habilitação, aplicar
+a migration pendente em operação separada e explicitamente autorizada; permitir
+uma organização com schema anterior causará falha de operação, não migration
+automática.
+
+O workflow DEV propaga a variable para a configuração temporária gerada pelo
+deploy. Ausência/erro escreve valor vazio explicitamente, sem herdar recorte antigo
+do arquivo base. A configuração Wrangler raiz permanece sem UUIDs e desabilitada.
+Mudar a variable GitHub não modifica o Worker já publicado: habilitação **e
+retirada do recorte** exigem novo deploy autorizado. `LEVI_DEV_DEPLOY_ENABLED` e os
+gatilhos existentes não foram alterados. A presença das rotas da SPA no bundle não
+concede acesso às APIs. Ver [Deploy DEV](deploy-dev.md) para as guardas operacionais.
 
 Esta entrega não autoriza dados reais, migrations persistentes ou deploy. Usar
 somente dados sintéticos em bancos isolados. Retenção, eliminação, direitos dos

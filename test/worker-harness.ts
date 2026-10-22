@@ -18,7 +18,11 @@ export interface CapturedEmail {
   from: string;
 }
 
-export async function workerHarness(databaseUrl: string) {
+export async function workerHarness(
+  databaseUrl: string,
+  options: { membersDevOrganizations?: string; publicOrigin?: string } = {},
+) {
+  const origin = options.publicOrigin ?? workerOrigin;
   const url = new URL(databaseUrl);
   if (
     process.env.LEVI_LOCAL_DATABASE !== "1" ||
@@ -57,7 +61,10 @@ export async function workerHarness(databaseUrl: string) {
       inspectorPort: 0,
       assets: { ...config.assets, routerConfig: { has_user_worker: true } },
       bindings: {
-        LEVI_PUBLIC_ORIGIN: workerOrigin,
+        LEVI_PUBLIC_ORIGIN: origin,
+        ...(options.membersDevOrganizations !== undefined
+          ? { LEVI_MEMBERS_DEV_ORGANIZATIONS: options.membersDevOrganizations }
+          : {}),
         LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
         RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
         LEVI_EMAIL_FROM: "Levi <levi@example.test>",
@@ -86,21 +93,18 @@ export async function workerHarness(databaseUrl: string) {
     cookie = "",
     headers: Record<string, string> = {},
   ) => {
-    const response = await mf.dispatchFetch(
-      new URL(path, workerOrigin).toString(),
-      {
-        method: body ? "POST" : "GET",
-        redirect: "manual",
-        headers: {
-          origin: workerOrigin,
-          "cf-connecting-ip": `192.0.2.${(++clientNumber % 250) + 1}`,
-          cookie,
-          "content-type": "application/json",
-          ...headers,
-        },
-        ...(body ? { body: JSON.stringify(body) } : {}),
+    const response = await mf.dispatchFetch(new URL(path, origin).toString(), {
+      method: body ? "POST" : "GET",
+      redirect: "manual",
+      headers: {
+        origin,
+        "cf-connecting-ip": `192.0.2.${(++clientNumber % 250) + 1}`,
+        cookie,
+        "content-type": "application/json",
+        ...headers,
       },
-    );
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
     // Normaliza para a API Web do Node sem expor valores em logs.
     return new Response(response.body as unknown as BodyInit, {
       status: response.status,

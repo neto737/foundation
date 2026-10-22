@@ -49,6 +49,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           LEVI_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || inputs.execution_sha }}
+          LEVI_MEMBERS_DEV_ORGANIZATIONS: ${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}
           LEVI_DEV_READY: ${{ vars.LEVI_DEV_READY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
