@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createApp } from "../src/app.js";
 import { mountWeb } from "../src/web.js";
+import { applicationDatabaseUrl } from "../test/runtime-acl-fixture.js";
 
 const databaseUrl = process.env.LEVI_DATABASE_URL;
 const directory = process.env.LEVI_TEST_MAIL_DIR;
@@ -13,7 +14,7 @@ const proxy = process.argv.includes("--proxy-api");
 const port = proxy ? 4318 : 4317;
 const app = createApp({
   membersEnabled: true,
-  databaseUrl,
+  databaseUrl: applicationDatabaseUrl(databaseUrl),
   baseURL: `http://localhost:${proxy ? 5173 : port}`,
   onboardingReturnPath: "/onboarding",
   secret: "synthetic-test-secret-with-more-than-32-characters",

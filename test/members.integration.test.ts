@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { createApp } from "../src/app.js";
+import { applicationDatabaseUrl } from "./runtime-acl-fixture.js";
 
 const databaseUrl = process.env.LEVI_DATABASE_URL;
 if (
@@ -20,7 +21,7 @@ after(async () => {
 const origin = "http://localhost:3000";
 const sent: { to: string; text: string }[] = [];
 const options = {
-  databaseUrl,
+  databaseUrl: applicationDatabaseUrl(databaseUrl),
   baseURL: origin,
   secret: "synthetic-members-secret-with-more-than-32-characters",
   email: {
@@ -566,6 +567,73 @@ test("membros PostgreSQL: habilitação é opt-in local e não muda o onboarding
     ).status,
     404,
   );
+});
+
+test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes na própria conexão da aplicação", async () => {
+  const who = await account();
+  const dates = {
+    birthDate: "2000-02-29",
+    joinedOn: "2026-10-24",
+    baptismDate: "2020-01-01",
+  };
+  for (const zone of [
+    "Pacific/Kiritimati",
+    "America/Sao_Paulo",
+    "Pacific/Pago_Pago",
+  ]) {
+    const zonedUrl = new URL(options.databaseUrl);
+    zonedUrl.searchParams.set("options", `-c timezone=${zone}`);
+    const zonedApp = createApp({
+      ...options,
+      databaseUrl: zonedUrl.toString(),
+      membersEnabled: true,
+    });
+    const send = (path: string, body?: object) =>
+      zonedApp.request(
+        new Request(new URL(path, origin), {
+          method: body ? "POST" : "GET",
+          headers: {
+            origin,
+            cookie: who.cookie,
+            "Content-Type": "application/json",
+            "Idempotency-Key": randomUUID(),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        }),
+      );
+    const response = await send("/api/members", {
+      name: "Pessoa sintética com datas civis",
+      churchId: who.churchId,
+      status: "Ativo",
+      ...dates,
+    });
+    assert.equal(response.status, 201);
+    const { memberId } = await response.json();
+    const detail = await send(`/api/members/${memberId}`);
+    assert.equal(detail.status, 200);
+    const { member } = await detail.json();
+    for (const [key, value] of Object.entries(dates))
+      assert.equal(member[key], value);
+    assert.deepEqual(
+      (
+        await observer.client.query(
+          "SELECT birth_date::text,joined_on::text,baptism_date::text FROM members WHERE id=$1",
+          [memberId],
+        )
+      ).rows[0],
+      {
+        birth_date: dates.birthDate,
+        joined_on: dates.joinedOn,
+        baptism_date: dates.baptismDate,
+      },
+    );
+  }
+  assert.deepEqual(await count(who.organizationId), {
+    members: 3,
+    history: 3,
+    audit: 3,
+    receipts: 3,
+  });
 });
 
 for (const revoke of ["session", "membership", "context"] as const)
