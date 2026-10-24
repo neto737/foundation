@@ -116,3 +116,17 @@ isolamento, concorrência entre conexões e limpeza com locks. Runtime e E2E usa
 os harnesses descartáveis existentes; nenhum cenário de carga deve acessar o DEV.
 O ensaio de vinte contas sintéticas a trinta leituras no mesmo IP verifica a
 margem funcional; não é benchmark da Cloudflare nem comprova Safari físico.
+
+Para validar persistência, usar os harnesses oficiais de integração, workerd e
+E2E, incluindo o modo `--runtime-acls`. Eles criam seu próprio PostgreSQL
+descartável, aplicam e reaplicam o histórico completo e removem o container ao
+terminar. Não substituir esse preparo por export do schema: os testes de journal,
+auditoria imutável e proteção de UPDATE dependem das migrations e seus triggers.
+Essa preparação sintética não autoriza migrations em bancos persistentes.
+
+A conferência do store inclui 80 incrementos concorrentes em quatro conexões,
+contagens sem perda e limpeza que ignora um expirado bloqueado e o remove após
+liberar o lock. O UPSERT da chave atual permanece atômico; somente a limpeza usa
+`SKIP LOCKED`. A categoria seguinte conserva o incremento atômico sem repetir a
+limpeza já executada pela guarda. Não há fallback por falha do banco nem dispensa
+das verificações de sessão e tenant.
