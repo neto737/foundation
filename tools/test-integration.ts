@@ -87,6 +87,7 @@ try {
       "--test-concurrency=1",
       "test/integration.test.ts",
       "test/members.integration.test.ts",
+      "test/runtime-update.integration.test.ts",
     ]);
 } finally {
   execFileSync("docker", ["stop", container], { stdio: "ignore" });

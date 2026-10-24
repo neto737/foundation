@@ -492,9 +492,12 @@ test("responsividade, teclado e acessibilidade básica da interface real", async
   page,
 }, info) => {
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "Comece pelo seu e-mail" }),
-  ).toBeVisible();
+  const heading = page.getByRole("heading", {
+    name: "Comece pelo seu e-mail",
+  });
+  await expect(heading).toBeVisible();
+  // O efeito da tela posiciona o foco inicial; Tab deve partir desse título.
+  await expect(heading).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Seu e-mail", { exact: true })).toBeFocused();
   expect(
