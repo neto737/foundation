@@ -10,23 +10,25 @@ As guardas de origem e tamanho do corpo continuam antes da conexão e dos limite
 Depois da conexão, a guarda ampla por IP e os limites existentes de pedidos de
 e-mail/login executam antes da resolução de sessão. As demais categorias executam
 depois de `resolveSession` do Foundation. Logout também resolve a sessão para
-classificação e preserva cookies de renovação/revogação.
+classificação. Nas demais rotas, os cookies de renovação são propagados; no POST
+de logout, somente os cookies da resposta nativa são propagados, para a renovação
+preliminar não substituir a limpeza após revogação nem renovar cookies em falha.
 
-| Categoria                           | Limite       | Identificador e abrangência                                                     |
-| ----------------------------------- | ------------ | ------------------------------------------------------------------------------- |
-| Guarda ampla                        | 1.200/minuto | IP; todas as rotas `/api/*`, antes da resolução                                 |
-| Leitura autenticada                 | 300/minuto   | Usuário; GET onboarding, organizações, contexto, igrejas, membros e recibos     |
-| Escrita autenticada                 | 60/minuto    | Usuário; POST membros e PATCH membro                                            |
-| Seleção de organização              | 30/minuto    | Usuário; POST tenant                                                            |
-| Provisionamento                     | 5/15 minutos | Usuário; POST organizações                                                      |
-| Definição de senha                  | 5/15 minutos | Usuário; POST onboarding/password                                               |
-| Logout autenticado                  | 30/minuto    | Usuário; POST auth/sign-out                                                     |
-| Anônimo ou rota não classificada    | 60/minuto    | IP; inclui sessão inválida e logout sem sessão                                  |
-| Callbacks de autenticação           | 60/minuto    | IP; GET magic-link/verify e reset-password/:token, bucket conjunto próprio      |
-| Pedidos de e-mail                   | 5/minuto     | IP; POST onboarding/email e onboarding/password-email, bucket original conjunto |
-| Login por senha                     | 10/minuto    | IP; caminho auth/sign-in/email, bucket original                                 |
-| Tentativas de envio ao destinatário | 3/15 minutos | Destinatário normalizado; compartilhado entre os dois e-mails                   |
-| Tentativas de envio globais         | 90/dia UTC   | Toda a aplicação; mantém orçamento e supressão genérica                         |
+| Categoria                           | Limite       | Identificador e abrangência                                                      |
+| ----------------------------------- | ------------ | -------------------------------------------------------------------------------- |
+| Guarda ampla                        | 1.200/minuto | IP; todas as rotas `/api/*`, antes da resolução                                  |
+| Leitura autenticada                 | 300/minuto   | Usuário; GET/HEAD onboarding, organizações, contexto, igrejas, membros e recibos |
+| Escrita autenticada                 | 60/minuto    | Usuário; POST membros e PATCH membro                                             |
+| Seleção de organização              | 30/minuto    | Usuário; POST tenant                                                             |
+| Provisionamento                     | 5/15 minutos | Usuário; POST organizações                                                       |
+| Definição de senha                  | 5/15 minutos | Usuário; POST onboarding/password                                                |
+| Logout autenticado                  | 30/minuto    | Usuário; POST auth/sign-out                                                      |
+| Anônimo ou rota não classificada    | 60/minuto    | IP; inclui sessão inválida e logout sem sessão                                   |
+| Callbacks de autenticação           | 60/minuto    | IP; GET/HEAD magic-link/verify e reset-password/:token, bucket conjunto próprio  |
+| Pedidos de e-mail                   | 5/minuto     | IP; POST onboarding/email e onboarding/password-email, bucket original conjunto  |
+| Login por senha                     | 10/minuto    | IP; caminho auth/sign-in/email, bucket original                                  |
+| Tentativas de envio ao destinatário | 3/15 minutos | Destinatário normalizado; compartilhado entre os dois e-mails                    |
+| Tentativas de envio globais         | 90/dia UTC   | Toda a aplicação; mantém orçamento e supressão genérica                          |
 
 Todos são limites de janela fixa alinhada ao relógio Unix. Há rajada na fronteira;
 não são tetos para qualquer intervalo móvel. Quotas por usuário atravessam
@@ -41,6 +43,8 @@ e-mail declarado, cookie bruto e IDs de tenant não concedem essa categoria.
 Autenticação não substitui autorização: verificações de e-mail/senha, vínculo
 administrativo atual, tenant do recurso, transações, auditoria e idempotência
 continuam nas rotas. Rotas novas não ganham limite autenticado automaticamente.
+HEAD compartilha a categoria e a janela de GET porque o Hono executa o mesmo
+handler; a classificação não altera o método real nem o corpo vazio da resposta.
 
 O IP vem somente de `CF-Connecting-IP` na entrada confiável Worker. Ausência usa
 bucket compartilhado; X-Forwarded-For não altera a chave Levi. IPv6 usa o endereço

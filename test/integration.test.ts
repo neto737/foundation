@@ -1133,6 +1133,145 @@ test("CSRF, falha de autenticação e falha de banco não viram autorização", 
   );
 });
 
+for (const failDelete of [false, true])
+  test(`logout direto com sessão renovável: ${failDelete ? "falha não confirma revogação" : "limpa cookies nativos e revoga"}`, async () => {
+    const account = await provisionedAccount();
+    const publicApp = createApp({
+      databaseUrl: applicationDatabaseUrl(databaseUrl!),
+      baseURL: origin,
+      secret: "synthetic-test-secret-with-more-than-32-characters",
+      publicAbuseProtection: true,
+      email: { send: async () => {} },
+    });
+    await observer.client.query(
+      "UPDATE session SET updated_at=now()-interval '2 days', expires_at=now()+interval '1 day' WHERE user_id=$1",
+      [account.id],
+    );
+    if (failDelete)
+      await observer.client.query(`
+      CREATE FUNCTION test_reject_logout_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'falha sintética de logout'; END; $$;
+      CREATE TRIGGER test_reject_logout_delete BEFORE DELETE ON session
+      FOR EACH ROW EXECUTE FUNCTION test_reject_logout_delete()`);
+    try {
+      // Nenhuma consulta HTTP pode renovar a sessão entre o ajuste e o logout.
+      const response = await publicApp.request(
+        new Request(`${origin}/api/auth/sign-out`, {
+          method: "POST",
+          headers: {
+            origin,
+            cookie: account.cookie,
+            "content-type": "application/json",
+            "cf-connecting-ip": "192.0.2.212",
+          },
+          body: "{}",
+        }),
+      );
+      assert.equal(response.status, failDelete ? 503 : 200);
+      assert.equal(response.headers.get("ratelimit-limit"), "30");
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      const cookieHeaders = response.headers.getSetCookie();
+      if (failDelete) assert.equal(cookieHeaders.length, 0);
+      else {
+        for (const name of ["session_token", "session_data", "dont_remember"])
+          assert.ok(
+            cookieHeaders.some((value) =>
+              value.startsWith(`better-auth.${name}=;`),
+            ),
+            `Limpar ${name}`,
+          );
+        assert.ok(
+          cookieHeaders.every(
+            (value) =>
+              /^[^=]+=;/.test(value) &&
+              /(?:^|;\s*)Max-Age=0(?:;|$)/i.test(value),
+          ),
+          "Nenhum cookie positivo de renovação no logout",
+        );
+      }
+      const sessions = await observer.client.query(
+        "SELECT id FROM session WHERE user_id=$1",
+        [account.id],
+      );
+      assert.equal(sessions.rowCount, failDelete ? 1 : 0);
+      if (!failDelete) {
+        assert.equal(
+          (
+            await observer.client.query(
+              "SELECT session_id FROM tenant_sessions WHERE active_tenant_id=$1",
+              [account.organizationId],
+            )
+          ).rowCount,
+          0,
+        );
+        assert.equal(
+          (await request("/api/organizations", undefined, account.cookie))
+            .status,
+          401,
+        );
+      }
+    } finally {
+      if (failDelete)
+        await observer.client.query(
+          "DROP TRIGGER test_reject_logout_delete ON session; DROP FUNCTION test_reject_logout_delete()",
+        );
+    }
+  });
+
+test("HEAD autenticado consome a leitura de GET e não contorna seu limite", async () => {
+  const account = await readyAccount();
+  const secret = "synthetic-test-secret-with-more-than-32-characters";
+  const publicApp = createApp({
+    databaseUrl: applicationDatabaseUrl(databaseUrl!),
+    baseURL: origin,
+    secret,
+    publicAbuseProtection: true,
+    email: { send: async () => {} },
+  });
+  const digest = createHmac("sha256", secret)
+    .update(`user:${account.id}`)
+    .digest("hex");
+  const start = Math.floor(Date.now() / 60_000) * 60_000;
+  const keys = [start, start + 60_000].map(
+    (window) => `v2:read:${digest}:${window}`,
+  );
+  const send = (method: string, cookie = account.cookie) =>
+    publicApp.request(
+      new Request(`${origin}/api/organizations`, {
+        method,
+        headers: { origin, cookie, "cf-connecting-ip": "192.0.2.213" },
+      }),
+    );
+  try {
+    const head = await send("HEAD");
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get("ratelimit-limit"), "300");
+    assert.equal(head.headers.get("ratelimit-remaining"), "299");
+    assert.equal(await head.text(), "");
+    // Esgota também a próxima janela para não depender da virada do minuto.
+    for (let i = 0; i < keys.length; i++)
+      await observer.client.query(
+        "INSERT INTO abuse_counters(key,count,expires_at) VALUES($1,300,$2) ON CONFLICT(key) DO UPDATE SET count=300",
+        [keys[i], new Date(start + (i + 1) * 60_000)],
+      );
+    for (const method of ["GET", "HEAD"]) {
+      const denied = await send(method);
+      assert.equal(denied.status, 429);
+      assert.ok(Number(denied.headers.get("retry-after")) > 0);
+    }
+    const anonymous = await send("HEAD", "");
+    assert.equal(anonymous.status, 401);
+    assert.equal(anonymous.headers.get("ratelimit-limit"), "60");
+    assert.equal(await anonymous.text(), "");
+  } finally {
+    await observer.client.query(
+      "DELETE FROM abuse_counters WHERE key=ANY($1::text[])",
+      [keys],
+    );
+  }
+});
+
 test("cookies de renovação e logout nativos são preservados", async () => {
   const account = await provisionedAccount();
   await observer.client.query(

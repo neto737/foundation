@@ -123,7 +123,7 @@ export function createApp(options: AppOptions) {
     if (abuse) return abuse.beforeSession(c, next);
     await next();
   });
-  // Resolve uma vez por request, propagando inclusive cada cookie de renovação.
+  // Resolve uma vez por request, inclusive para a quota autenticada de logout.
   app.use("/api/*", async (c, next) => {
     c.set("identity", null);
     if (
@@ -133,8 +133,12 @@ export function createApp(options: AppOptions) {
     ) {
       const resolved = await c.get("auth").resolveSession(c.req.raw.headers);
       c.set("identity", resolved.data);
-      for (const cookie of resolved.headers.getSetCookie())
-        c.header("Set-Cookie", cookie, { append: true });
+      // No logout, só o handler nativo pode decidir limpar ou manter os cookies.
+      // Cookies preliminares no Hono substituiriam os cookies da resposta nativa.
+      if (!(c.req.method === "POST" && c.req.path === "/api/auth/sign-out")) {
+        for (const cookie of resolved.headers.getSetCookie())
+          c.header("Set-Cookie", cookie, { append: true });
+      }
     }
     await next();
   });

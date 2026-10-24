@@ -159,7 +159,8 @@ export function createAbuseProtection(
     return async (c, next) => {
       if (credentialLimiter(c)) return next();
       const path = c.req.path;
-      const method = c.req.method;
+      // Hono executa o handler GET para HEAD; ambos compartilham a mesma quota.
+      const method = c.req.method === "HEAD" ? "GET" : c.req.method;
       if (
         method === "GET" &&
         (path === "/api/auth/magic-link/verify" ||

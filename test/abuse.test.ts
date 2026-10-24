@@ -118,6 +118,36 @@ test("leitura, escrita, seleção, provisionamento, senha e logout são independ
   );
 });
 
+for (const [path, limit] of [
+  ["/api/organizations", 300],
+  ["/api/auth/magic-link/verify?token=synthetic", 60],
+  ["/api/auth/reset-password/synthetic", 60],
+] as const) {
+  test(`HEAD compartilha a categoria e janela de GET em ${path}`, async () => {
+    const f = fixture();
+    f.setIdentity(identity("user-head"));
+    for (let i = 0; i < limit; i++) {
+      const response = await f.send(path, i % 2 ? "GET" : "HEAD");
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("ratelimit-limit"), String(limit));
+      assert.equal(
+        response.headers.get("ratelimit-remaining"),
+        String(limit - i - 1),
+      );
+    }
+    for (const method of ["GET", "HEAD"]) {
+      const denied = await f.send(path, method);
+      assert.equal(denied.status, 429);
+      assert.equal(denied.headers.get("retry-after"), "60");
+    }
+    assert.ok(
+      ![...f.counts.keys()].some((key) => key.startsWith("v2:anonymous:")),
+    );
+    f.advance(60_000);
+    assert.equal((await f.send(path, "HEAD")).status, 200);
+  });
+}
+
 test("vinte contas no mesmo IP navegam; leitura aceita custa dois statements", async () => {
   const f = fixture();
   for (let user = 0; user < 20; user++) {
