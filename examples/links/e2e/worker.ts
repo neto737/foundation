@@ -3,15 +3,14 @@ import { createApp } from "../src/server/app.js";
 import type { Env } from "../src/server/auth.js";
 
 // Test-only provider transport, never imported by src/worker.ts. Production
-// still uses Better Auth's sole Siteverify implementation, not this fixture.
+// uses the sole Siteverify transport from security, not this fixture.
 const originalFetch = globalThis.fetch;
 const consumed = new Set<string>();
 globalThis.fetch = async (input, init) => {
   const url = input instanceof Request ? input.url : String(input);
   if (url !== "https://challenges.cloudflare.com/turnstile/v0/siteverify")
     return originalFetch(input, init);
-  const payload = JSON.parse(init?.body as string) as { response: string };
-  const token = payload.response;
+  const token = (init?.body as URLSearchParams).get("response") ?? "";
   if (token === "fixture-network")
     throw new Error("Fixture provider unavailable");
   if (token === "fixture-http") return Response.json({}, { status: 503 });

@@ -12,19 +12,25 @@ configuração incompleta e bloqueia somente os quatro POSTs públicos com 503.
 São protegidos `/sign-in/email`, `/sign-up/email`, `/sign-in/magic-link` e
 `/request-password-reset`, sem exceção por sessão. Google/TOTP/ações
 autenticadas, callbacks e aplicação do reset não recebem CAPTCHA. Um hook
-público delega uma única vez ao plugin oficial Better Auth, mantendo rate
-limiting antes da validação. Token vai em `x-captcha-response`; não há novos
-endpoints/APIs de auth expostos.
+público reutiliza `verifyTurnstile` de `@t00ls-dev/security` como único
+transporte Siteverify, mantendo rate limiting Better Auth antes da validação.
+Token vai em `x-captcha-response`; não há novos endpoints/APIs de auth expostos.
 
-`MISSING_RESPONSE`/400 e `VERIFICATION_FAILED`/403 mantêm o contrato nativo.
-Somente falha conhecida do hook pré-auth vira `TURNSTILE_UNAVAILABLE`/503; falha
-posterior conserva o tratamento auth indeterminado existente. Sem retries
+`MISSING_RESPONSE`/400 e `VERIFICATION_FAILED`/403 mantêm os códigos existentes.
+Somente falha conhecida do hook pré-auth retorna `TURNSTILE_UNAVAILABLE`/503;
+falha posterior conserva o tratamento auth indeterminado existente. Sem retries
 próprios.
 
-Limitação aceita do Better Auth 1.7.7: `success` truthy não booleano pode ser
-aceito com hostname/action corretos. Não se promete fail-closed para todo
-payload upstream malformado. Sem patch/fork/upgrade ou outro verificador
-Siteverify. Veja o [runbook Links](../../docs/runbooks/links-turnstile.md) para
+A prova só é aceita quando `success === true`, hostname autorizado e action
+esperada correspondem exatamente. Strings, números, nulo, campo ausente, arrays
+e tipos inválidos dos metadados conhecidos são rejeitados. Campos adicionais
+desconhecidos não alteram a decisão. Timeout de 10 segundos cobre transporte e
+leitura do corpo; rede, HTTP de erro e resultado nulo permanecem indisponíveis,
+sem liberar auth. JSON inválido retorna rejeição de verificação. A integração
+não usa o provider CAPTCHA nativo, que aceita `success` truthy, nem valida o
+token duas vezes. Better Auth continua responsável por autenticação, sessões e
+resolução de IP pelo contrato público `getIP`. Nenhuma API pública Foundation
+mudou. Veja o [runbook Links](../../docs/runbooks/links-turnstile.md) para
 configuração/lifecycle.
 
 Configuração opinativa do Better Auth para senha, verificação de e-mail,

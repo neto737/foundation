@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin } from "better-auth";
-import { captcha } from "better-auth/plugins";
+import { getIP } from "better-auth/api";
+import { verifyTurnstile } from "@t00ls-dev/security";
 
 export type TurnstileOperation =
   "signIn" | "signUp" | "magicLink" | "passwordReset";
@@ -38,9 +39,37 @@ function unavailable() {
   };
 }
 
-/** Public hook bridge only. Better Auth is the sole Siteverify implementation.
- * Native 1.7.7 accepts truthy non-boolean success; this V1 preserves that known
- * limitation rather than claiming arbitrary upstream payloads fail closed. */
+/** Aceita somente provas booleanas e metadados com os tipos documentados. */
+function acceptedVerification(
+  value: unknown,
+): value is { success: true; hostname: string; action: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  return (
+    result.success === true &&
+    typeof result.hostname === "string" &&
+    typeof result.action === "string" &&
+    ["challenge_ts", "cdata"].every(
+      (key) => result[key] === undefined || typeof result[key] === "string",
+    ) &&
+    (result["error-codes"] === undefined ||
+      (Array.isArray(result["error-codes"]) &&
+        result["error-codes"].every(
+          (code: unknown) => typeof code === "string",
+        )))
+  );
+}
+
+function rejected() {
+  return {
+    response: Response.json(
+      { code: "VERIFICATION_FAILED", message: "Captcha verification failed" },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } },
+    ),
+  };
+}
+
+/** O helper público security é o único transporte Siteverify deste hook. */
 export function turnstilePlugin(
   options: FoundationTurnstileOptions,
 ): BetterAuthPlugin {
@@ -58,20 +87,10 @@ export function turnstilePlugin(
         typeof actions[operation] === "string" &&
         /^[A-Za-z0-9_-]{1,32}$/.test(actions[operation]),
     );
-  const delegates = new Map(
-    Object.entries(paths).map(([path, operation]) => [
-      path,
-      valid
-        ? captcha({
-            provider: "cloudflare-turnstile",
-            secretKey: configured.secretKey,
-            allowedHostnames: [...configured.allowedHostnames],
-            expectedAction: actions[operation],
-            endpoints: [path],
-          })
-        : null,
-    ]),
-  );
+  // Captura a configuração por operação sem depender de mutações posteriores.
+  const hostnames = [...(configured?.allowedHostnames ?? [])];
+  const operationActions = { ...actions };
+  const secret = configured?.secretKey ?? "";
   return {
     id: "foundation-turnstile",
     async onRequest(request, context) {
@@ -83,14 +102,47 @@ export function turnstilePlugin(
       if (!path.startsWith("/")) path = `/${path}`;
       if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
       if (!Object.hasOwn(paths, path)) return;
-      const delegate = delegates.get(path);
-      if (!delegate) return unavailable();
-      const result = await delegate.onRequest(request, context);
-      // Only this direct hook rejection proves the endpoint has not run. Never
-      // reinterpret UNKNOWN_ERROR from a later auth response as CAPTCHA failure.
-      if (result?.response.status === 500) return unavailable();
-      result?.response.headers.set("Cache-Control", "private, no-store");
-      return result;
+      if (!valid) return unavailable();
+      const token = request.headers.get("x-captcha-response");
+      if (!token)
+        return {
+          response: Response.json(
+            { code: "MISSING_RESPONSE", message: "Missing CAPTCHA response" },
+            { status: 400, headers: { "Cache-Control": "private, no-store" } },
+          ),
+        };
+      const reject = () => {
+        context.logger.warn("Cloudflare Turnstile verification failed");
+        return rejected();
+      };
+      // Timeout cobre transporte e leitura do corpo; nenhuma repetição automática.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      try {
+        const remoteIp = getIP(request, context.options);
+        const verification: unknown = await verifyTurnstile({
+          secret,
+          token,
+          ...(remoteIp ? { remoteIp } : {}),
+          fetch: (input, init) =>
+            globalThis.fetch(input, { ...init, signal: controller.signal }),
+        });
+        // Preserva a classificação de resposta nula/vazia do contrato anterior.
+        if (!verification) return unavailable();
+        if (
+          !acceptedVerification(verification) ||
+          !hostnames.includes(verification.hostname) ||
+          verification.action !== operationActions[paths[path]!]
+        )
+          return reject();
+      } catch (error) {
+        if (error instanceof SyntaxError) return reject();
+        // Não registra erro, URL, token, segredo ou payload do provedor.
+        context.logger.error("CAPTCHA service unavailable");
+        return unavailable();
+      } finally {
+        clearTimeout(timeout);
+      }
     },
   };
 }
