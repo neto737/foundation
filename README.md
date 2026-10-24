@@ -13,10 +13,13 @@ PostgreSQL descartável. A SPA React permite concluir esse fluxo, selecionar uma
 organização e consultar suas igrejas. A composição Cloudflare Workers possui
 build/dry-run e testes locais em workerd, além do fluxo de publicação DEV. A primeira fatia de
 [gestão de membros](docs/gestao-membros.md) acrescenta cadastro,
-listagem com filtros/paginação e ficha, habilitados somente para validação
+listagem com filtros/paginação, ficha e edição cadastral, habilitados somente para validação
 sintética local. O módulo de membros no Worker permanece desabilitado por padrão, com recorte DEV
 preparado para organizações sintéticas autorizadas, conforme o guia. Ambiente de produção
-ainda não foi implementado.
+ainda não foi implementado. A interface foi reformulada com navegação administrativa
+responsiva, painel e formulários por seções; detalhes em [Interface de onboarding](docs/interface-onboarding.md).
+Migration 0004 e ACLs da edição foram apenas versionadas e validadas localmente,
+sem aplicação persistente ou deploy nesta entrega.
 
 Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para
 execução local, endpoints, decisões técnicas e limites desta entrega.

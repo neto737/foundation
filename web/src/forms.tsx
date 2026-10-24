@@ -1,3 +1,4 @@
+import { useDraftGuard } from "./ui.js";
 import { useId, useState, type FormEvent } from "react";
 import type { ProvisionInput } from "./api.js";
 
@@ -9,6 +10,7 @@ type Field = {
   hint?: string;
   max?: number;
   value?: string | undefined;
+  optional?: boolean;
 };
 type Values = Record<string, string>;
 function Form({
@@ -27,6 +29,7 @@ function Form({
   validate(values: Values): Values;
 }) {
   const id = useId();
+  const draft = useDraftGuard();
   const [errors, setErrors] = useState<Values>({});
   async function handle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,47 +52,68 @@ function Form({
         element.value = "";
     }
   }
+  function renderField(field: Field) {
+    return (
+      <div className="field" key={field.name}>
+        <label htmlFor={`${id}-${field.name}`}>{field.label}</label>
+        {field.hint && (
+          <p className="hint" id={`${id}-${field.name}-hint`}>
+            {field.hint}
+          </p>
+        )}
+        <input
+          id={`${id}-${field.name}`}
+          name={field.name}
+          type={field.type ?? "text"}
+          autoComplete={field.autoComplete}
+          required={!field.optional}
+          maxLength={field.max ?? 160}
+          defaultValue={field.value ?? ""}
+          aria-invalid={Boolean(errors[field.name])}
+          aria-describedby={
+            [
+              field.hint && `${id}-${field.name}-hint`,
+              errors[field.name] && `${id}-${field.name}-error`,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+        />
+        {errors[field.name] && (
+          <p className="field-error" id={`${id}-${field.name}-error`}>
+            {errors[field.name]}
+          </p>
+        )}
+      </div>
+    );
+  }
   return (
     <form
       onSubmit={(event) => void handle(event)}
       noValidate
+      data-dirty={draft.dirty}
+      onChange={draft.change}
       aria-label={label}
     >
       <fieldset disabled={busy}>
         <legend className="sr-only">{label}</legend>
-        {fields.map((field) => (
-          <div className="field" key={field.name}>
-            <label htmlFor={`${id}-${field.name}`}>{field.label}</label>
-            {field.hint && (
-              <p className="hint" id={`${id}-${field.name}-hint`}>
-                {field.hint}
-              </p>
-            )}
-            <input
-              id={`${id}-${field.name}`}
-              name={field.name}
-              type={field.type ?? "text"}
-              autoComplete={field.autoComplete}
-              required
-              maxLength={field.max ?? 160}
-              defaultValue={field.value ?? ""}
-              aria-invalid={Boolean(errors[field.name])}
-              aria-describedby={
-                [
-                  field.hint && `${id}-${field.name}-hint`,
-                  errors[field.name] && `${id}-${field.name}-error`,
-                ]
-                  .filter(Boolean)
-                  .join(" ") || undefined
-              }
-            />
-            {errors[field.name] && (
-              <p className="field-error" id={`${id}-${field.name}-error`}>
-                {errors[field.name]}
-              </p>
-            )}
-          </div>
-        ))}
+        {fields.filter((field) => !field.optional).map(renderField)}
+        {fields.some((field) => field.optional) && (
+          <details
+            className="optional-details"
+            open={
+              Object.keys(errors).some(
+                (key) => fields.find((field) => field.name === key)?.optional,
+              ) || undefined
+            }
+          >
+            <summary>Adicionar contatos da igreja (opcional)</summary>
+            <p className="hint">
+              Você pode começar apenas com o nome da igreja.
+            </p>
+            {fields.filter((field) => field.optional).map(renderField)}
+          </details>
+        )}
         {Object.keys(errors).length > 0 && (
           <p className="sr-only" role="alert">
             Confira os campos indicados antes de continuar.
@@ -131,15 +155,43 @@ export function AccessForm({
             name: "churchName",
             label: "Nome da primeira igreja",
             value: initial?.churchName,
+            hint: "Só o nome é obrigatório. Deixe os contatos em branco se não souber.",
+          },
+          {
+            name: "churchAddress",
+            label: "Endereço da igreja (opcional)",
+            optional: true,
+            max: 500,
+            value: initial?.churchAddress ?? "",
+          },
+          {
+            name: "churchPhone",
+            label: "Telefone da igreja (opcional)",
+            type: "tel",
+            optional: true,
+            max: 40,
+            value: initial?.churchPhone ?? "",
+          },
+          {
+            name: "churchEmail",
+            label: "E-mail da igreja (opcional)",
+            type: "email",
+            optional: true,
+            max: 254,
+            value: initial?.churchEmail ?? "",
           },
         ]}
-        validate={(values) =>
-          Object.fromEntries(
+        validate={(values) => ({
+          ...Object.fromEntries(
             ["organizationName", "churchName"]
               .filter((key) => !values[key]?.trim())
               .map((key) => [key, "Informe um nome para continuar."]),
-          )
-        }
+          ),
+          ...(values.churchEmail?.trim() &&
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.churchEmail.trim())
+            ? { churchEmail: "Informe um e-mail válido." }
+            : {}),
+        })}
         onSubmit={onSubmit}
       />
     );

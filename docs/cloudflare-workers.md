@@ -185,7 +185,7 @@ aplicação, sem ownership, CREATE/TEMP, superuser, BYPASSRLS, grant option ou
 membership privilegiada. GRANTs são operações autorizadas separadamente, sem
 default ACL ampla para novas tabelas.
 
-O incremento de membros contém cinco comandos, sete grupos e 45 pares
+O incremento original de cadastro de membros contém cinco comandos, sete grupos e 45 pares
 coluna/privilégio. A especificação executável usada apenas pelo harness é
 `memberGrants` em [runtime-acl-fixture](../test/runtime-acl-fixture.ts);
 não executar o preparo de roles dessa fixture no DEV.
@@ -207,6 +207,39 @@ Não acrescentar SELECT em histórico/auditoria ou DELETE, TRUNCATE, REFERENCES,
 TRIGGER, MAINTAIN e UPDATE geral ao incremento. As ACLs legadas de auth, tenancy,
 auditoria INSERT e contadores permanecem separadas, representadas por
 `legacyRuntimeGrants` na mesma fixture.
+
+### Incremento de interface e edição, pendente de operação
+
+A migration [0004](../migrations/0004_interface-e-edicao.sql) acrescenta contatos
+opcionais à igreja, versão do membro e histórico pessoal de edição. Aplicar
+somente em ação administrativa autorizada, após conferir identidade, backup,
+histórico 0000–0003 e hashes. Não integrar sua execução ao deploy ou startup.
+
+Depois de 0004, aplicar separadamente as quatro instruções de
+[interface-e-edicao-acls.sql](../ops/interface-e-edicao-acls.sql):
+
+| Tabela                 | Privilégio      | Colunas                                                                                |
+| ---------------------- | --------------- | -------------------------------------------------------------------------------------- |
+| members                | SELECT e INSERT | version                                                                                |
+| members                | UPDATE          | name, birth_date, phone, email, joined_on, address, baptism_date, church_role, version |
+| member_profile_history | INSERT          | id, tenant_id, member_id, actor_id, version, previous_profile, created_at              |
+
+São 18 pares adicionais, totalizando 63 com o incremento original. O INSERT de
+`version` é necessário porque Drizzle inclui a coluna com DEFAULT na instrução
+de cadastro. A API não aceita a versão no cadastro. O UPDATE por coluna é
+necessário para a edição e o lock; não concede alteração de IDs, tenant, igreja,
+situação ou criação. Não adicionar grant option, SELECT de histórico, UPDATE
+amplo, DELETE ou funções privilegiadas. As ACLs legadas SELECT/INSERT de igrejas
+já cobrem seus contatos; não há grant adicional nessa tabela.
+
+O harness lê esse mesmo artefato somente após migrar seu banco sintético e testa
+os 63 pares, autoria dos grants e negações reais. Isso não prova aplicação no DEV.
+Nesta entrega nenhuma migration/ACL persistente, configuração, habilitação ou
+publicação foi executada. Antes de uma futura publicação autorizada, conferir
+0004 e os grants; membros habilitados com schema antigo falham fechados. O caminho
+de onboarding apenas com nome e as consultas de igrejas continuam funcionando
+com o schema anterior, retornando contatos nulos. Preencher contatos exige 0004.
+Não usar essa compatibilidade como autorização de deploy.
 
 `SELECT FOR SHARE` exige UPDATE em alguma coluna. A migration 0003 protege
 `churches`/`tenant_memberships` com função `SECURITY INVOKER`,

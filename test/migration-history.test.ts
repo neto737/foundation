@@ -28,9 +28,9 @@ function executor(history: typeof rows, exists = true) {
   } as unknown as Parameters<typeof inspectMigrationHistory>[0];
 }
 
-test("histórico compara hashes imutáveis das quatro migrations e prefixos válidos", async () => {
+test("histórico compara hashes imutáveis das migrations versionadas e prefixos válidos", async () => {
   assert.deepEqual(
-    artifacts.map((migration) => migration.hash),
+    artifacts.slice(0, 4).map((migration) => migration.hash),
     [
       "3c443822590ebe28afbe52b12874636b23329db4ef72f543e59467cc23b0b7e0",
       "930df1c2212b60f402c68874cb5e718eddd927f999909f10afa7899527db616d",
@@ -38,16 +38,16 @@ test("histórico compara hashes imutáveis das quatro migrations e prefixos vál
       "10cc56118569f1a7b0fa64db2fbfa6640ffed47688debcf92a135d883b7f0dae",
     ],
   );
-  for (const length of [0, 2, 4]) {
+  for (const length of [0, 2, 4, 5]) {
     const status = await inspectMigrationHistory(
       executor(rows.slice(0, length)),
     );
     assert.equal(status.applied.length, length);
-    assert.equal(status.pending.length, 4 - length);
+    assert.equal(status.pending.length, artifacts.length - length);
   }
   assert.equal(
     (await inspectMigrationHistory(executor([], false))).pending.length,
-    4,
+    artifacts.length,
   );
 });
 

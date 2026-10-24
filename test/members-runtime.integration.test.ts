@@ -52,7 +52,7 @@ test("ACLs reais: três logins independentes, journal e ownership corretos", asy
       "SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
     )
   ).rows;
-  assert.equal(applied.length, 4);
+  assert.equal(applied.length, 5);
   for (const [index, entry] of journal.entries.entries()) {
     assert.equal(applied[index].created_at, String(entry.when));
     assert.equal(
@@ -70,7 +70,7 @@ test("ACLs reais: três logins independentes, journal e ownership corretos", asy
   for (const row of owners.rows) assert.equal(row.owner, "levi_dev_migrator");
 });
 
-test("ACLs reais: exatamente 45 pares por coluna; nenhum grant option ou privilégio amplo novo", async () => {
+test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privilégio amplo novo", async () => {
   const tableAcl = (
     await observer.client.query(`
     SELECT c.relname, x.privilege_type FROM pg_class c
@@ -112,6 +112,36 @@ test("ACLs reais: exatamente 45 pares por coluna; nenhum grant option ou privil�
   const groups = [
     ["members", "SELECT", memberColumns],
     ["members", "INSERT", memberColumns],
+    ["members", "SELECT", ["version"]],
+    ["members", "INSERT", ["version"]],
+    [
+      "members",
+      "UPDATE",
+      [
+        "name",
+        "birth_date",
+        "phone",
+        "email",
+        "joined_on",
+        "address",
+        "baptism_date",
+        "church_role",
+        "version",
+      ],
+    ],
+    [
+      "member_profile_history",
+      "INSERT",
+      [
+        "id",
+        "tenant_id",
+        "member_id",
+        "actor_id",
+        "version",
+        "previous_profile",
+        "created_at",
+      ],
+    ],
     [
       "member_history",
       "INSERT",
@@ -143,7 +173,7 @@ test("ACLs reais: exatamente 45 pares por coluna; nenhum grant option ou privil�
     WHERE c.relnamespace='public'::regnamespace AND a.attnum>0
       AND x.grantee='levi_dev_runtime'::regrole
   `);
-  assert.equal(rows.length, 45);
+  assert.equal(rows.length, 63);
   assert.deepEqual(
     rows.map((r) => `${r.relname}.${r.attname}:${r.privilege_type}`).sort(),
     expected,
@@ -206,7 +236,11 @@ test("ACLs reais: exatamente 45 pares por coluna; nenhum grant option ou privil�
     ).rows[0].count,
     0,
   );
-  for (const table of ["member_history", "audit_events"])
+  for (const table of [
+    "member_history",
+    "member_profile_history",
+    "audit_events",
+  ])
     await assert.rejects(
       runtime.client.query(`SELECT * FROM ${table} LIMIT 1`),
       { code: "42501" },
@@ -375,4 +409,20 @@ test("ACLs reais: runtime não altera proteção, assume roles, cria wrappers ou
     assert.equal(row.can_execute, false);
     assert.deepEqual(row.proconfig, ["search_path=pg_catalog"]);
   }
+});
+
+test("edição ACL: runtime não altera tenant, igreja, situação, identificadores ou histórico", async () => {
+  for (const column of ["id", "tenant_id", "church_id", "status", "created_at"])
+    await assert.rejects(
+      runtime.client.query(
+        `UPDATE members SET ${column}=${column} WHERE false`,
+      ),
+      { code: "42501" },
+    );
+  for (const sql of [
+    "UPDATE member_profile_history SET version=version WHERE false",
+    "DELETE FROM member_profile_history WHERE false",
+    "SELECT * FROM member_profile_history",
+  ])
+    await assert.rejects(runtime.client.query(sql), { code: "42501" });
 });

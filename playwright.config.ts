@@ -20,8 +20,25 @@ export default defineConfig({
     {
       name: "mobile",
       testMatch: /(?:onboarding|members)\.spec\.ts/,
-      use: { ...devices["Pixel 7"], baseURL: "http://localhost:4317" },
+      use: {
+        ...devices["iPhone 13 Mini"],
+        browserName: "chromium",
+        baseURL: "http://localhost:4317",
+      },
     },
+    ...(process.env.LEVI_WEBKIT === "1"
+      ? [
+          {
+            name: "iphone-webkit",
+            testMatch: /(?:onboarding|members)\.spec\.ts/,
+            use: {
+              ...devices["iPhone 13 Mini"],
+              browserName: "webkit" as const,
+              baseURL: "http://localhost:4317",
+            },
+          },
+        ]
+      : []),
     {
       name: "vite-proxy",
       testMatch: "proxy.spec.ts",

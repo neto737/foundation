@@ -11,18 +11,23 @@ import {
   churches,
   members,
   memberHistory,
+  memberProfileHistory,
   memberCreationRequests,
   session,
   tenantMemberships,
   tenantSessions,
 } from "./data/schema.js";
-import type { MemberInput } from "./member-types.js";
+import type {
+  MemberInput,
+  MemberEditInput,
+  MemberProfile,
+} from "./member-types.js";
 import type { readMemberFilters } from "./member-contracts.js";
 
 async function context(
   database: Database,
   identity: FoundationSession,
-  permission: "members:read" | "members:create",
+  permission: "members:read" | "members:create" | "members:update",
   options: MemberAccessOptions,
 ) {
   const current = await organizationContext(database, identity);
@@ -120,48 +125,7 @@ export async function createMember(
       "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
       [JSON.stringify([current.tenantId, identity.user.id, requestKey])],
     );
-    // Revalida após aguardar e impede revogação/troca de contexto durante a escrita.
-    const [validSession] = await tx
-      .select({ id: session.id })
-      .from(session)
-      .where(
-        and(
-          eq(session.id, identity.session.id),
-          eq(session.userId, identity.user.id),
-          gt(session.expiresAt, new Date()),
-        ),
-      )
-      .for("share");
-    if (!validSession)
-      throw new RequestError(
-        401,
-        "SESSAO_NECESSARIA",
-        "Entre na sua conta para continuar.",
-      );
-    const [active] = await tx
-      .select()
-      .from(tenantSessions)
-      .where(eq(tenantSessions.sessionId, identity.session.id))
-      .for("share");
-    const [membership] = await tx
-      .select()
-      .from(tenantMemberships)
-      .where(
-        and(
-          eq(tenantMemberships.userId, identity.user.id),
-          eq(tenantMemberships.tenantId, current.tenantId),
-        ),
-      )
-      .for("share");
-    if (
-      active?.activeTenantId !== current.tenantId ||
-      membership?.role !== "admin"
-    )
-      throw new RequestError(
-        403,
-        "ACESSO_NEGADO",
-        "Selecione uma organização com vínculo administrativo atual.",
-      );
+    await lockWriteContext(tx, identity, current.tenantId);
     const [previous] = await tx
       .select()
       .from(memberCreationRequests)
@@ -246,4 +210,122 @@ export async function findMemberRequest(
     );
   if (!receipt) notFound();
   return { organizationId: current.tenantId, memberId: receipt.memberId };
+}
+
+type Transaction = Parameters<Parameters<Database["db"]["transaction"]>[0]>[0];
+async function lockWriteContext(
+  tx: Transaction,
+  identity: FoundationSession,
+  tenantId: string,
+) {
+  // Revalida após aguardar e impede revogação/troca de contexto durante a escrita.
+  const [validSession] = await tx
+    .select({ id: session.id })
+    .from(session)
+    .where(
+      and(
+        eq(session.id, identity.session.id),
+        eq(session.userId, identity.user.id),
+        gt(session.expiresAt, new Date()),
+      ),
+    )
+    .for("share");
+  if (!validSession)
+    throw new RequestError(
+      401,
+      "SESSAO_NECESSARIA",
+      "Entre na sua conta para continuar.",
+    );
+  const [active] = await tx
+    .select()
+    .from(tenantSessions)
+    .where(eq(tenantSessions.sessionId, identity.session.id))
+    .for("share");
+  const [membership] = await tx
+    .select()
+    .from(tenantMemberships)
+    .where(
+      and(
+        eq(tenantMemberships.userId, identity.user.id),
+        eq(tenantMemberships.tenantId, tenantId),
+      ),
+    )
+    .for("share");
+  if (active?.activeTenantId !== tenantId || membership?.role !== "admin")
+    throw new RequestError(
+      403,
+      "ACESSO_NEGADO",
+      "Selecione uma organização com vínculo administrativo atual.",
+    );
+}
+export async function editMember(
+  database: Database,
+  identity: FoundationSession,
+  id: string,
+  input: MemberEditInput,
+  options: MemberAccessOptions,
+) {
+  const current = await context(database, identity, "members:update", options);
+  return database.db.transaction(async (tx) => {
+    await lockWriteContext(tx, identity, current.tenantId);
+    const [previous] = await tx
+      .select()
+      .from(members)
+      .where(and(eq(members.tenantId, current.tenantId), eq(members.id, id)))
+      .for("update");
+    if (!previous) notFound();
+    if (previous.version !== input.version)
+      throw new RequestError(
+        409,
+        "MEMBRO_ALTERADO",
+        "Este cadastro foi atualizado em outra sessão. Consulte a ficha atual antes de editar novamente.",
+      );
+    const { version, ...profile } = input;
+    // Allowlist validada antes de entrar aqui. Igreja, situação e metadados são imutáveis neste fluxo.
+    const previousProfile: MemberProfile = {
+      name: previous.name,
+      birthDate: previous.birthDate,
+      phone: previous.phone,
+      email: previous.email,
+      joinedOn: previous.joinedOn,
+      address: previous.address,
+      baptismDate: previous.baptismDate,
+      churchRole: previous.churchRole,
+    };
+    await tx
+      .update(members)
+      .set({ ...profile, version: version + 1 })
+      .where(
+        and(
+          eq(members.tenantId, current.tenantId),
+          eq(members.churchId, previous.churchId),
+          eq(members.id, id),
+          eq(members.version, version),
+        ),
+      );
+    await tx.insert(memberProfileHistory).values({
+      tenantId: current.tenantId,
+      memberId: id,
+      actorId: identity.user.id,
+      version,
+      previousProfile,
+    });
+    await createPostgresAuditStore(database.client).append(
+      createAuditEvent({
+        actor: identity.user.id,
+        action: "member.updated",
+        target: id,
+        tenant: current.tenantId,
+        timestamp: new Date(),
+        metadata: {},
+        requestId: null,
+        result: "success",
+      }),
+    );
+    return {
+      organizationId: current.tenantId,
+      memberId: id,
+      version: version + 1,
+    };
+  });
 }

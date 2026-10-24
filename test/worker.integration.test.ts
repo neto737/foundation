@@ -727,7 +727,15 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
     );
     assert.deepEqual(await churches.json(), {
       organizationId,
-      churches: [{ id: churchId, nome: body.churchName }],
+      churches: [
+        {
+          id: churchId,
+          nome: body.churchName,
+          address: null,
+          phone: null,
+          email: null,
+        },
+      ],
     });
     // Configuração malformada ou recorte de outra organização não toca as tabelas pendentes.
     for (const membersDevOrganizations of [

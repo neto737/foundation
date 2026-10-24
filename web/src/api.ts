@@ -5,6 +5,7 @@ import {
   type MemberInput,
   type MemberFilters,
   type MemberPage,
+  type MemberEditInput,
 } from "../../src/member-types.js";
 export type Stage =
   "email" | "verificar-email" | "senha" | "organizacao" | "concluido";
@@ -12,9 +13,17 @@ export interface NamedItem {
   id: string;
   nome: string;
 }
+export interface ChurchItem extends NamedItem {
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+}
 export interface ProvisionInput {
   organizationName: string;
   churchName: string;
+  churchAddress?: string | null;
+  churchPhone?: string | null;
+  churchEmail?: string | null;
 }
 
 export class ApiError extends Error {
@@ -52,11 +61,12 @@ async function request(
   path: string,
   body?: object,
   key?: string,
+  method?: "PATCH",
 ): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, {
-      method: body ? "POST" : "GET",
+      method: method ?? (body ? "POST" : "GET"),
       credentials: "same-origin",
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
@@ -149,7 +159,18 @@ export const api = {
     const data = record(await request("/api/churches"));
     return {
       organizationId: id(data.organizationId),
-      churches: namedItems(data.churches),
+      churches: namedItems(data.churches).map((item, index): ChurchItem => {
+        const source = record((data.churches as unknown[])[index]);
+        for (const key of ["address", "phone", "email"])
+          if (source[key] != null && typeof source[key] !== "string")
+            contractError();
+        return {
+          ...item,
+          address: (source.address as string | null) ?? null,
+          phone: (source.phone as string | null) ?? null,
+          email: (source.email as string | null) ?? null,
+        };
+      }),
     };
   },
 };
@@ -229,6 +250,8 @@ export const memberApi = {
       )
         return contractError();
     if (
+      !Number.isSafeInteger(value.version) ||
+      Number(value.version) < 1 ||
       typeof value.createdAt !== "string" ||
       !Number.isFinite(Date.parse(value.createdAt))
     )
@@ -245,8 +268,14 @@ export const memberApi = {
         address: value.address as string | null,
         churchRole: value.churchRole as string | null,
         createdAt: value.createdAt,
+        version: Number(value.version),
       },
     };
+  },
+  async edit(memberId: string, input: MemberEditInput) {
+    return memberReceipt(
+      await request(`/api/members/${id(memberId)}`, input, undefined, "PATCH"),
+    );
   },
   async create(input: MemberInput, key: string) {
     return memberReceipt(await request("/api/members", input, key));
