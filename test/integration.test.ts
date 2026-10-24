@@ -7,6 +7,7 @@ import { createAbuseProtection } from "../src/abuse.js";
 import { createAdaptorServer } from "@hono/node-server";
 import { once } from "node:events";
 import { setTimeout } from "node:timers/promises";
+import { applicationDatabaseUrl } from "./runtime-acl-fixture.js";
 
 const databaseUrl = process.env.LEVI_DATABASE_URL;
 if (!databaseUrl || process.env.LEVI_LOCAL_DATABASE !== "1")
@@ -19,7 +20,7 @@ after(async () => {
 test("DEV público: limites duráveis por IP/destinatário, concorrência e respostas sem enumeração", async () => {
   const messages: Array<{ to: string }> = [];
   const publicApp = createApp({
-    databaseUrl,
+    databaseUrl: applicationDatabaseUrl(databaseUrl!),
     baseURL: origin,
     secret: "synthetic-public-secret-with-more-than-32-characters",
     publicAbuseProtection: true,
@@ -145,7 +146,7 @@ test("DEV público: orçamento diário atômico entre conexões, expiração e f
 const origin = "http://localhost:3000";
 const sent: Array<{ to: string; subject: string; text: string }> = [];
 const app = createApp({
-  databaseUrl,
+  databaseUrl: applicationDatabaseUrl(databaseUrl),
   baseURL: origin,
   secret: "synthetic-test-secret-with-more-than-32-characters",
   email: {
@@ -1007,7 +1008,7 @@ test("API executa por HTTP Node e não executa migrations na inicialização", a
     // Depois da prova de não-migração, exerce o fluxo inteiro via HTTP real.
     const httpOrigin = `http://127.0.0.1:${address.port}`;
     executableApp = createApp({
-      databaseUrl: databaseUrl!,
+      databaseUrl: applicationDatabaseUrl(databaseUrl!),
       baseURL: httpOrigin,
       secret: "synthetic-test-secret-with-more-than-32-characters",
       email: {

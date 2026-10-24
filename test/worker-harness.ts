@@ -8,6 +8,7 @@ import {
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
 import { randomUUID } from "node:crypto";
+import { applicationDatabaseUrl } from "./runtime-acl-fixture.js";
 
 export const workerOrigin = "https://levi.t00ls.dev";
 export const password = "synthetic-worker-password";
@@ -69,7 +70,12 @@ export async function workerHarness(
         RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
         LEVI_EMAIL_FROM: "Levi <levi@example.test>",
       },
-      hyperdrives: { HYPERDRIVE: databaseUrl },
+      hyperdrives: {
+        HYPERDRIVE:
+          url.pathname === "/levi_test"
+            ? applicationDatabaseUrl(databaseUrl)
+            : databaseUrl,
+      },
       outboundService: async (request) => {
         if (
           request.url !== "https://api.resend.com/emails" ||
