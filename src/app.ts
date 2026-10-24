@@ -2,12 +2,14 @@ import { membersAvailable } from "./member-access.js";
 import { Hono } from "hono";
 import {
   createMember,
+  editMember,
   listMembers,
   findMember,
   findMemberRequest,
 } from "./members.js";
 import {
   readMember,
+  readMemberEdit,
   readMemberFilters,
   readMemberRequestKey,
 } from "./member-contracts.js";
@@ -237,7 +239,19 @@ export function createApp(options: AppOptions) {
     const body = await readObject(c.req.raw, [
       "organizationName",
       "churchName",
+      "churchAddress",
+      "churchPhone",
+      "churchEmail",
     ]);
+    const optional = (key: string, max: number) =>
+      body[key] == null ? null : readString(body, key, 0, max) || null;
+    const churchEmail = optional("churchEmail", 254);
+    if (churchEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(churchEmail))
+      throw new RequestError(
+        400,
+        "ENTRADA_INVALIDA",
+        "Informe um e-mail válido para a igreja.",
+      );
     const requestKey = c.req.header("Idempotency-Key") ?? "";
     if (!/^[a-zA-Z0-9_-]{16,128}$/.test(requestKey))
       throw new RequestError(
@@ -249,6 +263,9 @@ export function createApp(options: AppOptions) {
       await provisionOrganization(database, identity, {
         organizationName: readString(body, "organizationName", 1, 160),
         churchName: readString(body, "churchName", 1, 160),
+        churchAddress: optional("churchAddress", 500),
+        churchPhone: optional("churchPhone", 40),
+        churchEmail,
         requestKey,
       }),
       201,
@@ -349,6 +366,18 @@ export function createApp(options: AppOptions) {
       );
     return c.json(
       await findMemberRequest(c.get("database"), identity, key, options),
+    );
+  });
+  app.patch("/api/members/:id", async (c) => {
+    const identity = await readySession(c.get("database"), c.get("identity"));
+    return c.json(
+      await editMember(
+        c.get("database"),
+        identity,
+        requireUuid(c.req.param("id")),
+        await readMemberEdit(c.req.raw),
+        options,
+      ),
     );
   });
   app.get("/api/members/:id", async (c) => {

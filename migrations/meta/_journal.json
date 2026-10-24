@@ -29,6 +29,13 @@
       "when": 1792802536988,
       "tag": "0003_protecao-update-runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792845673481,
+      "tag": "0004_interface-e-edicao",
+      "breakpoints": true
     }
   ]
 }

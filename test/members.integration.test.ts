@@ -52,7 +52,7 @@ function link(email: string) {
       .text.match(/https?:\/\/\S+/)![0],
   );
 }
-async function account() {
+async function account(contacts: object = {}) {
   const email = `${randomUUID()}@example.test`;
   assert.equal((await request("/api/onboarding/email", { email })).status, 200);
   const url = link(email);
@@ -85,6 +85,7 @@ async function account() {
     {
       organizationName: "Organização sintética de membros",
       churchName: "Igreja sintética de membros",
+      ...contacts,
     },
     cookie,
     randomUUID(),
@@ -689,3 +690,183 @@ for (const revoke of ["session", "membership", "context"] as const)
       receipts: 0,
     });
   });
+
+test("edição: allowlist, isolamento, versão, persistência e histórico/auditoria atômicos", async () => {
+  const who = await account();
+  const other = await account();
+  const receipt = await created(who, {
+    phone: "Contato anterior",
+    birthDate: "2000-02-29",
+  });
+  const path = `/api/members/${receipt.memberId}`;
+  const edit = (
+    body: object,
+    cookie = who.cookie,
+    target = path,
+    originHeader = origin,
+  ) =>
+    app.request(
+      new Request(new URL(target, origin), {
+        method: "PATCH",
+        headers: {
+          origin: originHeader,
+          cookie,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+  const profile = {
+    version: 1,
+    name: "Pessoa atualizada",
+    birthDate: "2000-02-29",
+    phone: null,
+    email: "novo@example.test",
+    joinedOn: null,
+    address: "Endereço atualizado",
+    baptismDate: null,
+    churchRole: "Função atualizada",
+  };
+  assert.equal((await edit(profile, "")).status, 401);
+  assert.equal((await edit(profile, other.cookie)).status, 404);
+  assert.equal(
+    (await edit(profile, who.cookie, `/api/members/${randomUUID()}`)).status,
+    404,
+  );
+  assert.equal(
+    (await edit(profile, who.cookie, path, "https://external.example.test"))
+      .status,
+    403,
+  );
+  for (const forbidden of [
+    "tenant_id",
+    "tenantId",
+    "id",
+    "churchId",
+    "status",
+    "createdAt",
+    "actorId",
+    "history",
+    "metadata",
+  ])
+    assert.equal(
+      (await edit({ ...profile, [forbidden]: randomUUID() })).status,
+      400,
+    );
+  for (const input of [
+    { ...profile, name: " " },
+    { ...profile, email: "inválido" },
+    { ...profile, birthDate: "2001-02-29" },
+    { ...profile, version: 0 },
+  ])
+    assert.equal((await edit(input)).status, 400);
+  const before = (
+    await observer.client.query("SELECT * FROM members WHERE id=$1", [
+      receipt.memberId,
+    ])
+  ).rows[0];
+  const concurrent = await Promise.all([
+    edit(profile),
+    edit({ ...profile, name: "Concorrente" }),
+  ]);
+  assert.deepEqual(concurrent.map((r) => r.status).sort(), [200, 409]);
+  const stored = (
+    await observer.client.query("SELECT * FROM members WHERE id=$1", [
+      receipt.memberId,
+    ])
+  ).rows[0];
+  assert.equal(stored.version, 2);
+  for (const column of ["id", "tenant_id", "church_id", "status", "created_at"])
+    assert.deepEqual(stored[column], before[column]);
+  const history = (
+    await observer.client.query(
+      "SELECT * FROM member_profile_history WHERE member_id=$1",
+      [receipt.memberId],
+    )
+  ).rows;
+  assert.equal(history.length, 1);
+  assert.equal(history[0].version, 1);
+  assert.equal(history[0].previous_profile.phone, "Contato anterior");
+  assert.equal(history[0].actor_id, who.id);
+  const audit = (
+    await observer.client.query(
+      "SELECT * FROM audit_events WHERE target=$1 AND action='member.updated'",
+      [receipt.memberId],
+    )
+  ).rows;
+  assert.equal(audit.length, 1);
+  assert.deepEqual(audit[0].metadata, {});
+  const detail = await request(path, undefined, who.cookie);
+  assert.equal((await detail.json()).member.version, 2);
+  // Falha de auditoria deve desfazer perfil e histórico, observados por outra conexão.
+  await observer.client.query(
+    `CREATE FUNCTION fail_profile_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='member.updated' THEN RAISE EXCEPTION 'synthetic'; END IF; RETURN NEW; END $$`,
+  );
+  await observer.client.query(
+    "CREATE TRIGGER fail_profile_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_profile_audit()",
+  );
+  try {
+    assert.equal((await edit({ ...profile, version: 2 })).status, 503);
+    assert.deepEqual(
+      (
+        await observer.client.query("SELECT * FROM members WHERE id=$1", [
+          receipt.memberId,
+        ])
+      ).rows[0],
+      stored,
+    );
+    assert.equal(
+      (
+        await observer.client.query(
+          "SELECT count(*)::int n FROM member_profile_history WHERE member_id=$1",
+          [receipt.memberId],
+        )
+      ).rows[0].n,
+      1,
+    );
+  } finally {
+    await observer.client.query(
+      "DROP TRIGGER fail_profile_audit ON audit_events",
+    );
+    await observer.client.query("DROP FUNCTION fail_profile_audit()");
+  }
+  await observer.client.query(
+    "UPDATE tenant_memberships SET role='unknown' WHERE tenant_id=$1 AND user_id=$2",
+    [who.organizationId, who.id],
+  );
+  assert.equal((await edit({ ...profile, version: 2 })).status, 403);
+  await observer.client.query(
+    "DELETE FROM tenant_memberships WHERE tenant_id=$1 AND user_id=$2",
+    [who.organizationId, who.id],
+  );
+  assert.equal((await edit({ ...profile, version: 2 })).status, 403);
+});
+
+test("onboarding: contatos da igreja opcionais persistem normalizados e são isolados", async () => {
+  const who = await account({
+    churchAddress: " Endereço sintético ",
+    churchPhone: " 00 0000-0000 ",
+    churchEmail: " igreja@example.test ",
+  });
+  const response = await request("/api/churches", undefined, who.cookie);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.organizationId, who.organizationId);
+  assert.equal(result.churches[0].address, "Endereço sintético");
+  assert.equal(result.churches[0].phone, "00 0000-0000");
+  assert.equal(result.churches[0].email, "igreja@example.test");
+  const other = await account();
+  assert.equal(
+    (await request(`/api/churches/${who.churchId}`, undefined, other.cookie))
+      .status,
+    404,
+  );
+  assert.equal(
+    (
+      await observer.client.query("SELECT address FROM churches WHERE id=$1", [
+        other.churchId,
+      ])
+    ).rows[0].address,
+    null,
+  );
+});

@@ -29,8 +29,11 @@ inicialmente para implementação e validação sintética. Operações posterio
 autorizaram separadamente migrations 0000–0003 e privilégios mínimos no DEV;
 isso não libera o módulo nem o uso de dados reais. A preparação do recorte DEV sintético por
 organização também foi autorizada em 2026-10-22, sem habilitação ou operação remota;
-regras no mesmo guia. Edição, exclusão e transferências continuam
-pendentes.
+regras no mesmo guia. A reformulação de interface de 2026-10-24 acrescenta edição
+cadastral, controle de versão e contatos opcionais da primeira igreja, somente
+validados em bancos descartáveis. Migration 0004 e ACLs incrementais permanecem
+pendentes de autorização operacional. Exclusão, alteração posterior de situação
+e transferências continuam pendentes.
 
 ## Organização, acesso e identidade
 

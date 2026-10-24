@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { readMember, readMemberFilters } from "../src/member-contracts.js";
+import {
+  readMember,
+  readMemberFilters,
+  readMemberEdit,
+} from "../src/member-contracts.js";
 import { isCivilDate, formatCivilDate } from "../src/member-types.js";
 import { memberApi, ApiError } from "../web/src/api.js";
 const churchId = "11111111-1111-4111-8111-111111111111";
@@ -128,4 +132,23 @@ test("membros: criação usa cookies de mesma origem e chave opaca", async () =>
   };
   await memberApi.create({ ...body, status: "Ativo" }, "synthetic-request-key");
   assert.equal(headers?.get("Idempotency-Key"), "synthetic-request-key");
+});
+
+test("edição exige versão e rejeita campos de vínculo e metadados", async () => {
+  const profile = { name: "Pessoa atualizada", version: 1 };
+  const result = await readMemberEdit(request(profile));
+  assert.equal(result.version, 1);
+  assert.equal(result.phone, null);
+  for (const change of [
+    { version: 0 },
+    { version: 1.5 },
+    { version: 2147483647 },
+    { version: undefined },
+    { tenant_id: churchId },
+    { churchId },
+    { status: "Ativo" },
+    { createdAt: "2026-01-01" },
+    { email: "inválido" },
+  ])
+    await assert.rejects(readMemberEdit(request({ ...profile, ...change })));
 });

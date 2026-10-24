@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 
@@ -114,6 +115,12 @@ export async function applyRuntimeGrants(migratorUrl: string) {
     await migrator.client.query("BEGIN");
     try {
       for (const grant of memberGrants) await migrator.client.query(grant);
+      await migrator.client.query(
+        await readFile(
+          new URL("../ops/interface-e-edicao-acls.sql", import.meta.url),
+          "utf8",
+        ),
+      );
       await migrator.client.query("COMMIT");
     } catch (error) {
       await migrator.client.query("ROLLBACK");

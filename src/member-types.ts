@@ -23,6 +23,7 @@ export interface Member extends Required<MemberInput> {
   id: string;
   churchName: string;
   createdAt: string;
+  version: number;
 }
 export interface MemberFilters {
   name?: string;
@@ -54,4 +55,19 @@ export function isCivilDate(value: string): boolean {
 }
 export function formatCivilDate(value: string | null): string {
   return value ? value.split("-").reverse().join("/") : "Não informado";
+}
+
+export type MemberProfile = Pick<
+  Required<MemberInput>,
+  | "name"
+  | "birthDate"
+  | "phone"
+  | "email"
+  | "joinedOn"
+  | "address"
+  | "baptismDate"
+  | "churchRole"
+>;
+export interface MemberEditInput extends MemberProfile {
+  version: number;
 }

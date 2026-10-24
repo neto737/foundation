@@ -1,8 +1,8 @@
-# Gestão de membros — primeira fatia
+# Gestão de membros
 
-Implementa cadastro, listagem paginada, filtros e ficha individual. O escopo
+Implementa cadastro, listagem paginada, filtros, ficha individual e edição cadastral. O escopo
 pessoal e as invariantes continuam em [Decisões do MVP](decisoes-mvp.md).
-Não implementa edição, exclusão, alteração posterior de situação, transferência,
+Não implementa exclusão, alteração posterior de situação, transferência,
 aniversariantes, indicadores, convites ou associação automática a contas.
 
 ## Habilitação e limites
@@ -83,7 +83,7 @@ titulares e recuperação precisam ser resolvidos antes de liberar uso real.
 | `GET /api/members/requests/:key` | Recupera `{ organizationId, memberId }` da tentativa do próprio ator na organização atual. Sem recibo, outra organização ou outro ator recebem `404`. Não recebe nem devolve perfil pessoal.                    |
 
 Todas exigem sessão pronta e vínculo administrativo atual. Permissões estáticas
-`members:read` e `members:create` usam `@t00ls-dev/access`; contexto usa o contrato
+`members:read`, `members:create` e `members:update` usam `@t00ls-dev/access`; contexto usa o contrato
 Foundation existente. Falhas preservam o padrão `{ erro, mensagem }`, headers
 privados, CSRF e limites de corpo existentes. Nenhuma resposta é cacheável.
 
@@ -142,6 +142,66 @@ organização e são comparadas ao contexto exibido; respostas atrasadas de uma
 montagem anterior não repovoam a tela. Uma revogação externa só pode ser conhecida
 na próxima consulta/revalidação; não há canal de push ou promessa de atualização
 instantânea enquanto a página permanece sem interação.
+
+## Edição cadastral
+
+A ficha oferece **Editar membro**. `PATCH /api/members/:id` recebe `version`
+inteiro positivo e o perfil completo: `name` obrigatório; `birthDate`, `phone`,
+`email`, `joinedOn`, `address`, `baptismDate` e `churchRole` opcionais, com as mesmas
+normalizações e limites do cadastro. Omitir um opcional o normaliza para `null`;
+a interface envia os valores atuais, permitindo limpar explicitamente um contato.
+A ficha acrescenta `version`; sucesso devolve `{ organizationId, memberId, version }`.
+
+A allowlist rejeita qualquer outro campo, inclusive `tenant_id`, `churchId`,
+`status`, identificadores, autoria, histórico e auditoria. Igreja e situação são
+somente consulta neste fluxo; transferência e mudança de situação permanecem
+fora desta entrega. O servidor exige sessão pronta, capacidade habilitada,
+organização ativa e administrador atual com `members:update`. Revalida e mantém
+locks compartilhados de sessão/contexto/vínculo durante a transação, reutilizando
+o mecanismo do cadastro. O membro é consultado e bloqueado por ID e organização;
+a escrita mantém também a igreja atual no predicado. Outro tenant e ID inexistente
+recebem o mesmo `404`.
+
+`SELECT FOR UPDATE` serializa a ficha. Versão desatualizada retorna `409
+MEMBRO_ALTERADO` sem modificar dados; a interface conserva o rascunho em memória e
+oferece **Consultar ficha atual**. Não sobrescreve automaticamente nem refaz o
+PATCH. Após falha de rede, consultar a ficha antes de tentar novamente: se o
+commit ocorreu, uma repetição com a versão antiga será recusada. Isso impede
+duplicar a mesma revisão sem introduzir outro recibo ou alterar a idempotência
+do cadastro.
+
+Perfil atualizado, incremento da versão, snapshot anterior dos campos permitidos
+em `member_profile_history` e evento `member.updated` com metadata `{}` confirmam
+na mesma transação/Client. Histórico pessoal possui FK composta e cascata com a
+ficha; não é auditoria técnica nem JSON genérico de request. O histórico inicial,
+os recibos de cadastro, UUID, igreja, situação e data de criação são preservados.
+A runtime apenas insere o novo histórico, sem SELECT/UPDATE/DELETE nessa tabela.
+
+A migration [0004](../migrations/0004_interface-e-edicao.sql) e as
+[ACLs incrementais](../ops/interface-e-edicao-acls.sql) foram preparadas para
+aplicação administrativa posterior. Os privilégios exatos e a ordem operacional
+estão no [guia Workers](cloudflare-workers.md#roles-e-acls-mínimas-dev).
+Nenhum deles foi aplicado em DEV ou produção nesta tarefa. Sem a migration e as
+ACLs, a nova edição não está operacionalmente liberada. A capacidade de membros
+continua desabilitada por padrão e respeita o recorte sintético existente.
+
+## Confirmação e uso móvel
+
+O formulário tem seções de identificação, contato e datas, com erro associado a
+cada campo, foco no primeiro erro e botão explícito **Salvar membro** ou **Salvar
+alterações**. O primeiro submit do formulário é desabilitado e oculto, impedindo
+a submissão implícita nativa. O handler aceita somente o botão real como
+`SubmitEvent.submitter`. Enter em input de uma linha avança ao próximo controle;
+Tab, selects, composição IME e ativação do botão por teclado/tecnologia assistiva
+continuam disponíveis. Enter em busca mantém sua semântica de filtrar.
+
+A guarda síncrona de operação, os controles desabilitados e a idempotência existente
+impedem submissões simultâneas. Sucesso abre a ficha com confirmação. Navegação
+com rascunho exige confirmação de descarte; `beforeunload` solicita a proteção
+nativa quando o navegador a oferece. Recuperar foco revalida autoridade sem
+desmontar um formulário preenchido; revogação ou troca de tenant remove os dados.
+Não há persistência pessoal em storage. Matar o app, fechar a aba ou o sistema
+descartar a página pode perder o rascunho, especialmente no iOS.
 
 ### Proteção do UPDATE necessário ao lock no DEV
 
@@ -205,11 +265,11 @@ npm run test:worker -- --runtime-acls
 npm run test:e2e -- --runtime-acls
 ```
 
-`test/runtime-acl-fixture.ts` prepara roles no cluster descartável, aplica 0000–0003
+`test/runtime-acl-fixture.ts` prepara roles no cluster descartável, aplica 0000–0004
 pela migradora e separa login de execução e conexão observadora. O modo padrão
 continua disponível; a CI executa integração nos dois modos e workerd/E2E no modo
-restrito, preservando todos os cenários dessas suítes. Os sete grupos de privilégios
-e limites de segurança têm fonte única no [guia Workers](cloudflare-workers.md#roles-e-acls-mínimas-dev).
+restrito, preservando todos os cenários dessas suítes. As ACLs de cadastro, o incremento de edição
+e os limites de segurança estão no [guia Workers](cloudflare-workers.md#roles-e-acls-mínimas-dev).
 
 A imagem local fixada é PostgreSQL 17.11. Inspeção estrutural e conexão direta
 Neon PostgreSQL 18.6 não equivalem a homologação funcional nesse servidor ou

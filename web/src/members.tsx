@@ -1,9 +1,12 @@
+import { EmptyState, Icon, Status, useDraftGuard } from "./ui.js";
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, memberApi, type NamedItem } from "./api.js";
 import { requestStorage } from "./session.js";
 import {
   formatCivilDate,
   memberTextLimits,
+  isCivilDate,
+  type MemberEditInput,
   type Member,
   type MemberInput,
   type MemberFilters,
@@ -30,15 +33,25 @@ export function Members({
   organization: NamedItem;
   churches: NamedItem[];
   path: string;
-  navigate(path: string): void;
+  navigate(path: string, success?: string): void;
   onAccessChanged(): void;
 }) {
-  const mode =
-    path === "/membros/novo"
+  const mode = path.endsWith("/editar")
+    ? "edit"
+    : path === "/membros/novo"
       ? "create"
       : path === "/membros"
         ? "list"
         : "detail";
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => window.matchMedia("(min-width: 761px)").matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 761px)");
+    const change = () => setFiltersOpen(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
   const [page, setPage] = useState<MemberPage | null>(null);
   const [member, setMember] = useState<Member | null>(null);
   const [busy, setBusy] = useState(true);
@@ -126,7 +139,7 @@ export function Members({
         const result = await memberApi.list(filters);
         check(result.organizationId);
         if (sequence === generation.current) setPage(result);
-      } else if (mode === "detail") {
+      } else if (mode === "detail" || mode === "edit") {
         const result = await memberApi.find(path.split("/")[2] ?? "");
         check(result.organizationId);
         if (sequence === generation.current) setMember(result.member);
@@ -138,7 +151,10 @@ export function Members({
             check(result.organizationId);
             if (sequence === generation.current) {
               clearKey();
-              navigate(`/membros/${result.memberId}`);
+              navigate(
+                `/membros/${result.memberId}`,
+                "Membro cadastrado com sucesso. Confira os dados na ficha abaixo.",
+              );
             }
           } catch (cause) {
             if (!(cause instanceof ApiError && cause.status === 404))
@@ -175,7 +191,10 @@ export function Members({
       check(result.organizationId);
       if (sequence === generation.current) {
         clearKey();
-        navigate(`/membros/${result.memberId}`);
+        navigate(
+          `/membros/${result.memberId}`,
+          "Membro cadastrado com sucesso. Confira os dados na ficha abaixo.",
+        );
       }
     } catch (cause) {
       if (sequence !== generation.current) return;
@@ -205,7 +224,10 @@ export function Members({
       check(result.organizationId);
       if (sequence === generation.current) {
         clearKey();
-        navigate(`/membros/${result.memberId}`);
+        navigate(
+          `/membros/${result.memberId}`,
+          "Membro cadastrado com sucesso. Confira os dados na ficha abaixo.",
+        );
       }
     } catch (cause) {
       if (sequence !== generation.current) return;
@@ -234,32 +256,16 @@ export function Members({
   }
   return (
     <section aria-label="Gestão de membros" aria-busy={busy}>
-      <p className="organization-name">{organization.nome}</p>
-      <nav className="actions" aria-label="Navegação da organização">
+      {mode !== "list" && (
         <button
-          className="secondary"
+          aria-label="Voltar aos membros"
+          className="text-button back-link"
           disabled={busy}
-          onClick={() => navigate("/igrejas")}
+          onClick={() => navigate("/membros")}
         >
-          Igrejas
+          ← Voltar aos membros
         </button>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => navigate("/organizacoes")}
-        >
-          Trocar organização
-        </button>
-        {mode !== "list" && (
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={() => navigate("/membros")}
-          >
-            Voltar aos membros
-          </button>
-        )}
-      </nav>
+      )}
       {busy && <p role="status">Consultando membros…</p>}
       {error && (
         <p className="notice error" role="alert">
@@ -268,16 +274,20 @@ export function Members({
       )}
       {mode === "list" && (
         <>
-          <button
-            className="primary"
-            disabled={busy}
-            onClick={() => navigate("/membros/novo")}
-          >
-            Cadastrar membro
-          </button>
+          <div className="page-intro">
+            <p>Cadastros e contatos da sua organização.</p>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => navigate("/membros/novo")}
+            >
+              <Icon name="plus" />
+              Cadastrar membro
+            </button>
+          </div>
           <form aria-label="Filtrar membros" onSubmit={filter}>
-            <fieldset disabled={busy}>
-              <legend>Filtros</legend>
+            <fieldset disabled={busy} className="filter-grid">
+              <legend className="sr-only">Filtros</legend>
               <div className="field">
                 <label htmlFor="member-name-filter">Nome</label>
                 <input
@@ -287,50 +297,68 @@ export function Members({
                   defaultValue={filters.name ?? ""}
                 />
               </div>
-              <div className="field">
-                <label htmlFor="member-church-filter">Igreja</label>
-                <select
-                  id="member-church-filter"
-                  name="churchId"
-                  defaultValue={filters.churchId ?? ""}
-                >
-                  <option value="">Todas as igrejas</option>
-                  {churches.map((church) => (
-                    <option key={church.id} value={church.id}>
-                      {church.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="member-status-filter">Situação</label>
-                <select
-                  id="member-status-filter"
-                  name="status"
-                  defaultValue={filters.status ?? ""}
-                >
-                  <option value="">Todas as situações</option>
-                  <option>Ativo</option>
-                  <option>Inativo</option>
-                </select>
-              </div>
-              <button className="secondary" type="submit">
-                Filtrar membros
+              <details
+                className="member-filter-options"
+                open={filtersOpen}
+                onToggle={(event) => setFiltersOpen(event.currentTarget.open)}
+              >
+                <summary>Mais filtros</summary>
+                <div className="filter-options-grid">
+                  <div className="field">
+                    <label htmlFor="member-church-filter">Igreja</label>
+                    <select
+                      id="member-church-filter"
+                      name="churchId"
+                      defaultValue={filters.churchId ?? ""}
+                    >
+                      <option value="">Todas as igrejas</option>
+                      {churches.map((church) => (
+                        <option key={church.id} value={church.id}>
+                          {church.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="member-status-filter">Situação</label>
+                    <select
+                      id="member-status-filter"
+                      name="status"
+                      defaultValue={filters.status ?? ""}
+                    >
+                      <option value="">Todas as situações</option>
+                      <option>Ativo</option>
+                      <option>Inativo</option>
+                    </select>
+                  </div>
+                </div>
+              </details>
+              <button
+                className="secondary"
+                type="submit"
+                aria-label="Filtrar membros"
+              >
+                Filtrar
               </button>
             </fieldset>
           </form>
           {page && (
             <>
               {page.members.length ? (
-                <ul className="item-list">
+                <ul className="item-list member-list">
                   {page.members.map((item) => (
                     <li key={item.id}>
+                      <span className="avatar" aria-hidden="true">
+                        {item.name
+                          .trim()
+                          .slice(0, 1)
+                          .toLocaleUpperCase("pt-BR")}
+                      </span>
                       <div className="member-summary">
                         <strong>{item.name}</strong>
-                        <span>
-                          {item.churchName} · {item.status}
-                        </span>
+                        <span>{item.churchName}</span>
                       </div>
+                      <Status value={item.status} />
                       <button
                         className="primary compact"
                         onClick={() => navigate(`/membros/${item.id}`)}
@@ -342,9 +370,16 @@ export function Members({
                   ))}
                 </ul>
               ) : (
-                <p>Nenhum membro encontrado.</p>
+                <EmptyState title="Nenhum membro encontrado.">
+                  <p>
+                    Cadastre a primeira pessoa ou ajuste os filtros da busca.
+                  </p>
+                </EmptyState>
               )}
-              <nav className="actions" aria-label="Paginação dos membros">
+              <nav
+                className="actions pagination"
+                aria-label="Paginação dos membros"
+              >
                 <button
                   className="secondary"
                   disabled={busy || page.page === 1}
@@ -402,29 +437,97 @@ export function Members({
           )}
         </>
       )}
-      {member && (
-        <dl className="member-details">
-          <dt>Nome</dt>
-          <dd>{member.name}</dd>
-          <dt>Igreja</dt>
-          <dd>{member.churchName}</dd>
-          <dt>Situação</dt>
-          <dd>{member.status}</dd>
-          {optionalFields.map(([key, label, type]) => (
-            <Fragment key={key}>
-              <dt>{label}</dt>
-              <dd>
-                {type === "date"
-                  ? formatCivilDate(member[key])
-                  : member[key] || "Não informado"}
-              </dd>
-            </Fragment>
-          ))}
-          <dt>Cadastrado em</dt>
-          <dd>{new Date(member.createdAt).toLocaleString("pt-BR")}</dd>
-        </dl>
+      {mode === "edit" && member && (
+        <MemberForm
+          busy={busy}
+          churches={churches}
+          initial={member}
+          onSubmit={async (input) => {
+            if (running.current) return;
+            running.current = true;
+            setBusy(true);
+            setError(null);
+            const sequence = generation.current;
+            try {
+              await validateContext();
+              if (sequence !== generation.current) return;
+              const { churchId: _church, status: _status, ...profile } = input;
+              const result = await memberApi.edit(member.id, {
+                ...profile,
+                version: member.version,
+              } as MemberEditInput);
+              check(result.organizationId);
+              if (sequence === generation.current)
+                navigate(
+                  `/membros/${member.id}`,
+                  "Dados do membro atualizados com sucesso.",
+                );
+            } catch (cause) {
+              if (sequence !== generation.current) return;
+              if (
+                cause instanceof ApiError &&
+                (cause.status === 401 || cause.status === 403)
+              )
+                onAccessChanged();
+              else
+                setError(
+                  cause instanceof ApiError
+                    ? cause.message
+                    : "Não foi possível confirmar a alteração. Consulte a ficha antes de tentar novamente.",
+                );
+            } finally {
+              running.current = false;
+              if (sequence === generation.current) setBusy(false);
+            }
+          }}
+        />
       )}
-      {error && !uncertain && mode !== "create" && (
+      {mode === "edit" && error && member && (
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => navigate(`/membros/${member.id}`)}
+        >
+          Consultar ficha atual
+        </button>
+      )}
+      {mode === "detail" && member && (
+        <>
+          <div className="profile-header">
+            <span className="avatar large" aria-hidden="true">
+              {member.name.trim().slice(0, 1)}
+            </span>
+            <div>
+              <p className="eyebrow">Cadastro individual</p>
+              <h2>{member.name}</h2>
+              <Status value={member.status} />
+            </div>
+            <button
+              className="secondary"
+              onClick={() => navigate(`/membros/${member.id}/editar`)}
+            >
+              Editar membro
+            </button>
+          </div>
+          <dl className="member-details surface">
+            <dt>Igreja</dt>
+            <dd>{member.churchName}</dd>
+            {optionalFields.map(([key, label, type]) => (
+              <Fragment key={key}>
+                <dt>{label}</dt>
+                <dd>
+                  {type === "date"
+                    ? formatCivilDate(member[key])
+                    : member[key] || "Não informado"}
+                </dd>
+              </Fragment>
+            ))}
+            <dt>Cadastrado em</dt>
+            <dd>{new Date(member.createdAt).toLocaleString("pt-BR")}</dd>
+          </dl>
+        </>
+      )}
+      {error && !uncertain && mode === "list" && (
         <button
           className="secondary"
           disabled={busy}
@@ -439,99 +542,238 @@ export function Members({
 function MemberForm({
   churches,
   busy,
+  initial,
   onSubmit,
 }: {
   churches: NamedItem[];
   busy: boolean;
+  initial?: Member;
   onSubmit(input: MemberInput): Promise<void>;
 }) {
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const draft = useDraftGuard();
+  const formRef = useRef<HTMLFormElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
   async function handle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
-    const data = new FormData(event.currentTarget);
+    if (
+      busy ||
+      (event.nativeEvent as SubmitEvent).submitter !== saveRef.current
+    )
+      return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
     const input: MemberInput = {
-      churchId: String(data.get("churchId") ?? ""),
-      name: String(data.get("name") ?? ""),
-      status: data.get("status") as MemberStatus,
+      churchId: initial?.churchId ?? String(data.get("churchId") ?? ""),
+      name: String(data.get("name") ?? "").trim(),
+      status: initial?.status ?? (data.get("status") as MemberStatus),
     };
-    for (const [key] of optionalFields)
+    const next: Record<string, string> = {};
+    if (!input.name) next.name = "Informe o nome do membro.";
+    if (!input.churchId) next.churchId = "Selecione uma igreja.";
+    for (const [key, , type] of optionalFields) {
       input[key] = String(data.get(key) ?? "").trim() || null;
+      if (
+        type === "date" &&
+        ((form.elements.namedItem(key) as HTMLInputElement).validity.badInput ||
+          (input[key] && !isCivilDate(input[key]!)))
+      )
+        next[key] = "Informe uma data válida.";
+    }
+    if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))
+      next.email = "Informe um e-mail válido.";
+    for (const [key, max] of Object.entries(memberTextLimits)) {
+      if (String(input[key as keyof MemberInput] ?? "").length > max)
+        next[key] = `Use no máximo ${max} caracteres.`;
+    }
+    setErrors(next);
+    if (Object.keys(next).length) {
+      (form.elements.namedItem(Object.keys(next)[0]!) as HTMLElement)?.focus();
+      return;
+    }
     await onSubmit(input);
+  }
+  function field(key: (typeof optionalFields)[number][0]) {
+    const [, label, type] = optionalFields.find(([value]) => value === key)!;
+    return (
+      <div
+        className={`field ${key === "address" ? "full-width" : ""}`}
+        key={key}
+      >
+        <label htmlFor={`member-${key}`}>{label} (opcional)</label>
+        <input
+          id={`member-${key}`}
+          name={key}
+          type={type}
+          defaultValue={initial?.[key] ?? ""}
+          enterKeyHint="next"
+          max={type === "date" ? "9999-12-31" : undefined}
+          min={type === "date" ? "0001-01-01" : undefined}
+          maxLength={
+            key in memberTextLimits
+              ? memberTextLimits[key as keyof typeof memberTextLimits]
+              : undefined
+          }
+          aria-invalid={Boolean(errors[key])}
+          aria-describedby={
+            errors[key]
+              ? `error-${key}`
+              : key === "churchRole"
+                ? "role-hint"
+                : undefined
+          }
+        />
+        {errors[key] && (
+          <p id={`error-${key}`} className="field-error">
+            {errors[key]}
+          </p>
+        )}
+        {key === "churchRole" && (
+          <p className="hint" id="role-hint">
+            A função não concede acesso administrativo.
+          </p>
+        )}
+      </div>
+    );
   }
   return (
     <form
-      aria-label="Cadastrar membro"
+      ref={formRef}
+      className="member-form"
+      aria-label={initial ? "Editar membro" : "Cadastrar membro"}
+      data-dirty={draft.dirty}
+      onChange={draft.change}
+      noValidate
       onSubmit={(event) => void handle(event)}
+      onKeyDown={(event) => {
+        // Somente Enter em inputs de uma linha. Botões, selects, Tab e composição IME preservados.
+        if (
+          event.key !== "Enter" ||
+          event.nativeEvent.isComposing ||
+          !(event.target instanceof HTMLInputElement)
+        )
+          return;
+        event.preventDefault();
+        const controls = Array.from(
+          event.currentTarget.querySelectorAll<HTMLElement>(
+            "input, select, button",
+          ),
+        );
+        controls[controls.indexOf(event.target) + 1]?.focus();
+      }}
     >
-      <p>
-        Nome, igreja e situação são obrigatórios. Os demais campos são
-        opcionais.
+      {/* O primeiro submit desabilitado impede a submissão implícita nativa,
+          inclusive quando o teclado virtual não emite keydown. A confirmação
+          real continua sendo um botão submit acessível e identificado. */}
+      <button type="submit" hidden disabled tabIndex={-1} aria-hidden="true" />
+      <p className="form-description">
+        {initial
+          ? "Atualize os dados cadastrais. Igreja e situação são mantidas neste fluxo."
+          : "Nome, igreja e situação são obrigatórios. Preencha os demais dados apenas quando conhecidos."}
       </p>
-      <fieldset disabled={busy}>
-        <legend className="sr-only">Dados do membro</legend>
-        <div className="field">
-          <label htmlFor="member-name">Nome (obrigatório)</label>
-          <input
-            id="member-name"
-            name="name"
-            required
-            maxLength={memberTextLimits.name}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="member-church">Igreja (obrigatória)</label>
-          <select
-            id="member-church"
-            name="churchId"
-            required
-            defaultValue={churches.length === 1 ? churches[0]!.id : ""}
-          >
-            <option value="">Selecione uma igreja</option>
-            {churches.map((church) => (
-              <option key={church.id} value={church.id}>
-                {church.nome}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="member-status">Situação (obrigatória)</label>
-          <select
-            id="member-status"
-            name="status"
-            required
-            defaultValue="Ativo"
-          >
-            <option>Ativo</option>
-            <option>Inativo</option>
-          </select>
-        </div>
-        {optionalFields.map(([key, label, type]) => (
-          <div className="field" key={key}>
-            <label htmlFor={`member-${key}`}>{label} (opcional)</label>
+      <fieldset disabled={busy} className="surface form-section">
+        <legend>Identificação</legend>
+        <p className="hint">Os dados essenciais para reconhecer esta pessoa.</p>
+        <div className="form-grid">
+          <div className="field full-width">
+            <label htmlFor="member-name">Nome (obrigatório)</label>
             <input
-              id={`member-${key}`}
-              name={key}
-              type={type}
-              max={type === "date" ? "9999-12-31" : undefined}
-              min={type === "date" ? "0001-01-01" : undefined}
-              maxLength={
-                key in memberTextLimits
-                  ? memberTextLimits[key as keyof typeof memberTextLimits]
-                  : undefined
-              }
+              id="member-name"
+              name="name"
+              required
+              maxLength={160}
+              defaultValue={initial?.name ?? ""}
+              autoComplete="name"
+              enterKeyHint="next"
+              aria-invalid={Boolean(errors.name)}
+              aria-describedby={errors.name ? "error-name" : undefined}
             />
-            {key === "churchRole" && (
-              <p className="hint">
-                A função não concede acesso administrativo.
+            {errors.name && (
+              <p id="error-name" className="field-error">
+                {errors.name}
               </p>
             )}
           </div>
-        ))}
-        <button className="primary" type="submit">
-          {busy ? "Aguarde…" : "Salvar membro"}
-        </button>
+          {!initial && (
+            <>
+              <div className="field">
+                <label htmlFor="member-church">Igreja (obrigatória)</label>
+                <select
+                  id="member-church"
+                  name="churchId"
+                  required
+                  defaultValue={churches.length === 1 ? churches[0]!.id : ""}
+                  aria-invalid={Boolean(errors.churchId)}
+                  aria-describedby={
+                    errors.churchId ? "error-churchId" : undefined
+                  }
+                >
+                  <option value="">Selecione uma igreja</option>
+                  {churches.map((church) => (
+                    <option key={church.id} value={church.id}>
+                      {church.nome}
+                    </option>
+                  ))}
+                </select>
+                {errors.churchId && (
+                  <p id="error-churchId" className="field-error">
+                    {errors.churchId}
+                  </p>
+                )}
+              </div>
+              <div className="field">
+                <label htmlFor="member-status">Situação (obrigatória)</label>
+                <select
+                  id="member-status"
+                  name="status"
+                  required
+                  defaultValue="Ativo"
+                >
+                  <option>Ativo</option>
+                  <option>Inativo</option>
+                </select>
+              </div>
+            </>
+          )}
+          {field("birthDate")}
+          {field("churchRole")}
+        </div>
       </fieldset>
+      <fieldset disabled={busy} className="surface form-section">
+        <legend>Contato</legend>
+        <p className="hint">
+          Contatos são opcionais e não criam uma conta de acesso.
+        </p>
+        <div className="form-grid">
+          {field("phone")}
+          {field("email")}
+          {field("address")}
+        </div>
+      </fieldset>
+      <fieldset disabled={busy} className="surface form-section">
+        <legend>Datas conhecidas</legend>
+        <p className="hint">
+          Deixe em branco quando a informação não estiver disponível.
+        </p>
+        <div className="form-grid">
+          {field("joinedOn")}
+          {field("baptismDate")}
+        </div>
+      </fieldset>
+      {Object.keys(errors).length > 0 && (
+        <p className="sr-only" role="alert">
+          Confira os campos indicados antes de salvar.
+        </p>
+      )}
+      <div className="form-actions surface">
+        <p className="hint">
+          Confira os dados e selecione{" "}
+          {initial ? "Salvar alterações" : "Salvar membro"} para confirmar.
+        </p>
+        <button ref={saveRef} className="primary" type="submit" disabled={busy}>
+          {busy ? "Salvando…" : initial ? "Salvar alterações" : "Salvar membro"}
+        </button>
+      </div>
     </form>
   );
 }

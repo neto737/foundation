@@ -90,8 +90,16 @@ são privadas e não armazenáveis em cache; links não são enviados em `Refere
 | `GET /api/organizations`              | Lista somente organizações com vínculo administrativo atual da conta pronta, para retomar em outra sessão.                                                                                                                                     |
 | `POST /api/tenant`                    | `{ "organizationId": "UUID" }`. Valida vínculo administrativo antes de associar a organização à sessão.                                                                                                                                        |
 | `GET /api/context`                    | Organização ativa e role `admin`, após resolver sessão pronta e vínculo atual.                                                                                                                                                                 |
-| `GET /api/churches`                   | `{ organizationId, churches: [{ id, nome }] }`, com o contexto autorizado usado na própria consulta. A interface confere esse ID para evitar associação incorreta se outra aba trocar o tenant.                                                |
+| `GET /api/churches`                   | `{ organizationId, churches: [{ id, nome, address, phone, email }] }`, com o contexto autorizado usado na própria consulta. A interface confere esse ID para evitar associação incorreta se outra aba trocar o tenant.                         |
 | `GET /api/churches/:id`               | Igreja consultada por ID **e** organização ativa autorizada. Outra organização retorna `404`.                                                                                                                                                  |
+
+O provisionamento também aceita `churchAddress` (até 500 caracteres),
+`churchPhone` (até 40) e `churchEmail` (até 254, com sintaxe válida), todos opcionais.
+Ausência, null e string vazia normalizam para null. Nome da igreja continua sendo
+o único campo obrigatório da igreja; não há nova etapa obrigatória. Contatos
+participam do hash da tentativa quando preenchidos, preservando o hash anterior
+para o contrato somente com nomes. Persistem na mesma transação de provisionamento.
+Sua persistência depende de 0004, conforme o [guia Workers](cloudflare-workers.md#incremento-de-interface-e-edição-pendente-de-operação).
 
 Rotas convencionais de signup, mudança de senha/e-mail, plugins e chamadas diretas
 de emissão/aplicação de reset não são encaminhadas ao Better Auth. A allowlist é

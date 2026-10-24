@@ -23,7 +23,7 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
     await observer.client.query("BEGIN READ ONLY");
     try {
       const status = await inspectMigrationHistory(observer.client);
-      assert.equal(status.applied.length, 4);
+      assert.equal(status.applied.length, 5);
       assert.deepEqual(status.pending, []);
       assert.equal(
         (await observer.client.query("SHOW transaction_read_only")).rows[0]
@@ -63,7 +63,7 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
     try {
       await empty.client.query("BEGIN READ ONLY");
       const status = await inspectMigrationHistory(empty.client);
-      assert.equal(status.pending.length, 4);
+      assert.equal(status.pending.length, 5);
       assert.deepEqual(status.applied, []);
       assert.equal(
         (

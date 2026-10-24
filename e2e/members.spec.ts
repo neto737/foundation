@@ -131,6 +131,8 @@ test("membros: cadastro completo, ficha com datas civis, filtros e acessibilidad
     page.getByText("Nenhum membro encontrado.", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("Nome", { exact: true }).fill("sintética");
+  if (!(await page.getByLabel("Situação", { exact: true }).isVisible()))
+    await page.getByText("Mais filtros", { exact: true }).click();
   await page.getByLabel("Situação", { exact: true }).selectOption("Ativo");
   await page
     .getByRole("button", { name: "Filtrar membros", exact: true })
@@ -408,4 +410,349 @@ test("membros: capacidade desabilitada remove dados e navegação e impede abert
   await expect(
     page.getByRole("button", { name: "Cadastrar membro", exact: true }),
   ).toHaveCount(0);
+});
+
+test("membros: Enter não grava, confirmação explícita, erros locais e edição acessível", async ({
+  page,
+}, info) => {
+  const who = await openMembers(page);
+  await startCreate(page, "Pessoa para revisão");
+  const name = page.getByLabel("Nome (obrigatório)", { exact: true });
+  let writes = 0;
+  page.on("request", (request) => {
+    if (
+      ["POST", "PATCH"].includes(request.method()) &&
+      /\/api\/members(?:\/[^/]+)?$/.test(new URL(request.url()).pathname)
+    )
+      writes++;
+  });
+  await name.press("Enter");
+  await page
+    .getByLabel("Telefone (opcional)", { exact: true })
+    .fill("Contato sintético");
+  await page.getByLabel("Telefone (opcional)", { exact: true }).press("Enter");
+  await page
+    .getByRole("form", { name: "Cadastrar membro", exact: true })
+    .evaluate((form) => (form as HTMLFormElement).requestSubmit());
+  expect(writes).toBe(0);
+  expect(
+    (
+      await observer.client.query(
+        "SELECT count(*)::int n FROM members WHERE tenant_id=$1",
+        [who.organizationId],
+      )
+    ).rows[0].n,
+  ).toBe(0);
+  // Voltar de outro app mantém o rascunho, mas o envio revalida autoridade no servidor.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(name).toHaveValue("Pessoa para revisão");
+  await name.fill(" ");
+  await page
+    .getByRole("button", { name: "Salvar membro", exact: true })
+    .click();
+  await expect(
+    page.getByText("Informe o nome do membro.", { exact: true }),
+  ).toBeVisible();
+  await expect(name).toBeFocused();
+  expect(writes).toBe(0);
+  await name.fill("Pessoa para revisão");
+  await page
+    .getByLabel("E-mail de contato (opcional)", { exact: true })
+    .fill("inválido");
+  await page
+    .getByRole("button", { name: "Salvar membro", exact: true })
+    .click();
+  await expect(
+    page.getByText("Informe um e-mail válido.", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("E-mail de contato (opcional)", { exact: true })
+    .fill("sintetico@example.test");
+  const save = page.getByRole("button", { name: "Salvar membro", exact: true });
+  await save.focus();
+  await save.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Ficha do membro", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Membro cadastrado com sucesso. Confira os dados na ficha abaixo.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  expect(writes).toBe(1);
+  await page
+    .getByRole("button", { name: "Editar membro", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Editar membro", exact: true }),
+  ).toBeVisible();
+  await expect(name).toHaveValue("Pessoa para revisão");
+  await expect(
+    page.getByLabel("Igreja (obrigatória)", { exact: true }),
+  ).toHaveCount(0);
+  await name.fill("Pessoa com cadastro atualizado");
+  await name.press("Enter");
+  expect(writes).toBe(1);
+  await page.getByLabel("Telefone (opcional)", { exact: true }).fill("");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page
+    .getByRole("button", { name: "Salvar alterações", exact: true })
+    .click();
+  await expect(
+    page.getByText("Dados do membro atualizados com sucesso.", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", {
+      name: "Pessoa com cadastro atualizado",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const saved = (
+    await observer.client.query("SELECT * FROM members WHERE tenant_id=$1", [
+      who.organizationId,
+    ])
+  ).rows;
+  expect(saved).toHaveLength(1);
+  expect(saved[0].version).toBe(2);
+  expect(saved[0].phone).toBeNull();
+  expect(saved[0].church_id).toBe(who.churchId);
+  await page
+    .getByRole("button", { name: "Editar membro", exact: true })
+    .click();
+  await expect(name).toHaveValue("Pessoa com cadastro atualizado");
+  await name.fill("Rascunho em conflito");
+  await observer.client.query(
+    "UPDATE members SET version=version+1 WHERE tenant_id=$1",
+    [who.organizationId],
+  );
+  await page
+    .getByRole("button", { name: "Salvar alterações", exact: true })
+    .click();
+  await expect(
+    page.getByText(/Este cadastro foi atualizado em outra sessão/),
+  ).toBeVisible();
+  await expect(name).toHaveValue("Rascunho em conflito");
+  expect(
+    (
+      await observer.client.query(
+        "SELECT name FROM members WHERE tenant_id=$1",
+        [who.organizationId],
+      )
+    ).rows[0].name,
+  ).toBe("Pessoa com cadastro atualizado");
+  // Somente fixtures sintéticas, sem tokens ou credenciais nas evidências.
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(".local/e2e", { recursive: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-edicao.png`,
+    fullPage: false,
+  });
+});
+
+test("membros: cliques repetidos produzem uma única gravação e uma única ficha", async ({
+  page,
+}) => {
+  const who = await openMembers(page);
+  await startCreate(page, "Pessoa com confirmação única");
+  let posts = 0;
+  let release!: () => void;
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/members", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    posts++;
+    await wait;
+    await route.continue();
+  });
+  const save = page.getByRole("button", { name: "Salvar membro", exact: true });
+  await save.click();
+  await expect(
+    page.getByRole("button", { name: "Salvando…", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("form", { name: "Cadastrar membro", exact: true })
+    .evaluate((form) => {
+      const button = form.querySelector<HTMLButtonElement>(
+        'button[type="submit"]',
+      )!;
+      form.dispatchEvent(
+        new SubmitEvent("submit", {
+          bubbles: true,
+          cancelable: true,
+          submitter: button,
+        }),
+      );
+    });
+  release();
+  await expect(
+    page.getByRole("heading", { name: "Ficha do membro", exact: true }),
+  ).toBeVisible();
+  expect(posts).toBe(1);
+  expect(
+    (
+      await observer.client.query(
+        "SELECT count(*)::int n FROM members WHERE tenant_id=$1",
+        [who.organizationId],
+      )
+    ).rows[0].n,
+  ).toBe(1);
+});
+
+test("interface: navegação, listas e formulários em largura estreita e texto ampliado", async ({
+  page,
+}, info) => {
+  const viewport = page.viewportSize()!;
+  await openMembers(page);
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(".local/e2e", { recursive: true });
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-membros-vazio.png`,
+    fullPage: false,
+  });
+  await page.getByRole("button", { name: "Início", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Visão geral", exact: true }),
+  ).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-painel.png`,
+    fullPage: false,
+  });
+  await page.getByRole("button", { name: "Igrejas", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Igrejas da organização", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-igrejas.png`,
+    fullPage: false,
+  });
+  await page.getByRole("button", { name: "Membros", exact: true }).click();
+  await startCreate(page, "Pessoa sintética em tela estreita");
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-cadastro.png`,
+    fullPage: false,
+  });
+  for (const width of [320, 375, 390]) {
+    await page.setViewportSize({ width, height: 667 });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "150%";
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page
+      .getByLabel("Função na igreja (opcional)", { exact: true })
+      .scrollIntoViewIfNeeded();
+    await expect(
+      page.getByLabel("Função na igreja (opcional)", { exact: true }),
+    ).toBeVisible();
+  }
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "";
+  });
+  // Altura reduzida aproxima a área útil com teclado aberto, sem simular um teclado iOS real.
+  await page.setViewportSize({ width: 375, height: 360 });
+  const baptism = page.getByLabel("Data de batismo (opcional)", {
+    exact: true,
+  });
+  await baptism.focus();
+  await expect(baptism).toBeFocused();
+  const save = page.getByRole("button", { name: "Salvar membro", exact: true });
+  // WebKit permite Tab entre os segmentos nativos de uma data.
+  for (
+    let step = 0;
+    step < 8 &&
+    !(await save.evaluate((button) => button === document.activeElement));
+    step++
+  )
+    await page.keyboard.press("Tab");
+  await expect(save).toBeFocused();
+  await expect
+    .poll(async () => {
+      const buttonBounds = await save.boundingBox();
+      const navigationBounds = await page.locator(".admin-nav").boundingBox();
+      return buttonBounds!.y + buttonBounds!.height <= navigationBounds!.y;
+    })
+    .toBe(true);
+  await page.setViewportSize(viewport);
+  await save.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-cadastro-confirmacao.png`,
+    fullPage: false,
+  });
+  await save.click();
+  await expect(
+    page.getByRole("heading", { name: "Ficha do membro", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-ficha.png`,
+    fullPage: false,
+  });
+  await page
+    .getByRole("button", { name: "Voltar aos membros", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Consultar Pessoa sintética em tela estreita",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-lista.png`,
+    fullPage: false,
+  });
+});
+
+test("membros: edição com vínculo revogado é negada e remove o rascunho protegido", async ({
+  page,
+}) => {
+  const who = await openMembers(page);
+  await startCreate(page, "Pessoa preservada após revogação");
+  await page
+    .getByRole("button", { name: "Salvar membro", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Ficha do membro", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Editar membro", exact: true })
+    .click();
+  await page
+    .getByLabel("Nome (obrigatório)", { exact: true })
+    .fill("Alteração sem autorização");
+  await observer.client.query(
+    "DELETE FROM tenant_memberships WHERE tenant_id=$1 AND user_id=$2",
+    [who.organizationId, who.userId],
+  );
+  await page
+    .getByRole("button", { name: "Salvar alterações", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Seu acesso precisa de atenção",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("form", { name: "Editar membro", exact: true }),
+  ).toHaveCount(0);
+  const stored = (
+    await observer.client.query(
+      "SELECT name,version FROM members WHERE tenant_id=$1",
+      [who.organizationId],
+    )
+  ).rows[0];
+  expect(stored.name).toBe("Pessoa preservada após revogação");
+  expect(stored.version).toBe(1);
 });

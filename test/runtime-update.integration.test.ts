@@ -445,6 +445,67 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         );
       },
     );
+    await t.test(
+      "0004 preserva fichas existentes, inicializa versão e mantém histórico pessoal eliminável",
+      async () => {
+        const row = (
+          await owner.client.query(
+            "INSERT INTO members(tenant_id,church_id,name,status,phone) VALUES($1,$2,'Perfil anterior','Ativo','Contato anterior') RETURNING *",
+            [tenant, church],
+          )
+        ).rows[0];
+        await cp(
+          "migrations/0004_interface-e-edicao.sql",
+          join(directory, "0004_interface-e-edicao.sql"),
+        );
+        await writeFile(
+          join(directory, "meta/_journal.json"),
+          JSON.stringify(journal),
+        );
+        await migrate(owner.db, { migrationsFolder: directory });
+        await migrate(owner.db, { migrationsFolder: directory });
+        const upgraded = (
+          await owner.client.query("SELECT * FROM members WHERE id=$1", [
+            row.id,
+          ])
+        ).rows[0];
+        const { version, ...preserved } = upgraded;
+        assert.equal(version, 1);
+        assert.deepEqual(preserved, row);
+        const churchContacts = (
+          await owner.client.query(
+            "SELECT address,phone,email FROM churches WHERE id=$1",
+            [church],
+          )
+        ).rows[0];
+        assert.deepEqual(churchContacts, {
+          address: null,
+          phone: null,
+          email: null,
+        });
+        await owner.client.query(
+          "INSERT INTO member_profile_history(tenant_id,member_id,actor_id,version,previous_profile) VALUES($1,$2,$3,1,$4)",
+          [tenant, row.id, user, { name: row.name, phone: row.phone }],
+        );
+        await assert.rejects(
+          owner.client.query(
+            "INSERT INTO member_profile_history(tenant_id,member_id,actor_id,version,previous_profile) VALUES($1,$2,$3,2,'{}')",
+            [randomUUID(), row.id, user],
+          ),
+          { code: "23503" },
+        );
+        await owner.client.query("DELETE FROM members WHERE id=$1", [row.id]);
+        assert.equal(
+          (
+            await owner.client.query(
+              "SELECT count(*)::int n FROM member_profile_history WHERE member_id=$1",
+              [row.id],
+            )
+          ).rows[0].n,
+          0,
+        );
+      },
+    );
   } finally {
     for (const connection of connections.reverse())
       await connection.client.end();

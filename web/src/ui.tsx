@@ -1,0 +1,124 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+export function Icon({
+  name,
+}: {
+  name: "home" | "people" | "church" | "arrow" | "plus";
+}) {
+  const paths = {
+    home: "m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z",
+    people:
+      "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+    church: "M4 21V7l8-4 8 4v14M2 21h20M9 21v-5h6v5M8 8h1m6 0h1m-8 4h1m6 0h1",
+    arrow: "M5 12h14m-5-5 5 5-5 5",
+    plus: "M12 5v14M5 12h14",
+  };
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={paths[name]} />
+    </svg>
+  );
+}
+export function EmptyState({
+  title,
+  children,
+}: {
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon">
+        <Icon name="people" />
+      </span>
+      <h2>{title}</h2>
+      {children}
+    </div>
+  );
+}
+export function Status({ value }: { value: string }) {
+  return (
+    <span className={`badge ${value === "Ativo" ? "active" : "inactive"}`}>
+      <span aria-hidden="true" />
+      {value}
+    </span>
+  );
+}
+// Guarda apenas memória. Não persiste dados pessoais ou segredos no navegador.
+export function useDraftGuard() {
+  const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
+  }, []);
+  return {
+    dirty,
+    change: () => {
+      dirtyRef.current = true;
+      setDirty(true);
+    },
+  };
+}
+
+// Mantém o controle focado na área útil, inclusive quando o viewport visual
+// diminui com o teclado. Não intercepta teclas nem muda o foco do usuário.
+export function useFormFocusVisibility() {
+  useEffect(() => {
+    let frame = 0;
+    const reveal = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const target = document.activeElement;
+        if (!(target instanceof HTMLElement) || !target.closest("form")) return;
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop ?? 0;
+        let top = viewportTop + 12;
+        let bottom =
+          viewportTop + (viewport?.height ?? window.innerHeight) - 12;
+        const header = document
+          .querySelector(".topbar")
+          ?.getBoundingClientRect();
+        if (header && header.bottom > top && header.bottom < bottom)
+          top = header.bottom + 12;
+        if (window.matchMedia("(max-width: 760px)").matches) {
+          const navigation = document
+            .querySelector(".sidebar")
+            ?.getBoundingClientRect();
+          if (navigation && navigation.top > top)
+            bottom = Math.min(bottom, navigation.top - 12);
+        }
+        const rect = target.getBoundingClientRect();
+        if (rect.bottom > bottom) window.scrollBy(0, rect.bottom - bottom);
+        else if (rect.top < top) window.scrollBy(0, rect.top - top);
+      });
+    };
+    document.addEventListener("focusin", reveal);
+    window.addEventListener("resize", reveal);
+    window.visualViewport?.addEventListener("resize", reveal);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("focusin", reveal);
+      window.removeEventListener("resize", reveal);
+      window.visualViewport?.removeEventListener("resize", reveal);
+    };
+  }, []);
+}

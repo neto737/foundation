@@ -512,7 +512,7 @@ test("responsividade, teclado e acessibilidade básica da interface real", async
   await mkdir(".local/e2e", { recursive: true });
   await page.screenshot({
     path: `.local/e2e/${info.project.name}.png`,
-    fullPage: true,
+    fullPage: false,
   });
   const email = await verifyEmail(page);
   await definePassword(page, email);
@@ -536,4 +536,65 @@ test("responsividade, teclado e acessibilidade básica da interface real", async
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
     .analyze();
   expect(final.violations.map((violation) => violation.id)).toEqual([]);
+});
+
+test("onboarding: contatos opcionais, validação e rascunho preservado ao recuperar foco", async ({
+  page,
+}, info) => {
+  await readyAccount(page);
+  const organization = page.getByLabel("Nome da organização", { exact: true });
+  const church = page.getByLabel("Nome da primeira igreja", { exact: true });
+  await organization.fill("Organização com contatos sintéticos");
+  await church.fill("Igreja com contatos sintéticos");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(organization).toHaveValue("Organização com contatos sintéticos");
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(".local/e2e", { recursive: true });
+  await page.screenshot({
+    path: `.local/e2e/${info.project.name}-onboarding.png`,
+    fullPage: false,
+  });
+  await page
+    .getByText("Adicionar contatos da igreja (opcional)", { exact: true })
+    .click();
+  await page
+    .getByLabel("Endereço da igreja (opcional)", { exact: true })
+    .fill("Endereço sintético da igreja");
+  await page
+    .getByLabel("Telefone da igreja (opcional)", { exact: true })
+    .fill("00 0000-0000");
+  const email = page.getByLabel("E-mail da igreja (opcional)", { exact: true });
+  await email.fill("inválido");
+  await page
+    .getByRole("button", {
+      name: "Criar organização e primeira igreja",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByText("Informe um e-mail válido.", { exact: true }),
+  ).toBeVisible();
+  await expect(email).toBeFocused();
+  await email.fill("igreja@example.test");
+  await page
+    .getByRole("button", {
+      name: "Criar organização e primeira igreja",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Suas organizações", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Acessar Organização com contatos sintéticos",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByText("Endereço sintético da igreja", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("igreja@example.test", { exact: true }),
+  ).toBeVisible();
 });

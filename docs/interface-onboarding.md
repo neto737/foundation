@@ -2,7 +2,7 @@
 
 A SPA React permite verificar o e-mail, definir senha, entrar na conta,
 provisionar a organização com a primeira igreja, selecionar uma organização
-administrada e consultar suas igrejas. O escopo permanece em
+administrada, consultar suas igrejas e acessar um painel de atalhos. O escopo permanece em
 [Decisões do MVP](decisoes-mvp.md); a API e a preparação do banco sintético estão em
 [Onboarding e provisionamento](onboarding-provisionamento.md).
 
@@ -36,7 +36,7 @@ npm run dev:web
 
 `npm run build` compila API e SPA em `dist/`. `npm start` serve ambos pela origem
 local 3000. `src/web.ts` entrega HTML apenas nos caminhos conhecidos da SPA:
-`/`, `/onboarding`, `/entrar`, `/organizacoes`, `/igrejas` e as rotas de membros
+`/`, `/onboarding`, `/entrar`, `/organizacoes`, `/painel`, `/igrejas` e as rotas de membros
 listadas em `src/web-paths.ts`. Rotas desconhecidas da
 API continuam retornando JSON, sem fallback HTML. Migrations continuam explícitas
 e separadas da inicialização e do build. A publicação Worker DEV usa o
@@ -51,7 +51,9 @@ e separadas da inicialização e do build. A publicação Worker DEV usa o
 3. Abra o segundo link no mesmo navegador; defina e confirme a senha. A conta
    pronta pode continuar com a sessão já estabelecida. A tela de login permite
    autenticar sessões posteriores.
-4. Informe os nomes da organização e da primeira igreja. Após o provisionamento,
+4. Informe os nomes da organização e da primeira igreja. Endereço, telefone e
+   e-mail da igreja são opcionais, em uma seção expansível sem etapa adicional.
+   Após o provisionamento,
    selecione explicitamente a organização para consultar as igrejas autorizadas.
 
 A primeira leitura e cada retorno/atualização consultam `/api/onboarding`. Refresh
@@ -127,12 +129,16 @@ Desktop e emulação móvel Chromium validam teclado, ausência de overflow hori
 e Axe (WCAG 2 A/AA e 2.1 AA) nas telas de e-mail, provisionamento e igrejas. Labels,
 erros associados, foco visível, regiões de status e contraste foram considerados.
 Isso constitui acessibilidade básica, não certificação ou teste em aparelho físico.
-Firefox e WebKit não fazem parte da suíte atual.
+Firefox não faz parte da suíte atual. O projeto móvel padrão usa iPhone 13 Mini
+emulado em Chromium. `LEVI_WEBKIT=1 npm run test:e2e -- --runtime-acls` inclui
+o mesmo conjunto no WebKit (instale com `npx playwright install --with-deps webkit`).
+WebKit em Linux não equivale a Safari real nem ao teclado virtual de um iPhone.
 
 Traces, vídeos, screenshots automáticos de falha e mensagens de erro originais do
 runner são desabilitados para evitar cópias de links/credenciais. O reporter
-registra títulos e localização da asserção, sem seus valores. Somente screenshots
-da tela inicial vazia ficam em `.local/e2e/`, ignorado pelo Git. O logger de proxy
+registra títulos e localização da asserção, sem seus valores. Capturas
+explícitas da interface, exclusivamente com fixtures sintéticas e sem tokens,
+ficam em `.local/e2e/`, ignorado pelo Git. O logger de proxy
 Vite também omite URLs em erros. A caixa sintética temporária é removida no final.
 
 Entrega externa de e-mail e operação pública pertencem à composição Worker DEV,
@@ -140,3 +146,33 @@ conforme [Deploy DEV](deploy-dev.md). O E2E permanece sintético e local; não
 comprova entrega externa ou operação remota nem autoriza dados reais.
 O modo `npm run test:e2e -- --runtime-acls` preserva os mesmos cenários usando
 login restrito; é o modo executado na CI.
+
+Capturas finais e roteiro de revisão estão nas [evidências da interface](evidencias-interface/index.md).
+
+## Direção da interface
+
+A referência foi a organização visual dos [dashboards Preline](https://preline.co/blocks/application-pages/admin-dashboard-pages/)
+e seus [formulários](https://preline.co/blocks/forms/create-and-edit-forms/),
+com inspeção do preview. Não há biblioteca Preline, Tailwind, fontes remotas ou
+serviços externos para renderização. O Levi usa CSS e componentes React próprios,
+tema claro, violeta, tipografia de sistema e ícones neutros. O Foundation continua
+fornecendo os contratos técnicos, sem fornecer a identidade visual do produto.
+
+A navegação lateral desktop se torna navegação inferior no celular, com áreas de
+toque de pelo menos 44 px e identificação persistente da organização. A lista de
+membros usa linhas compactas no desktop e cartões no móvel, sem tabela larga.
+Formulários são divididos por assunto e a confirmação fica ao final, sem barra
+flutuante sobre os campos. Há estados vazio, carregando, erro e sucesso. A ficha
+oferece edição conforme o [contrato de membros](gestao-membros.md#edição-cadastral).
+O painel mostra apenas o número de igrejas já retornadas pela API e atalhos;
+não inventa contagens de membros, gráficos ou módulos.
+
+Os rascunhos ficam em memória. Ao recuperar foco, a aplicação consulta o servidor
+sem desmontar o formulário preenchido; perda de acesso remove dados protegidos.
+Erros de rede preservam valores, e o provisionamento incerto mantém sua chave e
+consulta do resultado. Aviso nativo de saída é uma proteção adicional, sem promessa
+de recuperação após encerramento do navegador pelo iOS. Senhas/tokens continuam
+sem persistência. O controle focado é reposicionado por rolagem quando necessário para ficar fora
+do cabeçalho e da navegação inferior, respeitando o viewport visual.
+A redução da área útil da tela é testada com viewport menor,
+sem afirmar teste de teclado virtual real ou VoiceOver.

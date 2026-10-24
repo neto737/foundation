@@ -1,6 +1,13 @@
+import { EmptyState, Icon, useFormFocusVisibility } from "./ui.js";
 import { Members } from "./members.js";
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type NamedItem, type ProvisionInput } from "./api.js";
+import {
+  api,
+  ApiError,
+  type NamedItem,
+  type ChurchItem,
+  type ProvisionInput,
+} from "./api.js";
 import { AccessForm } from "./forms.js";
 import { clearProvisionKey, provisionKey, requestStorage } from "./session.js";
 
@@ -17,9 +24,9 @@ type Screen =
     }
   | { kind: "organizations"; items: NamedItem[] }
   | {
-      kind: "churches";
+      kind: "churches" | "dashboard";
       organization: NamedItem;
-      items: NamedItem[];
+      items: ChurchItem[];
       membersEnabled: boolean;
     }
   | {
@@ -35,6 +42,7 @@ export function App({
 }: {
   link: { token: string | null; invalid: boolean };
 }) {
+  useFormFocusVisibility();
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
   const [notice, setNotice] = useState<Notice>(
     link.invalid
@@ -58,7 +66,11 @@ export function App({
   const tokenRef = useRef(token);
   tokenRef.current = token;
 
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  const currentPath = useRef(window.location.pathname);
   function navigate(path: string) {
+    currentPath.current = path;
     window.history.pushState(null, "", path);
   }
   async function refresh(resumeChurches = true): Promise<void> {
@@ -100,7 +112,7 @@ export function App({
       setUncertain(false);
       if (
         resumeChurches &&
-        (window.location.pathname === "/igrejas" ||
+        (["/igrejas", "/painel"].includes(window.location.pathname) ||
           window.location.pathname.startsWith("/membros"))
       ) {
         const context = await api.context();
@@ -138,7 +150,8 @@ export function App({
           });
         } else if (sequence === generation.current)
           setScreen({
-            kind: "churches",
+            kind:
+              window.location.pathname === "/painel" ? "dashboard" : "churches",
             organization,
             items: churches.churches,
             membersEnabled: context.membersEnabled,
@@ -170,29 +183,80 @@ export function App({
   useEffect(() => {
     void refresh();
     const onBack = () => {
+      if (
+        document.querySelector('form[data-dirty="true"]') &&
+        !window.confirm(
+          "Sair deste formulário? Os dados ainda não salvos serão descartados.",
+        )
+      ) {
+        window.history.pushState(null, "", currentPath.current);
+        return;
+      }
+      currentPath.current = window.location.pathname;
       if (!active.current) void refresh();
     };
     const onFocus = () => {
+      if (document.querySelector('form[data-dirty="true"]')) {
+        // Revalida sem desmontar o rascunho ao voltar do teclado ou de outro app.
+        const currentScreen = screenRef.current;
+        const sequence = generation.current;
+        void (async () => {
+          try {
+            const stage = await api.stage();
+            if (sequence !== generation.current) return;
+            if (
+              stage === "email" &&
+              currentScreen.kind !== "email" &&
+              currentScreen.kind !== "login"
+            ) {
+              await refresh(false);
+              return;
+            }
+            if (currentScreen.kind === "members") {
+              const context = await api.context();
+              if (sequence !== generation.current) return;
+              if (
+                context.organizationId !== currentScreen.organization.id ||
+                !context.membersEnabled
+              )
+                await refresh(false);
+            }
+          } catch (error) {
+            if (sequence !== generation.current) return;
+            if (error instanceof ApiError && [401, 403].includes(error.status))
+              await refresh(false);
+          }
+        })();
+        return;
+      }
       if (
         !active.current &&
-        (["/igrejas", "/organizacoes"].includes(window.location.pathname) ||
+        (["/igrejas", "/painel", "/organizacoes"].includes(
+          window.location.pathname,
+        ) ||
           window.location.pathname.startsWith("/membros"))
       )
         void refresh();
     };
     window.addEventListener("popstate", onBack);
     window.addEventListener("focus", onFocus);
-    window.addEventListener("pageshow", onBack);
+    window.addEventListener("pageshow", onFocus);
     return () => {
       ++generation.current;
       window.removeEventListener("popstate", onBack);
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pageshow", onBack);
+      window.removeEventListener("pageshow", onFocus);
     };
   }, []);
   useEffect(() => {
     if (screen.kind !== "loading") heading.current?.focus();
-  }, [screen.kind, emailSent, passwordSent, Boolean(token)]);
+  }, [
+    screen.kind,
+    screen.kind === "members" ? screen.path : "",
+    emailSent,
+    passwordSent,
+    Boolean(token),
+  ]);
 
   async function perform(task: () => Promise<void>, provisioning = false) {
     if (active.current) return;
@@ -216,7 +280,6 @@ export function App({
           });
         } else if (error.status === 0 || error.status >= 500) {
           if (provisioning) setUncertain(true);
-          else await refresh(false);
         }
       } else {
         setScreen({ kind: "failure" });
@@ -250,13 +313,16 @@ export function App({
         : "E-mail verificado. Agora, sua senha.",
     organization: "Um lugar para sua comunidade",
     organizations: "Suas organizações",
+    dashboard: "Visão geral",
     churches: "Igrejas da organização",
     members:
-      screen.kind === "members" && screen.path === "/membros/novo"
-        ? "Cadastrar membro"
-        : screen.kind === "members" && screen.path !== "/membros"
-          ? "Ficha do membro"
-          : "Membros da organização",
+      screen.kind === "members" && screen.path.endsWith("/editar")
+        ? "Editar membro"
+        : screen.kind === "members" && screen.path === "/membros/novo"
+          ? "Cadastrar membro"
+          : screen.kind === "members" && screen.path !== "/membros"
+            ? "Ficha do membro"
+            : "Membros",
   };
   const step =
     screen.kind === "email" || screen.kind === "login"
@@ -267,8 +333,75 @@ export function App({
   const showSteps = ["email", "login", "password", "organization"].includes(
     screen.kind,
   );
+  const administrative = [
+    "dashboard",
+    "churches",
+    "members",
+    "organizations",
+  ].includes(screen.kind);
+  const currentOrganization =
+    screen.kind === "churches" ||
+    screen.kind === "dashboard" ||
+    screen.kind === "members"
+      ? screen.organization
+      : null;
+  const membersEnabled =
+    screen.kind === "members" ||
+    ((screen.kind === "churches" || screen.kind === "dashboard") &&
+      screen.membersEnabled);
+  function go(path: string, success?: string) {
+    if (
+      !success &&
+      document.querySelector('form[data-dirty="true"]') &&
+      !window.confirm(
+        "Sair deste formulário? Os dados ainda não salvos serão descartados.",
+      )
+    )
+      return;
+    navigate(path);
+    void perform(async () => {
+      await refresh();
+      if (success) setNotice({ kind: "success", text: success });
+    });
+  }
+  const navigation = currentOrganization && (
+    <nav aria-label="Navegação da organização" className="admin-nav">
+      {(
+        [
+          { path: "/painel", label: "Início", icon: "home" },
+          { path: "/igrejas", label: "Igrejas", icon: "church" },
+          ...(membersEnabled
+            ? [{ path: "/membros", label: "Membros", icon: "people" }]
+            : []),
+        ] as const
+      ).map((item) => (
+        <button
+          key={item.path}
+          disabled={busy}
+          aria-current={
+            (screen.kind === "dashboard" && item.path === "/painel") ||
+            (screen.kind === "churches" && item.path === "/igrejas") ||
+            (screen.kind === "members" && item.path === "/membros")
+              ? "page"
+              : undefined
+          }
+          onClick={() => go(item.path)}
+        >
+          <Icon name={item.icon as "home" | "church" | "people"} />
+          {item.label}
+        </button>
+      ))}
+      <button
+        className="organization-switch"
+        disabled={busy}
+        onClick={() => go("/organizacoes")}
+      >
+        <span aria-hidden="true">⇄</span>Trocar organização
+      </button>
+    </nav>
+  );
   return (
-    <div className="app">
+    <div className={`app ${administrative ? "admin-app" : "access-app"}`}>
       <a className="skip-link" href="#conteudo">
         Pular para o conteúdo
       </a>
@@ -278,8 +411,7 @@ export function App({
           href="/"
           onClick={(event) => {
             event.preventDefault();
-            navigate("/");
-            update();
+            go(currentOrganization ? "/painel" : "/");
           }}
           aria-label="Levi, início"
         >
@@ -290,12 +422,26 @@ export function App({
             Levi<small>Gestão de igrejas</small>
           </span>
         </a>
+        {currentOrganization && (
+          <div className="context-label">
+            <span className="eyebrow">Organização ativa</span>
+            <strong>{currentOrganization.nome}</strong>
+            <span className="context-role">Administração</span>
+          </div>
+        )}
         {hasSession && (
           <button
             className="text-button"
             disabled={busy}
             onClick={() =>
               void perform(async () => {
+                if (
+                  document.querySelector('form[data-dirty="true"]') &&
+                  !window.confirm(
+                    "Sair da conta? Os dados ainda não salvos serão descartados.",
+                  )
+                )
+                  return;
                 setScreen({ kind: "loading" });
                 await api.logout();
                 setToken(null);
@@ -313,6 +459,19 @@ export function App({
           </button>
         )}
       </header>
+      {administrative && currentOrganization && (
+        <aside className="sidebar">
+          <p className="nav-caption">ESPAÇO DE GESTÃO</p>
+          {navigation}
+          <div className="sidebar-note">
+            <span className="context-role">Acesso administrativo</span>
+            <p>
+              Um espaço para organizar
+              <br />e cuidar das pessoas.
+            </p>
+          </div>
+        </aside>
+      )}
       <div className={`workspace ${showSteps ? "with-steps" : ""}`}>
         {showSteps && (
           <aside className="journey" aria-label="Etapas para começar">
@@ -349,7 +508,7 @@ export function App({
         )}
         <main
           id="conteudo"
-          className="panel"
+          className={`panel ${administrative ? "admin-panel" : "access-panel"}`}
           aria-busy={busy || screen.kind === "loading"}
         >
           <p className="eyebrow">
@@ -359,6 +518,7 @@ export function App({
                 ? "Vamos começar"
                 : "Seu espaço no Levi"}
           </p>
+          {showSteps && <p className="step-caption">Etapa {step + 1} de 3</p>}
           <h1 ref={heading} tabIndex={-1}>
             {titles[screen.kind]}
           </h1>
@@ -556,6 +716,7 @@ export function App({
                 </>
               ) : (
                 <AccessForm
+                  key="organization"
                   mode="organization"
                   busy={busy}
                   initial={attempt.current?.input}
@@ -564,6 +725,9 @@ export function App({
                       const input = {
                         organizationName: values.organizationName!.trim(),
                         churchName: values.churchName!.trim(),
+                        churchAddress: values.churchAddress?.trim() || null,
+                        churchPhone: values.churchPhone?.trim() || null,
+                        churchEmail: values.churchEmail?.trim() || null,
                       };
                       const key =
                         attempt.current?.key ?? provisionKey(requestStorage());
@@ -628,67 +792,122 @@ export function App({
               organization={screen.organization}
               churches={screen.churches}
               path={screen.path}
-              navigate={(path) => {
-                navigate(path);
-                update();
-              }}
+              navigate={go}
               onAccessChanged={() => {
                 denied.current = true;
                 void refresh(false);
               }}
             />
           )}
+          {screen.kind === "dashboard" && (
+            <>
+              <div className="welcome surface">
+                <div>
+                  <p className="eyebrow">Sua comunidade, mais próxima</p>
+                  <h2>
+                    Um bom começo para
+                    <br />
+                    cuidar de cada pessoa.
+                  </h2>
+                  <p>
+                    Organize os cadastros e encontre as informações que precisa
+                    no dia a dia.
+                  </p>
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      go(membersEnabled ? "/membros/novo" : "/igrejas")
+                    }
+                  >
+                    <Icon name="plus" />
+                    {membersEnabled ? "Cadastrar membro" : "Consultar igrejas"}
+                  </button>
+                </div>
+                <div className="welcome-mark" aria-hidden="true">
+                  <Icon name="people" />
+                </div>
+              </div>
+              <div className="overview-grid">
+                <div className="surface overview-card">
+                  <span className="tile-icon">
+                    <Icon name="church" />
+                  </span>
+                  <p>Igrejas na organização</p>
+                  <strong className="metric">{screen.items.length}</strong>
+                  <button
+                    className="text-button"
+                    onClick={() => go("/igrejas")}
+                  >
+                    Consultar igrejas →
+                  </button>
+                </div>
+                <div className="surface overview-card">
+                  <span className="tile-icon">
+                    <Icon name="people" />
+                  </span>
+                  <h2>Gestão de membros</h2>
+                  <p>
+                    {membersEnabled
+                      ? "Cadastros organizados, contatos e informações sempre à mão."
+                      : "Este recurso ainda não está disponível para esta organização."}
+                  </p>
+                  {membersEnabled && (
+                    <button
+                      className="text-button"
+                      onClick={() => go("/membros")}
+                    >
+                      Consultar membros →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
           {screen.kind === "churches" && (
             <>
-              <p className="organization-name">{screen.organization.nome}</p>
-              <p>
-                Estas são as igrejas disponíveis na organização selecionada.
-              </p>
+              <div className="page-intro">
+                <p>As igrejas que fazem parte da sua organização.</p>
+                <span className="count-label">
+                  {screen.items.length}{" "}
+                  {screen.items.length === 1 ? "igreja" : "igrejas"}
+                </span>
+              </div>
               {screen.items.length ? (
-                <ul className="item-list churches">
+                <ul className="church-grid">
                   {screen.items.map((item) => (
-                    <li key={item.id}>
-                      <span className="item-symbol" aria-hidden="true">
-                        I
+                    <li className="surface church-card" key={item.id}>
+                      <span className="tile-icon">
+                        <Icon name="church" />
                       </span>
-                      <strong>{item.nome}</strong>
+                      <div>
+                        <span className="eyebrow">Igreja</span>
+                        <h2>{item.nome}</h2>
+                      </div>
+                      <dl>
+                        <dt>Endereço</dt>
+                        <dd>{item.address || "Não informado"}</dd>
+                        <dt>Telefone</dt>
+                        <dd>{item.phone || "Não informado"}</dd>
+                        <dt>E-mail</dt>
+                        <dd>{item.email || "Não informado"}</dd>
+                      </dl>
+                      {membersEnabled && (
+                        <button
+                          className="secondary"
+                          onClick={() => go("/membros")}
+                        >
+                          Consultar membros <Icon name="arrow" />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>Nenhuma igreja disponível nesta organização.</p>
+                <EmptyState title="Nenhuma igreja disponível nesta organização." />
               )}
-              <div className="actions">
-                {screen.membersEnabled && (
-                  <button
-                    className="primary"
-                    disabled={busy}
-                    onClick={() => {
-                      navigate("/membros");
-                      update();
-                    }}
-                  >
-                    Membros
-                  </button>
-                )}
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    navigate("/organizacoes");
-                    update();
-                  }}
-                >
-                  Trocar organização
-                </button>
-                <button
-                  className="text-button"
-                  disabled={busy}
-                  onClick={update}
-                >
-                  Atualizar igrejas
-                </button>
-              </div>
+              <button className="text-button" disabled={busy} onClick={update}>
+                Atualizar igrejas
+              </button>
             </>
           )}
           {(screen.kind === "failure" || screen.kind === "no-access") && (
@@ -705,7 +924,7 @@ export function App({
           )}
         </main>
       </div>
-      <footer>
+      <footer className={administrative ? "admin-footer" : ""}>
         Levi <span aria-hidden="true">·</span> Um espaço para organizar e
         cuidar.
       </footer>

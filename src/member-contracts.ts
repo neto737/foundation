@@ -9,6 +9,7 @@ import {
   memberTextLimits,
   type MemberInput,
   type MemberStatus,
+  type MemberEditInput,
 } from "./member-types.js";
 
 function invalid(): never {
@@ -45,6 +46,13 @@ export async function readMember(
   ]);
   const status = input.status;
   if (status !== "Ativo" && status !== "Inativo") invalid();
+  return {
+    churchId: requireUuid(readString(input, "churchId", 36, 36)),
+    status,
+    ...readProfile(input),
+  };
+}
+function readProfile(input: Record<string, unknown>) {
   const date = (key: string) => {
     const value = optionalText(input, key, 10);
     if (value && !isCivilDate(value)) invalid();
@@ -53,9 +61,7 @@ export async function readMember(
   const email = optionalText(input, "email", memberTextLimits.email);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) invalid();
   return {
-    churchId: requireUuid(readString(input, "churchId", 36, 36)),
     name: readString(input, "name", 1, memberTextLimits.name),
-    status,
     birthDate: date("birthDate"),
     joinedOn: date("joinedOn"),
     baptismDate: date("baptismDate"),
@@ -65,6 +71,29 @@ export async function readMember(
     churchRole: optionalText(input, "churchRole", memberTextLimits.churchRole),
   };
 }
+export async function readMemberEdit(
+  request: Request,
+): Promise<MemberEditInput> {
+  const input = await readObject(request, [
+    "version",
+    "name",
+    "birthDate",
+    "phone",
+    "email",
+    "joinedOn",
+    "address",
+    "baptismDate",
+    "churchRole",
+  ]);
+  if (
+    !Number.isSafeInteger(input.version) ||
+    Number(input.version) < 1 ||
+    Number(input.version) >= 2147483647
+  )
+    invalid();
+  return { ...readProfile(input), version: Number(input.version) };
+}
+
 export function readMemberFilters(url: URL) {
   const params = url.searchParams;
   for (const key of params.keys()) {

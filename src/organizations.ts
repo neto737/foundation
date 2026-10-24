@@ -13,7 +13,7 @@ import {
   createPostgresTenantSessionStore,
 } from "@t00ls-dev/tenant/postgres";
 import type { FoundationSession } from "@t00ls-dev/auth";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Database } from "./auth.js";
 import { hasPassword } from "./auth.js";
 import { RequestError } from "./contracts.js";
@@ -28,7 +28,12 @@ import {
 } from "./data/schema.js";
 
 export const access = createAccessControl({
-  admin: ["churches:read", "members:read", "members:create"] as const,
+  admin: [
+    "churches:read",
+    "members:read",
+    "members:create",
+    "members:update",
+  ] as const,
 });
 function assertAdministrator(role: string): asserts role is "admin" {
   if (role !== "admin" || !access.can(role, "churches:read")) {
@@ -132,11 +137,26 @@ export async function provisionOrganization(
   input: {
     organizationName: string;
     churchName: string;
+    churchAddress?: string | null;
+    churchPhone?: string | null;
+    churchEmail?: string | null;
     requestKey: string;
   },
 ) {
   const hash = createHash("sha256")
-    .update(JSON.stringify([input.organizationName, input.churchName]))
+    .update(
+      JSON.stringify([
+        input.organizationName,
+        input.churchName,
+        ...(input.churchAddress || input.churchPhone || input.churchEmail
+          ? [
+              input.churchAddress ?? null,
+              input.churchPhone ?? null,
+              input.churchEmail ?? null,
+            ]
+          : []),
+      ]),
+    )
     .digest("hex");
   return database.db.transaction(async (tx) => {
     // Serializa somente o primeiro onboarding desta conta, entre conexões reais.
@@ -197,10 +217,18 @@ export async function provisionOrganization(
       .values({ name: input.organizationName })
       .returning({ id: tenants.id });
     if (!organization) throw new Error("Provisionamento não confirmado.");
-    const [church] = await tx
-      .insert(churches)
-      .values({ tenantId: organization.id, name: input.churchName })
-      .returning({ id: churches.id });
+    // O caminho somente com nome mantém compatibilidade com o schema de onboarding
+    // anterior. Drizzle inclui todas as colunas do schema no INSERT, mesmo omitidas.
+    const churchRows =
+      input.churchAddress || input.churchPhone || input.churchEmail
+        ? await tx.execute<{
+            id: string;
+          }>(sql`INSERT INTO churches (tenant_id, name, address, phone, email)
+          VALUES (${organization.id}, ${input.churchName}, ${input.churchAddress ?? null}, ${input.churchPhone ?? null}, ${input.churchEmail ?? null}) RETURNING id`)
+        : await tx.execute<{ id: string }>(
+            sql`INSERT INTO churches (tenant_id, name) VALUES (${organization.id}, ${input.churchName}) RETURNING id`,
+          );
+    const church = churchRows.rows[0];
     if (!church) throw new Error("Provisionamento não confirmado.");
     await tx.insert(tenantMemberships).values({
       tenantId: organization.id,
@@ -240,7 +268,14 @@ export async function listChurches(
 ) {
   const context = await organizationContext(database, identity);
   const rows = await database.db
-    .select({ id: churches.id, nome: churches.name })
+    .select({
+      id: churches.id,
+      nome: churches.name,
+      // to_jsonb permite leitura de contatos nulos antes de 0004, sem DDL automático.
+      address: sql<string | null>`to_jsonb(${churches})->>'address'`,
+      phone: sql<string | null>`to_jsonb(${churches})->>'phone'`,
+      email: sql<string | null>`to_jsonb(${churches})->>'email'`,
+    })
     .from(churches)
     .where(eq(churches.tenantId, context.tenantId))
     .orderBy(churches.id);
@@ -254,7 +289,14 @@ export async function findChurch(
 ) {
   const context = await organizationContext(database, identity);
   const rows = await database.db
-    .select({ id: churches.id, nome: churches.name })
+    .select({
+      id: churches.id,
+      nome: churches.name,
+      // to_jsonb permite leitura de contatos nulos antes de 0004, sem DDL automático.
+      address: sql<string | null>`to_jsonb(${churches})->>'address'`,
+      phone: sql<string | null>`to_jsonb(${churches})->>'phone'`,
+      email: sql<string | null>`to_jsonb(${churches})->>'email'`,
+    })
     .from(churches)
     .where(and(eq(churches.tenantId, context.tenantId), eq(churches.id, id)));
   if (!rows[0])

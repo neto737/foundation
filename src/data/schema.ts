@@ -138,6 +138,9 @@ export const churches = pgTable(
       .notNull()
       .references(() => tenants.id),
     name: text("name").notNull(),
+    address: text("address"),
+    phone: text("phone"),
+    email: text("email"),
     createdAt: instant("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -199,6 +202,7 @@ export const members = pgTable(
       .references(() => tenants.id),
     churchId: uuid("church_id").notNull(),
     name: text("name").notNull(),
+    version: integer("version").notNull().default(1),
     status: text("status").$type<"Ativo" | "Inativo">().notNull(),
     birthDate: date("birth_date", { mode: "string" }),
     phone: text("phone"),
@@ -268,5 +272,33 @@ export const memberCreationRequests = pgTable(
       columns: [t.tenantId, t.memberId],
       foreignColumns: [members.tenantId, members.id],
     }).onDelete("cascade"),
+  ],
+);
+
+// Histórico pessoal eliminável por cascata, separado da auditoria técnica.
+export const memberProfileHistory = pgTable(
+  "member_profile_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id").notNull(),
+    memberId: uuid("member_id").notNull(),
+    actorId: uuid("actor_id").notNull(),
+    version: integer("version").notNull(),
+    previousProfile: jsonb("previous_profile")
+      .$type<import("../member-types.js").MemberProfile>()
+      .notNull(),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "member_profile_history_same_tenant",
+      columns: [t.tenantId, t.memberId],
+      foreignColumns: [members.tenantId, members.id],
+    }).onDelete("cascade"),
+    unique("member_profile_history_version_unique").on(
+      t.tenantId,
+      t.memberId,
+      t.version,
+    ),
   ],
 );
