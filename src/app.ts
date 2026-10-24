@@ -120,18 +120,27 @@ export function createApp(options: AppOptions) {
   });
   app.use("/api/*", async (c, next) => {
     const abuse = c.get("abuse");
-    if (abuse) return abuse.middleware(c, next);
+    if (abuse) return abuse.beforeSession(c, next);
     await next();
   });
   // Resolve uma vez por request, propagando inclusive cada cookie de renovação.
   app.use("/api/*", async (c, next) => {
     c.set("identity", null);
-    if (!c.req.path.startsWith("/api/auth/") && c.req.header("cookie")) {
+    if (
+      (!c.req.path.startsWith("/api/auth/") ||
+        c.req.path === "/api/auth/sign-out") &&
+      c.req.header("cookie")
+    ) {
       const resolved = await c.get("auth").resolveSession(c.req.raw.headers);
       c.set("identity", resolved.data);
       for (const cookie of resolved.headers.getSetCookie())
         c.header("Set-Cookie", cookie, { append: true });
     }
+    await next();
+  });
+  app.use("/api/*", async (c, next) => {
+    const abuse = c.get("abuse");
+    if (abuse) return abuse.middleware(c.get("identity"))(c, next);
     await next();
   });
 

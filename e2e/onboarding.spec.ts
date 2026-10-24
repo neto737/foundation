@@ -19,6 +19,79 @@ test.afterAll(async () => {
   await observer.client.end();
 });
 
+test("429 de navegação mostra espera, evita novas chamadas e permite sair", async ({
+  page,
+}) => {
+  await readyAccount(page);
+  await provision(page);
+  let blocked = 0;
+  await page.route("**/api/organizations", (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    blocked++;
+    return route.fulfill({
+      status: 429,
+      headers: { "Retry-After": "60" },
+      contentType: "application/json",
+      body: JSON.stringify({ erro: "LIMITE_DE_SOLICITACOES" }),
+    });
+  });
+  await page
+    .getByRole("button", { name: "Atualizar organizações", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    /Muitas solicitações\. Tente novamente em \d+ segundos\./,
+  );
+  expect(blocked).toBe(1);
+  await page
+    .getByRole("button", { name: "Atualizar acesso", exact: true })
+    .click();
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("pageshow"));
+  });
+  expect(blocked).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Sair", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Sair", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Comece pelo seu e-mail" }),
+  ).toBeVisible();
+});
+
+test("429 no e-mail não repete envio e não impede login de categoria independente", async ({
+  page,
+}) => {
+  let blocked = 0;
+  await page.route("**/api/onboarding/email", (route) => {
+    blocked++;
+    return route.fulfill({
+      status: 429,
+      headers: { "X-Retry-After": "60" },
+      body: "Too many requests",
+    });
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("Seu e-mail", { exact: true })
+    .fill("synthetic-throttled@example.test");
+  await page
+    .getByRole("button", { name: "Receber link de acesso", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Muitas solicitações");
+  await page
+    .getByRole("button", { name: "Receber link de acesso", exact: true })
+    .click();
+  expect(blocked).toBe(1);
+  await page.getByRole("link", { name: "Entrar na minha conta" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Bem-vindo de volta" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Entrar", exact: true }),
+  ).toBeEnabled();
+});
+
 test("fluxo real completo, login, seleção e retomada por refresh", async ({
   page,
   context,

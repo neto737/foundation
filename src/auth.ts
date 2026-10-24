@@ -119,6 +119,11 @@ export async function authRequest(
     }),
   );
   if (response.status >= 300 && response.status < 400) return response;
+  const responseHeaders = new Headers(response.headers);
+  if (response.status === 429 && !responseHeaders.has("Retry-After")) {
+    const retry = responseHeaders.get("X-Retry-After");
+    if (retry && /^\d+$/.test(retry)) responseHeaders.set("Retry-After", retry);
+  }
   // Preserva todos os cookies nativos; não devolve tokens de sessão no JSON.
   return new Response(
     JSON.stringify(
@@ -138,7 +143,7 @@ export async function authRequest(
         path === "/sign-in/email" && [400, 401, 403].includes(response.status)
           ? 401
           : response.status,
-      headers: response.headers,
+      headers: responseHeaders,
     },
   );
 }

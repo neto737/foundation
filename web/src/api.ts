@@ -31,9 +31,56 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly retryAt: number | null = null,
   ) {
     super(message);
   }
+}
+// Somente espera de UX em memória; o servidor continua impondo todas as quotas.
+const cooldowns = new Map<string, number>();
+let identityGeneration = 0;
+function category(path: string, method: string): string {
+  if (
+    path === "/api/onboarding/email" ||
+    path === "/api/onboarding/password-email"
+  )
+    return "email";
+  if (path === "/api/auth/sign-in/email") return "login";
+  if (path === "/api/auth/sign-out") return "logout";
+  if (path === "/api/tenant") return "selection";
+  if (method === "POST" && path === "/api/organizations") return "provision";
+  if (path === "/api/onboarding/password") return "password";
+  return method === "GET" ? "read" : "write";
+}
+function retrySeconds(headers: Headers): number {
+  for (const name of ["Retry-After", "X-Retry-After"]) {
+    const value = headers.get(name)?.trim();
+    if (!value) continue;
+    if (/^\d+$/.test(value)) {
+      const seconds = Number(value);
+      if (Number.isSafeInteger(seconds))
+        return Math.max(1, Math.min(seconds, 86_400));
+    } else if (
+      /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)
+    ) {
+      const date = Date.parse(value);
+      if (Number.isFinite(date))
+        return Math.max(
+          1,
+          Math.min(Math.ceil((date - Date.now()) / 1_000), 86_400),
+        );
+    }
+  }
+  return 60;
+}
+function rateLimitError(retryAt: number): ApiError {
+  const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000));
+  return new ApiError(
+    429,
+    "LIMITE_DE_SOLICITACOES",
+    `Muitas solicitações. Tente novamente em ${seconds} ${seconds === 1 ? "segundo" : "segundos"}.`,
+    retryAt,
+  );
 }
 function contractError(): never {
   throw new ApiError(
@@ -63,10 +110,16 @@ async function request(
   key?: string,
   method?: "PATCH",
 ): Promise<unknown> {
+  const requestMethod = method ?? (body ? "POST" : "GET");
+  const generation = identityGeneration;
+  const scope = category(path, requestMethod);
+  const waiting = cooldowns.get(scope);
+  if (waiting && waiting > Date.now()) throw rateLimitError(waiting);
+  cooldowns.delete(scope);
   let response: Response;
   try {
     response = await fetch(path, {
-      method: method ?? (body ? "POST" : "GET"),
+      method: requestMethod,
       credentials: "same-origin",
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
@@ -82,6 +135,24 @@ async function request(
       "REDE",
       "Não foi possível confirmar a operação. Verifique sua conexão e consulte o estado antes de tentar novamente.",
     );
+  }
+  if (response.status === 429) {
+    const retryAt = Date.now() + retrySeconds(response.headers) * 1_000;
+    // Resposta atrasada de uma identidade anterior não limita a nova sessão.
+    if (generation !== identityGeneration) throw rateLimitError(retryAt);
+    cooldowns.set(scope, Math.max(cooldowns.get(scope) ?? 0, retryAt));
+    throw rateLimitError(cooldowns.get(scope)!);
+  }
+  if (
+    response.ok &&
+    [
+      "/api/auth/sign-out",
+      "/api/auth/sign-in/email",
+      "/api/onboarding/password",
+    ].includes(path)
+  ) {
+    identityGeneration++;
+    cooldowns.clear();
   }
   const value: unknown = await response.json().catch(() => null);
   if (!response.ok) {

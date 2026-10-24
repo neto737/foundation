@@ -35,7 +35,11 @@ type Screen =
       churches: NamedItem[];
       path: string;
     };
-type Notice = { kind: "error" | "success" | "info"; text: string } | null;
+type Notice = {
+  kind: "error" | "success" | "info";
+  text: string;
+  rateLimited?: boolean;
+} | null;
 
 export function App({
   link,
@@ -174,7 +178,11 @@ export function App({
         setScreen({ kind: "failure" });
         setNotice({
           kind: "error",
-          text: "Não foi possível consultar seu acesso. Nenhuma operação será repetida automaticamente. Tente atualizar novamente.",
+          rateLimited: error instanceof ApiError && error.status === 429,
+          text:
+            error instanceof ApiError && error.status === 429
+              ? error.message
+              : "Não foi possível consultar seu acesso. Nenhuma operação será repetida automaticamente. Tente atualizar novamente.",
         });
       }
     }
@@ -223,8 +231,15 @@ export function App({
             }
           } catch (error) {
             if (sequence !== generation.current) return;
-            if (error instanceof ApiError && [401, 403].includes(error.status))
-              await refresh(false);
+            if (error instanceof ApiError) {
+              if ([401, 403].includes(error.status)) await refresh(false);
+              else if (error.status === 429)
+                setNotice({
+                  kind: "error",
+                  text: error.message,
+                  rateLimited: true,
+                });
+            }
           }
         })();
         return;
@@ -267,7 +282,11 @@ export function App({
       await task();
     } catch (error) {
       if (error instanceof ApiError) {
-        setNotice({ kind: "error", text: error.message });
+        setNotice({
+          kind: "error",
+          text: error.message,
+          rateLimited: error.status === 429,
+        });
         if (error.status === 401 || error.status === 403) {
           denied.current = error.status === 403;
           await refresh(false);
@@ -915,7 +934,9 @@ export function App({
               <p>
                 {screen.kind === "no-access"
                   ? "Não há acesso administrativo disponível neste momento. Atualize para verificar novamente ou procure o responsável pela organização."
-                  : "Confira sua conexão e tente consultar seu acesso novamente."}
+                  : notice?.rateLimited
+                    ? "Aguarde o prazo indicado antes de atualizar o acesso."
+                    : "Confira sua conexão e tente consultar seu acesso novamente."}
               </p>
               <button className="primary" disabled={busy} onClick={update}>
                 Atualizar acesso

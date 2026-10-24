@@ -8,7 +8,9 @@ import {
 } from "../web/src/session.js";
 
 const originalFetch = globalThis.fetch;
-afterEach(() => {
+afterEach(async () => {
+  globalThis.fetch = async () => Response.json({ ok: true });
+  await api.logout(); // Limpa a espera transitória ao encerrar a identidade.
   globalThis.fetch = originalFetch;
 });
 
@@ -134,4 +136,118 @@ test("listagem de igrejas exige o identificador do contexto consultado", async (
     api.churches(),
     (error: unknown) => error instanceof ApiError && error.status === 502,
   );
+});
+
+for (const [headers, seconds] of [
+  [{ "Retry-After": "5" }, 5],
+  [{ "X-Retry-After": "7" }, 7],
+  [{ "Retry-After": "Mon, 18 Jan 2027 08:00:09 GMT" }, 9],
+  [{ "Retry-After": "invalid", "X-Retry-After": "8" }, 8],
+  [{ "Retry-After": "0" }, 1],
+  [{ "Retry-After": "-1" }, 60],
+  [{}, 60],
+] as const) {
+  test(`429 interpreta espera ${JSON.stringify(headers)} e não repete a leitura bloqueada`, async (t) => {
+    let now = Date.parse("2027-01-18T08:00:00Z");
+    t.mock.method(Date, "now", () => now);
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return calls === 1
+        ? new Response("untrusted provider body", { status: 429, headers })
+        : Response.json({ etapa: "email" });
+    };
+    await assert.rejects(api.stage(), (error: unknown) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.status, 429);
+      assert.equal(error.code, "LIMITE_DE_SOLICITACOES");
+      assert.equal(error.retryAt, now + seconds * 1_000);
+      assert.ok(
+        error.message.includes(
+          `${seconds} ${seconds === 1 ? "segundo" : "segundos"}`,
+        ),
+      );
+      assert.ok(!error.message.includes("untrusted"));
+      return true;
+    });
+    await assert.rejects(
+      api.stage(),
+      (error: unknown) => error instanceof ApiError && error.status === 429,
+    );
+    assert.equal(calls, 1);
+    now += seconds * 1_000;
+    assert.equal(await api.stage(), "email");
+    assert.equal(calls, 2);
+  });
+}
+
+test("espera de leitura permite seleção e logout, sem retry de autenticação/envio/escrita", async () => {
+  const calls: string[] = [];
+  globalThis.fetch = async (path) => {
+    const url = String(path);
+    calls.push(url);
+    return url === "/api/tenant" || url === "/api/auth/sign-out"
+      ? Response.json({ ok: true })
+      : Response.json({}, { status: 429, headers: { "Retry-After": "20" } });
+  };
+  await assert.rejects(api.stage());
+  await api.select("11111111-1111-4111-8111-111111111111");
+  for (const task of [
+    () => api.email("synthetic@example.test"),
+    () => api.login("synthetic@example.test", "synthetic-password"),
+    () =>
+      api.provision(
+        { organizationName: "Sintética", churchName: "Sintética" },
+        "synthetic-request-key",
+      ),
+  ]) {
+    await assert.rejects(task());
+    await assert.rejects(task());
+  }
+  assert.deepEqual(calls, [
+    "/api/onboarding",
+    "/api/tenant",
+    "/api/onboarding/email",
+    "/api/auth/sign-in/email",
+    "/api/organizations",
+  ]);
+  await api.logout();
+  assert.equal(calls.at(-1), "/api/auth/sign-out");
+});
+
+test("login confirmado encerra espera anônima sem mascarar a nova consulta autenticada", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return calls === 1
+      ? Response.json({}, { status: 429, headers: { "Retry-After": "60" } })
+      : Response.json({ etapa: "concluido", ok: true });
+  };
+  await assert.rejects(api.stage());
+  await api.login("synthetic@example.test", "synthetic-password");
+  assert.equal(await api.stage(), "concluido");
+  assert.equal(calls, 3);
+});
+
+test("429 atrasado anterior ao login não instala espera na identidade nova", async () => {
+  let finish!: (response: Response) => void;
+  let first = true;
+  globalThis.fetch = async () => {
+    if (first) {
+      first = false;
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    }
+    return Response.json({ etapa: "concluido", ok: true });
+  };
+  const pending = api.stage();
+  const rejection = assert.rejects(
+    pending,
+    (error: unknown) => error instanceof ApiError && error.status === 429,
+  );
+  await api.login("synthetic@example.test", "synthetic-password");
+  finish(Response.json({}, { status: 429, headers: { "Retry-After": "60" } }));
+  await rejection;
+  assert.equal(await api.stage(), "concluido");
 });

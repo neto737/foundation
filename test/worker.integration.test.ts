@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import {
@@ -105,6 +105,63 @@ async function provisioned() {
   };
   return { ...account, ...result, key };
 }
+
+test("workerd: leitura contextual usa sessão real, não bloqueia outra conta no NAT e permite logout", async () => {
+  const first = await ready();
+  const second = await ready();
+  const ip = { "cf-connecting-ip": "192.0.2.249" };
+  const digest = createHmac(
+    "sha256",
+    "synthetic-only-secret-with-more-than-32-characters",
+  )
+    .update(`user:${first.id}`)
+    .digest("hex");
+  const start = Math.floor(Date.now() / 60_000) * 60_000;
+  const keys = [start, start + 60_000].map(
+    (window) => `v2:read:${digest}:${window}`,
+  );
+  for (let i = 0; i < keys.length; i++)
+    await observer.client.query(
+      "INSERT INTO abuse_counters(key,count,expires_at) VALUES($1,300,$2) ON CONFLICT(key) DO UPDATE SET count=300",
+      [keys[i], new Date(start + (i + 1) * 60_000)],
+    );
+  try {
+    const blocked = await send(
+      "/api/organizations",
+      undefined,
+      first.cookie,
+      ip,
+    );
+    assert.equal(blocked.status, 429);
+    assert.ok(Number(blocked.headers.get("retry-after")) > 0);
+    assert.equal(blocked.headers.get("ratelimit-limit"), "300");
+    assert.equal(blocked.headers.get("cache-control"), "private, no-store");
+    assert.equal(blocked.headers.get("referrer-policy"), "no-referrer");
+    const allowed = await send(
+      "/api/organizations",
+      undefined,
+      second.cookie,
+      ip,
+    );
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get("ratelimit-limit"), "300");
+    assert.equal(
+      (await send("/api/auth/sign-out", {}, first.cookie, ip)).status,
+      200,
+    );
+    const revoked = await send("/api/organizations", undefined, first.cookie, {
+      ...ip,
+      "x-user-id": second.id,
+    });
+    assert.equal(revoked.status, 401);
+    assert.equal(revoked.headers.get("ratelimit-limit"), "60");
+  } finally {
+    await observer.client.query(
+      "DELETE FROM abuse_counters WHERE key=ANY($1::text[])",
+      [keys],
+    );
+  }
+});
 
 test("workerd: Static Assets reais, SPA, API e headers de segurança", async () => {
   const metafile = JSON.parse(
@@ -261,7 +318,8 @@ test("workerd: provisionamento concorrente, UUID, isolamento, múltiplas igrejas
   const first = await ready();
   const key = randomUUID();
   const results = await Promise.all(
-    Array.from({ length: 4 }, () =>
+    // Reserva duas das cinco tentativas para conflito e vínculo revogado abaixo.
+    Array.from({ length: 3 }, () =>
       send("/api/organizations", body, first.cookie, {
         "Idempotency-Key": key,
       }),
