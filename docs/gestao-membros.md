@@ -143,6 +143,39 @@ montagem anterior não repovoam a tela. Uma revogação externa só pode ser con
 na próxima consulta/revalidação; não há canal de push ou promessa de atualização
 instantânea enquanto a página permanece sem interação.
 
+### Proteção do UPDATE necessário ao lock no DEV
+
+A migration `0003_protecao-update-runtime.sql` acrescenta uma função de trigger
+`SECURITY INVOKER` e triggers `BEFORE UPDATE FOR EACH STATEMENT` em `churches` e
+`tenant_memberships`. Rejeita com SQLSTATE `42501` toda instrução UPDATE cujo
+`current_user` seja `levi_dev_runtime`, inclusive sem linhas correspondentes.
+Não dispara no SELECT FOR SHARE e não impede UPDATE de outras roles autorizadas.
+O retorno NULL da função é ignorado por ser um trigger por instrução; não oculta
+atualizações de outras roles nem descarta linhas silenciosamente.
+
+PostgreSQL exige UPDATE em ao menos uma coluna para FOR SHARE. Uma futura
+concessão somente em `created_at` satisfaz o lock, enquanto o trigger rejeita a
+mutação efetiva pela runtime DEV. **Esta migration não concede privilégios** e
+não habilita o módulo. Sua aplicação persistente, os grants mínimos e qualquer
+deploy exigem operações separadas autorizadas.
+
+A função usa `search_path = pg_catalog`, sem leitura de dados ou elevação de
+privilégios. A role que aplica a migration deve ser a proprietária das tabelas;
+função e triggers permanecem sob seu controle. A runtime deve continuar sem
+ownership, CREATE no schema, TRIGGER, capacidade de assumir outra role ou alterar
+`session_replication_role`. Owners e administradores podem modificar a proteção;
+o nome exato da role DEV é parte da política e renomeá-la exige revisão. Uma
+futura função SECURITY DEFINER que execute UPDATE com outra identidade também
+exigirá revisão, pois o bloqueio usa o usuário efetivo. Não é uma proteção RLS
+nem substitui a autorização por organização na aplicação.
+
+O teste `test/runtime-update.integration.test.ts`, executado pelo harness de
+integração, cria outro banco no mesmo container descartável, com migradora owner
+sem SUPERUSER e logins runtime/operador independentes. Aplica primeiro 0000–0002,
+preserva fixtures sintéticas e aplica 0003 pelo migrator Drizzle. Exercita locks,
+bloqueio de UPDATE, tentativas de alterar/desativar a proteção e operações
+legítimas de outras roles. Não utiliza conexão ou credencial de ambiente remoto.
+
 ## Validação isolada
 
 Com dependências e ferramentas locais existentes:
