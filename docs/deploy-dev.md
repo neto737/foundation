@@ -116,24 +116,21 @@ Wrangler raiz continua sem rotas e com Hyperdrive placeholder para testes locais
 ## Proteção contra abuso
 
 A composição Worker habilita o limitador público `fixedWindowRateLimit` do
-`@t00ls-dev/security`, com store PostgreSQL atômico do Levi. Limites de janela fixa:
-
-| Escopo                                                                           | Limite       |
-| -------------------------------------------------------------------------------- | ------------ |
-| Pedidos Magic Link/definição de senha, por IP, compartilhado entre as duas rotas | 5/minuto     |
-| Login por senha, por IP                                                          | 10/minuto    |
-| Demais chamadas API, por IP, incluindo callbacks                                 | 60/minuto    |
-| Envios ao mesmo destinatário, compartilhados entre os dois e-mails               | 3/15 minutos |
-| Tentativas de envio globais do Levi                                              | 90/dia UTC   |
+`@t00ls-dev/security`, com store PostgreSQL atômico do Levi. A política completa,
+identificadores, limites efetivos e custo estão em
+[Rate limiting contextual](rate-limiting.md). Leituras autenticadas usam quota por
+usuário validado no servidor, separada de escritas e ações sensíveis. A guarda
+ampla por IP executa antes da sessão. Login, pedidos de e-mail e quotas de envio
+mantêm os tetos anteriores. A documentação do código não atesta publicação.
 
 IP vem exclusivamente de `CF-Connecting-IP`, garantido pela entrada Cloudflare;
 `X-Forwarded-For` do visitante não define autoridade. Header ausente usa bucket
 compartilhado. A entrada Node local não habilita essa confiança em headers.
 Os contadores usam HMAC-SHA-256 com segredo do servidor, sem IP/e-mail em claro,
-expiração e limpeza limitada/indexada a cada incremento. O schema técnico consta
-na migration `0001_abuse-limits.sql`, sem aplicação remota automática.
+expiração e limpeza limitada/indexada no mesmo statement do incremento. O schema
+técnico consta na migration `0001_abuse-limits.sql`, sem aplicação remota automática.
 
-Excesso por IP retorna 429 em português com `Retry-After`. Excesso por destinatário
+Excesso de limite HTTP retorna 429 em português com `Retry-After`. Excesso por destinatário
 ou orçamento global suprime envio mantendo a resposta genérica; envio não é
 confirmação de entrega. Suprimir não depende da existência da conta. Falhas do banco
 não liberam solicitações e falhas do provider não são declaradas como envio

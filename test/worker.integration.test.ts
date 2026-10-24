@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import {
@@ -105,6 +105,182 @@ async function provisioned() {
   };
   return { ...account, ...result, key };
 }
+
+test("workerd: leitura contextual usa sessão real, não bloqueia outra conta no NAT e permite logout", async () => {
+  const first = await ready();
+  const second = await ready();
+  const ip = { "cf-connecting-ip": "192.0.2.249" };
+  const digest = createHmac(
+    "sha256",
+    "synthetic-only-secret-with-more-than-32-characters",
+  )
+    .update(`user:${first.id}`)
+    .digest("hex");
+  const start = Math.floor(Date.now() / 60_000) * 60_000;
+  const keys = [start, start + 60_000].map(
+    (window) => `v2:read:${digest}:${window}`,
+  );
+  for (let i = 0; i < keys.length; i++)
+    await observer.client.query(
+      "INSERT INTO abuse_counters(key,count,expires_at) VALUES($1,300,$2) ON CONFLICT(key) DO UPDATE SET count=300",
+      [keys[i], new Date(start + (i + 1) * 60_000)],
+    );
+  try {
+    const blocked = await send(
+      "/api/organizations",
+      undefined,
+      first.cookie,
+      ip,
+    );
+    assert.equal(blocked.status, 429);
+    assert.ok(Number(blocked.headers.get("retry-after")) > 0);
+    assert.equal(blocked.headers.get("ratelimit-limit"), "300");
+    assert.equal(blocked.headers.get("cache-control"), "private, no-store");
+    assert.equal(blocked.headers.get("referrer-policy"), "no-referrer");
+    const allowed = await send(
+      "/api/organizations",
+      undefined,
+      second.cookie,
+      ip,
+    );
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get("ratelimit-limit"), "300");
+    assert.equal(
+      (await send("/api/auth/sign-out", {}, first.cookie, ip)).status,
+      200,
+    );
+    const revoked = await send("/api/organizations", undefined, first.cookie, {
+      ...ip,
+      "x-user-id": second.id,
+    });
+    assert.equal(revoked.status, 401);
+    assert.equal(revoked.headers.get("ratelimit-limit"), "60");
+  } finally {
+    await observer.client.query(
+      "DELETE FROM abuse_counters WHERE key=ANY($1::text[])",
+      [keys],
+    );
+  }
+});
+
+for (const failDelete of [false, true])
+  test(`workerd: logout direto renovável ${failDelete ? "não confirma falha" : "limpa cookies e revoga"}`, async () => {
+    const account = await provisioned();
+    await observer.client.query(
+      "UPDATE session SET updated_at=now()-interval '2 days', expires_at=now()+interval '1 day' WHERE user_id=$1",
+      [account.id],
+    );
+    if (failDelete)
+      await observer.client.query(`
+      CREATE FUNCTION worker_reject_logout_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'falha sintética de logout'; END; $$;
+      CREATE TRIGGER worker_reject_logout_delete BEFORE DELETE ON session
+      FOR EACH ROW EXECUTE FUNCTION worker_reject_logout_delete()`);
+    try {
+      const response = await send("/api/auth/sign-out", {}, account.cookie);
+      assert.equal(response.status, failDelete ? 503 : 200);
+      assert.equal(response.headers.get("ratelimit-limit"), "30");
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      const cookieHeaders = response.headers.getSetCookie();
+      if (failDelete) assert.equal(cookieHeaders.length, 0);
+      else {
+        for (const name of ["session_token", "session_data", "dont_remember"])
+          assert.ok(
+            cookieHeaders.some((value) =>
+              value.startsWith(`__Secure-better-auth.${name}=;`),
+            ),
+            `Limpar ${name}`,
+          );
+        assert.ok(
+          cookieHeaders.every(
+            (value) =>
+              /^[^=]+=;/.test(value) &&
+              /(?:^|;\s*)Max-Age=0(?:;|$)/i.test(value),
+          ),
+          "Nenhum cookie positivo de renovação no logout",
+        );
+      }
+      assert.equal(
+        (
+          await observer.client.query(
+            "SELECT id FROM session WHERE user_id=$1",
+            [account.id],
+          )
+        ).rowCount,
+        failDelete ? 1 : 0,
+      );
+      if (!failDelete) {
+        assert.equal(
+          (
+            await observer.client.query(
+              "SELECT session_id FROM tenant_sessions WHERE active_tenant_id=$1",
+              [account.organizationId],
+            )
+          ).rowCount,
+          0,
+        );
+        assert.equal(
+          (await send("/api/organizations", undefined, account.cookie)).status,
+          401,
+        );
+      }
+    } finally {
+      if (failDelete)
+        await observer.client.query(
+          "DROP TRIGGER worker_reject_logout_delete ON session; DROP FUNCTION worker_reject_logout_delete()",
+        );
+    }
+  });
+
+test("workerd: HEAD usa leitura de GET, preserva corpo vazio e não contorna quota", async () => {
+  const account = await ready();
+  const digest = createHmac(
+    "sha256",
+    "synthetic-only-secret-with-more-than-32-characters",
+  )
+    .update(`user:${account.id}`)
+    .digest("hex");
+  const start = Math.floor(Date.now() / 60_000) * 60_000;
+  const keys = [start, start + 60_000].map(
+    (window) => `v2:read:${digest}:${window}`,
+  );
+  const ip = { "cf-connecting-ip": "192.0.2.214" };
+  const head = (cookie: string) =>
+    mf.dispatchFetch(`${workerOrigin}/api/organizations`, {
+      method: "HEAD",
+      headers: { origin: workerOrigin, cookie, ...ip },
+    });
+  try {
+    const allowed = await head(account.cookie);
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get("ratelimit-limit"), "300");
+    assert.equal(allowed.headers.get("ratelimit-remaining"), "299");
+    assert.equal(await allowed.text(), "");
+    for (let i = 0; i < keys.length; i++)
+      await observer.client.query(
+        "INSERT INTO abuse_counters(key,count,expires_at) VALUES($1,300,$2) ON CONFLICT(key) DO UPDATE SET count=300",
+        [keys[i], new Date(start + (i + 1) * 60_000)],
+      );
+    for (const response of [
+      await send("/api/organizations", undefined, account.cookie, ip),
+      await head(account.cookie),
+    ]) {
+      assert.equal(response.status, 429);
+      assert.equal(response.headers.get("ratelimit-limit"), "300");
+      assert.ok(Number(response.headers.get("retry-after")) > 0);
+    }
+    const anonymous = await head("");
+    assert.equal(anonymous.status, 401);
+    assert.equal(anonymous.headers.get("ratelimit-limit"), "60");
+    assert.equal(await anonymous.text(), "");
+  } finally {
+    await observer.client.query(
+      "DELETE FROM abuse_counters WHERE key=ANY($1::text[])",
+      [keys],
+    );
+  }
+});
 
 test("workerd: Static Assets reais, SPA, API e headers de segurança", async () => {
   const metafile = JSON.parse(
@@ -261,7 +437,8 @@ test("workerd: provisionamento concorrente, UUID, isolamento, múltiplas igrejas
   const first = await ready();
   const key = randomUUID();
   const results = await Promise.all(
-    Array.from({ length: 4 }, () =>
+    // Reserva duas das cinco tentativas para conflito e vínculo revogado abaixo.
+    Array.from({ length: 3 }, () =>
       send("/api/organizations", body, first.cookie, {
         "Idempotency-Key": key,
       }),
