@@ -25,6 +25,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@t00ls-dev/security": "workspace:*",
     "better-auth": "^1.7.10"
   },
   "devDependencies": {

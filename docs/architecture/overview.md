@@ -82,7 +82,7 @@ config <--- db <--- auth
               `---- tenant
 config <---------- access
 
-config <--- security
+config <--- security <--- auth (verificação Turnstile opt-in)
 config <--- observability
 config <--- email
 

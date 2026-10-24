@@ -27,6 +27,7 @@ const paths = [
 
 describe("opt-in Turnstile HTTP contract", () => {
   let auth: FoundationAuth;
+  let records: Record<string, unknown[]>;
   let verdict: unknown;
   const sent: Array<{ subject: string; text: string }> = [];
   const token = "ephemeral-fixture-captcha-token";
@@ -42,17 +43,18 @@ describe("opt-in Turnstile HTTP contract", () => {
   });
   afterEach(() => vi.restoreAllMocks());
   function makeAuth(enabled: boolean, unavailable = false, rateLimit = false) {
+    records = {
+      user: [],
+      account: [],
+      session: [],
+      verification: [],
+      twoFactor: [],
+      rateLimit: [],
+    };
     return createFoundationAuth({
       baseURL: origin,
       secret: "fixture-auth-secret-at-least-thirty-two-characters",
-      database: memoryAdapter({
-        user: [],
-        account: [],
-        session: [],
-        verification: [],
-        twoFactor: [],
-        rateLimit: [],
-      }),
+      database: memoryAdapter(records),
       email: {
         send: (input) => {
           sent.push(input);
@@ -153,11 +155,10 @@ describe("opt-in Turnstile HTTP contract", () => {
       expect(
         url instanceof Request ? url.url : url instanceof URL ? url.href : url,
       ).toBe("https://challenges.cloudflare.com/turnstile/v0/siteverify");
-      const body = JSON.parse(init!.body as string) as {
-        secret: string;
-        response: string;
-      };
-      expect(body.secret === secret && body.response === token).toBe(true);
+      const body = init!.body as URLSearchParams;
+      expect(
+        body.get("secret") === secret && body.get("response") === token,
+      ).toBe(true);
     },
   );
   it.each([
@@ -235,7 +236,7 @@ describe("opt-in Turnstile HTTP contract", () => {
     expect(after.data?.session.id === before.data?.session.id).toBe(true);
     expect(sent).toHaveLength(1);
   });
-  it.each(["network", "http", "null", "json"])(
+  it.each(["network", "http", "null", "json", "payload"])(
     "classifies %s pre-auth failure without a false TOTP indeterminate outcome",
     async (failure) => {
       if (failure === "network")
@@ -247,6 +248,13 @@ describe("opt-in Turnstile HTTP contract", () => {
           ),
         );
       if (failure === "null") verdict = null;
+      if (failure === "payload")
+        verdict = {
+          "success": false,
+          "hostname": token,
+          "action": secret,
+          "error-codes": [token, secret],
+        };
       if (failure === "json")
         verify.mockImplementation(() =>
           Promise.resolve(
@@ -262,10 +270,11 @@ describe("opt-in Turnstile HTTP contract", () => {
       ];
       captured.forEach((spy) => spy.mockImplementation(() => undefined));
       const response = await post("/sign-in/email");
-      expect(response.status).toBe(failure === "json" ? 403 : 503);
+      const rejected = failure === "json" || failure === "payload";
+      expect(response.status).toBe(rejected ? 403 : 503);
       const data = (await response.json()) as { code: string };
       expect(data.code).toBe(
-        failure === "json" ? "VERIFICATION_FAILED" : "TURNSTILE_UNAVAILABLE",
+        rejected ? "VERIFICATION_FAILED" : "TURNSTILE_UNAVAILABLE",
       );
       expect(verify).toHaveBeenCalledTimes(1);
       expect(sent).toHaveLength(0);
@@ -274,29 +283,168 @@ describe("opt-in Turnstile HTTP contract", () => {
       expect(response.headers.has("set-cookie")).toBe(false);
     },
   );
-  it("native timeout remains bounded and has no automatic retry", async () => {
-    verify.mockImplementation(
-      (_url, init) =>
-        new Promise((_resolve, reject) => {
+  it.each(["transport", "body"])(
+    "verification %s timeout remains bounded and has no automatic retry",
+    async (stage) => {
+      verify.mockImplementation((_url, init) => {
+        if (stage === "body")
+          return Promise.resolve(
+            new Response(
+              new ReadableStream({
+                start(stream) {
+                  init!.signal!.addEventListener(
+                    "abort",
+                    () => stream.error(new Error("Fixture body timeout")),
+                    { once: true },
+                  );
+                },
+              }),
+            ),
+          );
+        return new Promise((_resolve, reject) => {
           init!.signal!.addEventListener(
             "abort",
             () => reject(new Error("Fixture timeout")),
             { once: true },
           );
-        }),
-    );
-    expect((await post("/sign-in/email")).status).toBe(503);
-    expect(verify).toHaveBeenCalledTimes(1);
-  }, 15000);
-  it.each(["false", 1])(
-    "explicitly preserves accepted native truthy-success limitation (%s)",
-    async (success) => {
-      verdict = { success, hostname: "localhost", action: actions.signUp };
-      expect((await post("/sign-up/email")).status).toBe(200);
+        });
+      });
+      expect((await post("/sign-in/email")).status).toBe(503);
       expect(verify).toHaveBeenCalledTimes(1);
-      expect(sent).toHaveLength(1);
+      expect(verify.mock.calls[0]![1]!.signal!.aborted).toBe(true);
+      expect(sent).toHaveLength(0);
+    },
+    15000,
+  );
+  it.each(
+    paths.flatMap(([path, operation]) =>
+      [false, "false", "true", "", 0, 1, -1, null, undefined, [], {}].map(
+        (success) => ({ path, operation, success }),
+      ),
+    ),
+  )(
+    "$path rejects non-true success ($success) before auth effects",
+    async ({ path, operation, success }) => {
+      verdict = { success, hostname: "localhost", action: actions[operation] };
+      const response = await post(path);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        code: "VERIFICATION_FAILED",
+      });
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(0);
+      expect(Object.values(records).every((rows) => rows.length === 0)).toBe(
+        true,
+      );
+      expect(response.headers.has("set-cookie")).toBe(false);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     },
   );
+  it.each([
+    { name: "null", value: null, status: 503 },
+    { name: "array", value: [], status: 403 },
+    {
+      name: "nested result",
+      value: [{ success: true, hostname: "localhost", action: actions.signUp }],
+      status: 403,
+    },
+    { name: "string", value: "true", status: 403 },
+    { name: "number", value: 1, status: 403 },
+    { name: "boolean", value: true, status: 403 },
+    { name: "missing fields", value: {}, status: 403 },
+    ...[
+      { hostname: null },
+      { hostname: ["localhost"] },
+      { hostname: undefined },
+      { action: 1 },
+      { action: [actions.signUp] },
+      { action: undefined },
+      { challenge_ts: null },
+      { cdata: {} },
+      { "error-codes": "invalid-input-response" },
+      { "error-codes": [1] },
+    ].map((fields) => ({
+      name: JSON.stringify(fields),
+      value: {
+        success: true,
+        hostname: "localhost",
+        action: actions.signUp,
+        ...fields,
+      },
+      status: 403,
+    })),
+  ])(
+    "rejects malformed Siteverify response: $name",
+    async ({ value, status }) => {
+      verdict = value;
+      const response = await post("/sign-up/email");
+      expect(response.status).toBe(status);
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(0);
+      expect(Object.values(records).every((rows) => rows.length === 0)).toBe(
+        true,
+      );
+      expect(response.headers.has("set-cookie")).toBe(false);
+    },
+  );
+  it("accepts boolean true with valid optional fields and ignores future extra metadata", async () => {
+    verdict = {
+      "success": true,
+      "hostname": "localhost",
+      "action": actions.signUp,
+      "challenge_ts": "2026-10-24T00:00:00Z",
+      "error-codes": [],
+      "cdata": "fixture",
+      "metadata": { future: true },
+    };
+    const response = await post("/sign-up/email");
+    expect(response.status).toBe(200);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(1);
+  });
+  it.each([400, 401, 403, 429, 500, 503])(
+    "upstream HTTP %s stays unavailable before auth",
+    async (status) => {
+      verify.mockResolvedValue(
+        Response.json(
+          { success: true, hostname: "localhost", action: actions.signUp },
+          { status },
+        ),
+      );
+      const response = await post("/sign-up/email");
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        code: "TURNSTILE_UNAVAILABLE",
+      });
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(0);
+    },
+  );
+  it("keeps native IP resolution for the single verification request", async () => {
+    auth = makeAuth(true, false, true);
+    const response = await auth.handler(
+      new Request(`${origin}/api/auth/sign-up/email`, {
+        method: "POST",
+        headers: {
+          "Origin": origin,
+          "Content-Type": "application/json",
+          "x-captcha-response": token,
+          "cf-connecting-ip": "198.51.100.20",
+          "x-forwarded-for": "203.0.113.40",
+        },
+        body: JSON.stringify({
+          email: "reader@example.com",
+          password,
+          name: "Reader",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(
+      (verify.mock.calls[0]![1]!.body as URLSearchParams).get("remoteip"),
+    ).toBe("198.51.100.20");
+  });
   it("partial config rejects only protected operations", async () => {
     auth = makeAuth(true, true);
     expect((await post("/sign-in/email")).status).toBe(503);

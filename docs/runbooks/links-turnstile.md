@@ -2,10 +2,10 @@
 
 ## Escopo e opt-in
 
-Better Auth **1.7.7**, sem patch/fork/upgrade, é o único responsável por
-Siteverify. `@t00ls-dev/auth` recebe uma opção `turnstile`; ausente mantém o
-comportamento anterior. Links aplica proteção somente aos POSTs abaixo,
-independentemente de cookies:
+`verifyTurnstile` de `@t00ls-dev/security` é o único transporte Siteverify do
+hook auth, sem patch/fork/upgrade do Better Auth. `@t00ls-dev/auth` recebe uma
+opção `turnstile`; ausente mantém o comportamento anterior. Links aplica
+proteção somente aos POSTs abaixo, independentemente de cookies:
 
 | Endpoint sem `/api/auth`  | Action                 |
 | ------------------------- | ---------------------- |
@@ -14,11 +14,12 @@ independentemente de cookies:
 | `/sign-in/magic-link`     | `links-magic-link`     |
 | `/request-password-reset` | `links-password-reset` |
 
-Um hook público pequeno seleciona a configuração imutável e delega ao plugin
-oficial `captcha`. Há somente uma chamada Siteverify por tentativa enviada; sem
-verificador customizado, proxy de validação ou segunda chamada. Limiter, storage
-D1 e IP confiável `cf-connecting-ip` permanecem os mesmos e são processados
-antes do hook. Hostname e action são conferidos pelo plugin nativo.
+Um hook público pequeno seleciona a configuração imutável e reutiliza o helper
+compartilhado, aceitando somente `success === true`. Há uma chamada Siteverify
+por tentativa enviada; sem proxy de validação, interceptação global de fetch ou
+segunda chamada. Limiter, storage D1 e IP confiável `cf-connecting-ip`
+permanecem os mesmos e são processados antes do hook. Hostname e action são
+conferidos exatamente pelo hook antes de auth.
 
 Google OAuth/callbacks, TOTP, verificação de email, consumo de Magic Link,
 aplicação de reset, logout e ações autenticadas não recebem Turnstile. Isso não
@@ -50,24 +51,26 @@ CSRF, cookies, framing da aplicação e demais headers não são relaxados. O cl
 usa SDK oficial com render explícito, theme light e tamanho conforme o
 formulário; não usa pre-clearance ou serviço externo de validação client-side.
 
-## Falhas e limitação aceita
+## Falhas e validação estrita
 
 Ausência de token: 400 `MISSING_RESPONSE`, sem Siteverify. Rejeição, expiração,
 reuso ou metadados divergentes: 403 `VERIFICATION_FAILED`. Tokens Cloudflare são
 de uso único e expiram em 300 segundos; o plugin pode agrupar causas de
-rejeição. Timeout nativo (10s), rede, 5xx remoto ou resultado nulo devolvem erro
-nativo 500: somente essa rejeição direta do hook é convertida para 503
-`TURNSTILE_UNAVAILABLE`, com mensagem fixa e sem mutation. O client a trata
-antes da regra genérica de 5xx. Falhas posteriores de auth continuam
-`AUTH_STATE_INDETERMINATE`/`AUTH_FAILURE`, com a reconciliação atual; rede
-perdida do browser não prova ausência de efeitos.
+rejeição. Timeout (10s, incluindo leitura do corpo), rede, HTTP remoto de erro
+ou resultado nulo retornam diretamente do hook 503 `TURNSTILE_UNAVAILABLE`, com
+mensagem fixa e sem mutation. O client a trata antes da regra genérica de 5xx.
+Falhas posteriores de auth continuam `AUTH_STATE_INDETERMINATE`/`AUTH_FAILURE`,
+com a reconciliação atual; rede perdida do browser não prova ausência de
+efeitos.
 
-**Limitação explicitamente aceita para V1:** o provider nativo usa truthiness de
-`success`, não boolean estrito. Com hostname/action corretos, `success: "false"`
-ou `success: 1` podem ser aceitos. Não alegamos fail-closed para payload
-upstream arbitrariamente malformado. JSON inválido/missing success pode virar
-403 e não ser distinguido de token inválido. Os testes registram o comportamento
-real, sem modificar o provider ou acrescentar um segundo verificador.
+**Validação estrita:** somente o booleano `true` é aceito em `success`, com
+hostname/action corretos. `false`, strings, números, nulo, campo ausente, arrays
+e tipos inválidos dos metadados conhecidos são rejeitados. Os campos opcionais
+`challenge_ts` e `cdata` precisam ser strings quando presentes; `error-codes`
+precisa ser array de strings. Novos campos adicionais podem ser ignorados sem
+dispensar as verificações obrigatórias. JSON inválido retorna 403; resultado
+nulo continua 503. A limitação truthy do provider CAPTCHA Better Auth não
+integra mais o caminho de verificação do Foundation.
 
 Sem retry automático de mutations/verificação. Depois de cada request enviado,
 descartar token e renderizar uma nova instância; tentativa inválida local não o
@@ -96,11 +99,11 @@ uma mensagem/retry contextual, sem presumir que Turnstile está desativado.
 
 ## Validação
 
-Tests auth exercitam o handler público e Siteverify mockado, incluindo limitação
-truthy, actions, ausência/rejeição, timeout/rede/protocolo, logs, cookies e
-limiter. Integração aplica migrations reais em D1 descartável e distingue falha
-pré-auth de erro de execução posterior. E2E usa fixture de SDK/Siteverify
-somente no harness `e2e/worker.ts`, fora do bundle de produção;
-trace/video/screenshot desses casos ficam desligados. Não há flag de
-bypass/configuração de teste em produção. Fixtures determinísticas não
-substituem smoke real do SDK/provider em DEV.
+Tests auth exercitam o handler público e Siteverify mockado, incluindo rejeição
+de payloads malformados e success não booleano, actions, ausência/rejeição,
+timeout/rede/protocolo, logs, cookies e limiter. Integração aplica migrations
+reais em D1 descartável e distingue falha pré-auth de erro de execução
+posterior. E2E usa fixture de SDK/Siteverify somente no harness `e2e/worker.ts`,
+fora do bundle de produção; trace/video/screenshot desses casos ficam
+desligados. Não há flag de bypass/configuração de teste em produção. Fixtures
+determinísticas não substituem smoke real do SDK/provider em DEV.

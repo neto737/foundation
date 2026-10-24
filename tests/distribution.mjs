@@ -267,7 +267,7 @@ try {
         devDependencies: { "typescript": ts.version, "@types/node": "22.20.4" },
         overrides: {
           "drizzle-orm": "0.45.2",
-          "better-auth": "1.7.7",
+          "better-auth": "1.7.10",
           "@cloudflare/workers-types": "5.20260922.1",
         },
       }),
@@ -286,7 +286,7 @@ try {
     const require = createRequire(join(consumer, "package.json"));
     assert.equal(
       json(join(consumer, "node_modules/better-auth/package.json")).version,
-      "1.7.7",
+      "1.7.10",
     );
     for (const entry of entrypoints)
       assert(
@@ -494,8 +494,52 @@ export async function resolveAuth(auth: FoundationAuth, headers: Headers) {
       'import assert from "node:assert/strict";\nimport { createD1AuditStore } from "@t00ls-dev/audit/d1";\nimport { createD1Database } from "@t00ls-dev/db/d1";\nimport { createD1TenantRepository } from "@t00ls-dev/tenant/d1";\nconst db = { prepare: () => ({ bind() { return this; }, run: async () => ({ success: true }), first: async () => null }) };\nassert.equal(createD1Database(db).$client, db);\nassert.equal(await createD1TenantRepository(db).findMembership("u", "t"), null);\nassert.equal(typeof createD1AuditStore(db).append, "function");\n',
     );
     run(process.execPath, [join(consumer, "runtime.mjs")], consumer);
+    save(
+      consumer,
+      "turnstile.mjs",
+      `
+import assert from "node:assert/strict";
+import { createFoundationAuth } from "@t00ls-dev/auth";
+import { memoryAdapter } from "better-auth/adapters/memory";
+const originalFetch = globalThis.fetch;
+let calls = 0;
+let sent = 0;
+let success = "false";
+globalThis.fetch = async (input) => {
+  assert.equal(String(input), "https://challenges.cloudflare.com/turnstile/v0/siteverify");
+  calls++;
+  return Response.json({ success, hostname: "localhost", action: "magic-link" });
+};
+try {
+  const auth = createFoundationAuth({
+    baseURL: "http://localhost:3000",
+    secret: "synthetic-only-distribution-secret-at-least-32-characters",
+    database: memoryAdapter({ user: [], account: [], session: [], verification: [] }),
+    email: { send: async () => { sent++; } },
+    turnstile: { secretKey: "fixture-only", allowedHostnames: ["localhost"] },
+  });
+  const post = () => auth.handler(new Request("http://localhost:3000/api/auth/sign-in/magic-link", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Origin": "http://localhost:3000", "x-captcha-response": "fixture-only" },
+    body: JSON.stringify({ email: "synthetic@example.test" }),
+  }));
+  for (const malformed of [false, "false", "true", 0, 1, null, [], {}]) {
+    success = malformed;
+    assert.equal((await post()).status, 403);
+    assert.equal(sent, 0);
+  }
+  success = true;
+  assert.equal((await post()).status, 200);
+  assert.equal(sent, 1);
+  assert.equal(calls, 9);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+`,
+    );
+    run(process.execPath, [join(consumer, "turnstile.mjs")], consumer);
     console.log(
-      `Clean installation ${attempt}: build, all ${entrypoints.length} public imports and D1 runtime PASS`,
+      `Clean installation ${attempt}: build, all ${entrypoints.length} public imports, D1 runtime and strict Turnstile PASS`,
     );
     // Consumers are ephemeral; retain reports/artifacts without accumulating
     // dependency trees between runs or masking the second clean installation.
