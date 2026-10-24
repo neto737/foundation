@@ -36,9 +36,11 @@ npm run dev:web
 
 `npm run build` compila API e SPA em `dist/`. `npm start` serve ambos pela origem
 local 3000. `src/web.ts` entrega HTML apenas nos caminhos conhecidos da SPA:
-`/`, `/onboarding`, `/entrar`, `/organizacoes` e `/igrejas`. Rotas desconhecidas da
+`/`, `/onboarding`, `/entrar`, `/organizacoes`, `/igrejas` e as rotas de membros
+listadas em `src/web-paths.ts`. Rotas desconhecidas da
 API continuam retornando JSON, sem fallback HTML. Migrations continuam explícitas
-e separadas da inicialização e do build. Não há configuração de deploy.
+e separadas da inicialização e do build. A publicação Worker DEV usa o
+[fluxo automático após CI](deploy-dev.md).
 
 ## Fluxo e retomada
 
@@ -92,7 +94,9 @@ Duas adaptações mínimas permitem compor a web sem mudar autenticação:
 
 O backend mantém a allowlist de auth, CSRF/origem, validação de prontidão e vínculo
 atual. A SPA não concede autoridade por URL ou estado local. Não há UI para criar
-outras organizações, igrejas adicionais, membros, convites ou permissões locais.
+outras organizações, igrejas adicionais, convites ou permissões locais. A
+[interface de membros](gestao-membros.md) só aparece quando o servidor informa
+a capacidade da organização ativa; troca de contexto remove os dados anteriores.
 
 ## Validação
 
@@ -131,5 +135,8 @@ registra títulos e localização da asserção, sem seus valores. Somente scree
 da tela inicial vazia ficam em `.local/e2e/`, ignorado pelo Git. O logger de proxy
 Vite também omite URLs em erros. A caixa sintética temporária é removida no final.
 
-Entrega real de e-mail, hardening operacional e dados reais continuam fora desta
-superfície local, conforme os limites já documentados para a API.
+Entrega externa de e-mail e operação pública pertencem à composição Worker DEV,
+conforme [Deploy DEV](deploy-dev.md). O E2E permanece sintético e local; não
+comprova entrega externa ou operação remota nem autoriza dados reais.
+O modo `npm run test:e2e -- --runtime-acls` preserva os mesmos cenários usando
+login restrito; é o modo executado na CI.

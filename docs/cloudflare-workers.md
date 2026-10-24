@@ -1,7 +1,8 @@
 # Cloudflare Workers
 
-A aplicação tem composição Worker local, separada do executável Node. Não há
-recursos remotos, DNS ou deploy comprovados por esta entrega. O escopo de produto
+A aplicação tem composição Cloudflare Workers para DEV, separada do executável
+Node local, com Neon PostgreSQL via Hyperdrive. Produção não está implementada.
+O escopo de produto
 continua em [Decisões do MVP](decisoes-mvp.md); os contratos da API e da SPA estão em
 [Onboarding](onboarding-provisionamento.md) e [Interface](interface-onboarding.md).
 
@@ -34,7 +35,7 @@ origem da API, preservando cookies HttpOnly e os controles existentes de origem/
 `https://levi.t00ls.dev`, sem rotas, workers.dev ou previews habilitados. O ID
 Hyperdrive composto de zeros é um **placeholder**, não um recurso existente. Nenhum
 comando de build publica recursos. `worker:build` sempre usa `--dry-run`.
-O processo manual de publicação, com suas guardas e autenticação própria, está em
+O processo automático após CI, com guardas e mecanismo de suspensão, está em
 [Deploy DEV](deploy-dev.md); `deploy:dev` é o único comando npm de publicação.
 
 | Binding/configuração | Uso                                                                           |
@@ -46,12 +47,12 @@ O processo manual de publicação, com suas guardas e autenticação própria, e
 | `RESEND_API_KEY`     | Secret exclusivo DEV, somente envio e com domínio restrito quando disponível  |
 | `LEVI_EMAIL_FROM`    | Remetente de domínio/subdomínio verificado                                    |
 
-A lista não admite domínio, curinga ou lista vazia. Destinatário externo à lista
-recebe a mesma confirmação genérica de solicitação, mas o transporte não envia
-mensagem. Isso limita envios e evita enumeração por essa resposta; não substitui
-proteção de acesso. Não versionar endereços pessoais. `.dev.vars.example` contém
-somente nomes vazios; arquivos locais com valores são ignorados. Configuração
-incompleta resulta em 503 sanitizado antes de acessar banco/provider.
+Não há allowlist de destinatários no DEV público. A allowlist de organizações
+sintéticas de membros é independente e permanece vazia até autorização específica;
+ver [Gestão de membros](gestao-membros.md#habilitação-e-limites).
+`.dev.vars.example` contém somente nomes vazios; arquivos locais com valores são
+ignorados. Configuração incompleta resulta em 503 sanitizado antes de acessar
+banco/provider.
 
 O contrato publicado `@t00ls-dev/email@0.1.2` fornece `createResendEmail`, usando
 fetch HTTPS. Não há SDK adicional. Mantêm-se os dois e-mails, callbacks fixos e
@@ -63,8 +64,9 @@ recurso Hyperdrive remoto. **É obrigatório desabilitá-lo e conferir a configu
 efetiva antes de publicar**, para que sessões e memberships revogados não sejam
 lidos de cache. O runtime não consegue atestar essa opção a partir da connectionString.
 
-Neon PostgreSQL 17 é o alvo preferencial, com endpoint direto e role de runtime
-separada do migrator. Não habilitar auth gerenciado do provedor nem reutilizar
+O DEV existente usa Neon PostgreSQL 18.6; o harness descartável fixa PostgreSQL
+17.11. A runtime usa Hyperdrive com origem direta e role separada da migradora.
+O runner administrativo usa conexão direta, fora do Hyperdrive. Não habilitar auth gerenciado do provedor nem reutilizar
 banco/secrets do Foundation. A identidade continua no schema do Levi.
 
 ## Desenvolvimento e validação local
@@ -127,37 +129,108 @@ O plano Free de 10 ms por request não deve ser presumido adequado ao login.
 
 ## Migrations DEV explícitas
 
-`db:migrate` conserva o guard de banco local. O novo `npm run db:migrate:dev` é uma
-ação administrativa independente, não usada pelo Worker, build, deploy ou CI.
-**Não foi executada contra banco remoto nesta entrega.** As guardas são verificadas
-como funções puras, sem conexão; os testes descartáveis usam o runner local existente.
+`db:generate` usa Drizzle para gerar SQL, snapshot e journal versionados; revisar o
+diff e criar migration posterior, sem editar 0000–0003 já aplicadas no DEV.
+`db:migrate` conserva o guard de banco local. `db:migrate:dev` é administrativo,
+independente do Worker, build, CI e deploy. Nenhum push aplica migrations remotas.
 
-Antes de uma execução futura autorizada, o operador deverá configurar privadamente:
+O padrão PostgreSQL público do Foundation fornece factory, status e integração
+Drizzle; o coordenador expand/backfill/contract do Links é D1 e não é copiado.
+`tools/migration-history.ts` acrescenta uma verificação do prefixo aplicado:
+ordem, timestamps e SHA-256 dos SQLs devem corresponder ao journal versionado.
+Lacunas, duplicações, registros desconhecidos e hashes divergentes interrompem a
+operação. Não cria journal auxiliar, não reconcilia nem repara divergências.
 
-- `LEVI_DEV_DATABASE_URL`: PostgreSQL direto Neon, TLS `sslmode=verify-full`;
-- `LEVI_DEV_DATABASE_HOST`: hostname exato do endpoint esperado;
-- `LEVI_DEV_DATABASE_NAME`: `levi_dev` ou nome começando por `levi_dev_`;
-- `LEVI_DEV_MIGRATION_CONFIRMATION`: `APLICAR:<host>/<banco>` para esse alvo exato.
+Antes de cada operação autorizada, o operador configura privadamente:
 
-O comando exige role `levi_dev_migrator`, senha não vazia, porta padrão, endpoint
-`ep-...neon.tech` sem `-pooler`, sem parâmetros extras de conexão. Reconfirma
-current_database/current_user antes de DDL e usa lock administrativo não bloqueante
-na conexão direta para serializar execuções. Em seguida consulta o status público
-Foundation, aplica o histórico Drizzle e reconsulta o journal. O status compara
-tags/timestamps; não comprova sozinho checksum ou integridade total do schema.
+- `LEVI_DEV_DATABASE_URL`: endpoint direto Neon, `sslmode=verify-full`;
+- `LEVI_DEV_DATABASE_HOST`: hostname exato esperado;
+- `LEVI_DEV_DATABASE_NAME`: `levi_dev` ou prefixo `levi_dev_`;
+- `LEVI_DEV_MIGRATION_CONFIRMATION`: `CONSULTAR:<host>/<banco>` para
+  `npm run db:status:dev`, ou `APLICAR:<host>/<banco>` para
+  `npm run db:migrate:dev`.
 
-Falha resulta em erro sanitizado e não provoca retry automático. O script não
-autentica contas de provedor nem prova que um endpoint foi classificado corretamente
-como DEV pelo operador: conferir o projeto Neon e suas permissões continua obrigatório.
-Não enviar credenciais de migrator ao Hyperdrive/runtime nem enfraquecer os guards
-para usar um banco padrão ou de produção. Nenhuma migration nova foi necessária.
+Não há carregamento automático de `.env`. Não copiar credenciais privadas para o
+projeto ou CI. O runner exige role `levi_dev_migrator`, senha, porta padrão, endpoint
+`ep-...neon.tech` sem `-pooler` e sem parâmetros extras. Reconfirma banco,
+`current_user` e `session_user` migradores e schema `public`.
+O status roda em `BEGIN READ ONLY` e termina com `ROLLBACK`, sem criar objetos,
+inclusive em banco vazio. O modo de aplicação usa advisory lock não bloqueante,
+confere o histórico, aplica pelo Drizzle e reconsulta hashes/status. O SQL e as
+entradas pendentes são transacionais pelo migrator PostgreSQL Drizzle; o runner
+aplica **todas** as pendentes. Para autorizar só uma, comprovar que só ela está
+pendente imediatamente antes; não existe seletor individual implícito.
 
-## Antes do primeiro deploy
+O runner não identifica sozinho projeto/branch Neon nem comprova integridade de
+cada objeto. Um preflight continua necessário: identidade completa por metadados
+autorizados, dependências/ownership/ACLs/colisões, locks, timeouts proporcionais e
+recurso de recuperação realmente disponível. O runner não fixa timeouts por
+conta própria; definir limites de sessão compatíveis em procedimento autorizado,
+sem alterar persistentemente o servidor. Consultar status não autoriza DDL.
+
+Registrar UTC e LSN antes de uma aplicação não cria backup nem reserva histórico.
+A janela Neon observada foi de seis horas, móvel; reconfirmar disponibilidade e
+margem no momento de cada operação. Visualização de estado anterior não comprova
+restauração testada; não há garantia de RPO/RTO. Restauração integral pode perder
+gravações posteriores legítimas e exige decisão e autorização específicas.
+Após erro/resultado incerto, consultar journal e catálogos em conexão nova antes
+de qualquer decisão. Não repetir automaticamente, editar journal ou desfazer
+DDL/dados de forma destrutiva.
+
+## Roles e ACLs mínimas DEV
+
+`levi_dev_migrator` é proprietária do schema composto e aplica DDL explicitamente;
+não vai para Hyperdrive ou workflow de publicação. `levi_dev_runtime` é o login de
+aplicação, sem ownership, CREATE/TEMP, superuser, BYPASSRLS, grant option ou
+membership privilegiada. GRANTs são operações autorizadas separadamente, sem
+default ACL ampla para novas tabelas.
+
+O incremento de membros contém cinco comandos, sete grupos e 45 pares
+coluna/privilégio. A especificação executável usada apenas pelo harness é
+`memberGrants` em [runtime-acl-fixture](../test/runtime-acl-fixture.ts);
+não executar o preparo de roles dessa fixture no DEV.
+
+| Tabela                   | Privilégio | Colunas                                                                                                                     |
+| ------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| members                  | SELECT     | id, tenant_id, church_id, name, status, birth_date, phone, email, joined_on, address, baptism_date, church_role, created_at |
+| members                  | INSERT     | mesmas 13 colunas                                                                                                           |
+| member_history           | INSERT     | id, tenant_id, member_id, actor_id, church_name, initial_status, created_at                                                 |
+| member_creation_requests | SELECT     | tenant_id, actor_id, request_key, request_hash, member_id                                                                   |
+| member_creation_requests | INSERT     | mesmas cinco colunas                                                                                                        |
+| churches                 | UPDATE     | created_at                                                                                                                  |
+| tenant_memberships       | UPDATE     | created_at                                                                                                                  |
+
+A leitura de `members` cobre listagem, ficha e `INSERT ... RETURNING`. Histórico
+não tem RETURNING nem SELECT direto; recibos têm consulta e INSERT sem retorno de
+colunas extras. UUIDs usam defaults PostgreSQL, sem sequência nessas três tabelas.
+Não acrescentar SELECT em histórico/auditoria ou DELETE, TRUNCATE, REFERENCES,
+TRIGGER, MAINTAIN e UPDATE geral ao incremento. As ACLs legadas de auth, tenancy,
+auditoria INSERT e contadores permanecem separadas, representadas por
+`legacyRuntimeGrants` na mesma fixture.
+
+`SELECT FOR SHARE` exige UPDATE em alguma coluna. A migration 0003 protege
+`churches`/`tenant_memberships` com função `SECURITY INVOKER`,
+`search_path=pg_catalog` e triggers `BEFORE UPDATE FOR EACH STATEMENT`:
+`current_user = 'levi_dev_runtime'` recebe `42501` mesmo sem linhas ou num no-op.
+SELECT com lock não dispara UPDATE. Não ampliar ownership, TRIGGER, acesso a outras
+roles ou `session_replication_role`. Funções SECURITY DEFINER que mudem identidade
+efetiva precisam de revisão: não presumir proteção contra um novo caminho
+privilegiado. Detalhes e provas descartáveis no [guia de membros](gestao-membros.md#proteção-do-update-necessário-ao-lock-no-dev).
+
+ACLs restringem operações, mas não filtram tenants: não há RLS implementada.
+Sessão, prontidão, membership administrativa atual e filtros organizacionais
+continuam obrigatórios no Levi, usando os contratos do Foundation. Contato de
+membro não é conta; função eclesiástica não concede autoridade. Dados religiosos,
+histórico, auditoria e backups exigem finalidade, retenção e governança antes
+de qualquer uso real.
+
+## Operação DEV
 
 O ambiente preparado é DEV público: sem Cloudflare Access ou allowlist de
 endereços. Consultar [Deploy DEV](deploy-dev.md) para recursos, CI automática,
-secrets, habilitação e guardas do SHA/Hyperdrive. O deploy permanece desabilitado
-até identificar e validar os recursos remotos e planos gratuitos.
+secrets, habilitação e guardas do SHA/Hyperdrive. O mecanismo de suspensão é
+`LEVI_DEV_DEPLOY_ENABLED=false`; somente pré-requisitos conferidos permitem
+mantê-lo ativo para publicação automática.
 
 Banco/roles exclusivos, TLS, migrations administrativas explícitas, Hyperdrive
 sem cache, remetente verificado e tracking desabilitado são pré-requisitos.

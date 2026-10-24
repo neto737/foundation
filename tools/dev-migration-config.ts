@@ -1,4 +1,7 @@
-export function devMigrationTarget(env: NodeJS.ProcessEnv): string {
+export function devMigrationTarget(
+  env: NodeJS.ProcessEnv,
+  operation: "apply" | "status" = "apply",
+): string {
   try {
     const raw = env.LEVI_DEV_DATABASE_URL;
     if (!raw) throw new Error();
@@ -19,7 +22,7 @@ export function devMigrationTarget(env: NodeJS.ProcessEnv): string {
       [...url.searchParams.keys()].some((key) => key !== "sslmode") ||
       url.searchParams.getAll("sslmode").length !== 1 ||
       env.LEVI_DEV_MIGRATION_CONFIRMATION !==
-        `APLICAR:${url.hostname}/${database}`
+        `${operation === "status" ? "CONSULTAR" : "APLICAR"}:${url.hostname}/${database}`
     )
       throw new Error();
     return raw;

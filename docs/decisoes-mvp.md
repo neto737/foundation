@@ -1,6 +1,6 @@
 # Decisões do MVP
 
-**Escopo aprovado em 2026-10-16; estado atualizado em 2026-10-22.** O MVP completo
+**Escopo aprovado em 2026-10-16; estado atualizado em 2026-10-24.** O MVP completo
 ainda não está implementado. A primeira fatia de onboarding e provisionamento
 está descrita em [Onboarding e provisionamento](onboarding-provisionamento.md).
 Este documento registra o escopo e suas invariantes, sem autorizar operação.
@@ -17,16 +17,17 @@ aqui. Fatos técnicos descrevem capacidades e limites; recomendações não se t
 requisitos por repetição. Relatórios históricos permanecem como evidência de suas
 execuções e não são necessários para compreender ou definir o escopo atual.
 
-| Classificação         | Estado                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                                                                                                                   |
-| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                                                                                                              |
-| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers validada localmente, sem deploy ou serviços remotos comprovados. Primeira fatia de membros disponível apenas para validação sintética local, conforme o guia próprio. Demais funcionalidades do MVP pendentes. |
+| Classificação         | Estado                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                                                                                                                    |
+| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                                                                                                               |
+| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers com DEV publicado, Neon/Hyperdrive e fluxo de CI/deploy próprios. Primeira fatia de membros disponível apenas para validação sintética local, conforme o guia próprio. Demais funcionalidades do MVP pendentes. |
 
 A primeira fatia local de membros (cadastro, listagem e ficha) está descrita em
 [Gestão de membros](gestao-membros.md). Esta etapa foi autorizada em 2026-10-22
-somente para implementação e validação sintética, sem migration persistente,
-deploy ou liberação para dados reais. A preparação do recorte DEV sintético por
+inicialmente para implementação e validação sintética. Operações posteriores
+autorizaram separadamente migrations 0000–0003 e privilégios mínimos no DEV;
+isso não libera o módulo nem o uso de dados reais. A preparação do recorte DEV sintético por
 organização também foi autorizada em 2026-10-22, sem habilitação ou operação remota;
 regras no mesmo guia. Edição, exclusão e transferências continuam
 pendentes.
@@ -105,7 +106,7 @@ envio externo de e-mail.
 
 O DEV está preparado para acesso público, sem Cloudflare Access ou allowlist de
 e-mails, com limites duráveis de solicitações e envio. Essa composição não concede
-acesso anônimo aos dados privados e ainda depende de validação/publicação remota;
+acesso anônimo aos dados privados. Publicações DEV exigem CI aprovada;
 procedimento em [Deploy DEV](deploy-dev.md).
 
 ## Dados e operação
@@ -120,8 +121,9 @@ procedimento em [Deploy DEV](deploy-dev.md).
 - Schema composto e migrations são responsabilidade do Levi, versionados e com
   execução independente de inicialização, CI e deploy. Validação em banco
   descartável não equivale a aplicar migrations em banco persistente.
-- Backups automáticos e recuperação isolada são requisitos futuros, ainda sem
-  operação comprovada. Avaliar RLS como defesa adicional, sem adoção automática.
+- Recuperação efetivamente testada continua pendente: visualizar histórico Neon
+  não comprova restauração nem reserva um ponto. A janela móvel deve ser
+  reconfirmada antes de cada operação; não há RPO/RTO definido. Avaliar RLS como defesa adicional, sem adoção automática.
 - Histórico pessoal, auditoria, logs e backups têm finalidades e retenções
   distintas. Definir governança LGPD antes de dados reais, incluindo a natureza
   sensível dos dados religiosos e eventual tratamento de dados de menores.
@@ -135,15 +137,17 @@ Levi. Reutilizar os contratos públicos necessários dos nove pacotes oficiais:
 `audit`, no scope `@t00ls-dev` do npmjs.com.
 
 **Fatos técnicos da referência examinada:** Foundation em
-`20de16281bb8b31346e018b5a1e71c0d52ada36b`. Seu exemplo Links usa D1 e não demonstra
+`22a4aa0dd4a560f86aaa4e3272138799c922e76e`. Seu exemplo Links usa D1 e não demonstra
 o domínio multi-tenant do Levi; o gerador tem somente o preset `basic-d1`. UI e
 ferramentas de workspace são privadas para publicação. A disponibilidade de um
 pacote não obriga usar todos os seus recursos, como convites e plugins de auth.
 
-**Direção técnica planejada:** composição modular em TypeScript, separando
-interface, contratos, domínio e persistência, com React/Hono como referência do
-Foundation. A topologia Workers e a conexão PostgreSQL/Hyperdrive continuam
-sujeitas a prova; não são infraestrutura entregue ou provedor já escolhido.
+**Composição adotada no DEV:** TypeScript modular, React/Hono, Cloudflare Workers,
+Hyperdrive sem cache e Neon PostgreSQL, com roles distintas de migradora e runtime.
+O procedimento de publicação e suas evidências estão em [Deploy DEV](deploy-dev.md).
+O paralelismo com resultado agregado e as guardas de SHA seguem o Foundation;
+as fases D1 automáticas do Links não se aplicam às migrations PostgreSQL do Levi.
+A infraestrutura de produção permanece fora deste fluxo.
 
 **Composição verificada na primeira fatia (2026-10-19):** os pacotes publicados
 `auth@0.3.0`, `db@1.0.0`, `tenant@1.0.0` e `audit@1.0.0` substituem as limitações

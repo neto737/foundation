@@ -2,8 +2,9 @@
 
 Esta primeira fatia implementa uma API local, consumida pela
 [interface React de onboarding](interface-onboarding.md). O escopo de produto
-continua em [Decisões do MVP](decisoes-mvp.md). Cadastro de membros, convites,
-administração adicional, deploy e infraestrutura de produção continuam pendentes.
+continua em [Decisões do MVP](decisoes-mvp.md). Cadastro e consulta de membros
+possuem [guia próprio](gestao-membros.md), com habilitação separada. Convites,
+administração adicional e infraestrutura de produção continuam pendentes.
 A composição e os limites de validação do runtime remoto estão em
 [Cloudflare Workers](cloudflare-workers.md).
 
@@ -63,7 +64,9 @@ o exercício. Encerre o banco sintético com `docker stop levi-local`.
 Migrations não são importadas pelo servidor. `npm run db:migrate` é uma ação
 explícita e exige `LEVI_LOCAL_DATABASE=1`. `db:generate` apenas gera SQL/snapshot a
 partir do schema; não altera banco. A aplicação não verifica/aplica automaticamente
-migrations ao iniciar, fazer build ou atualizar dependências. Não há GitHub Actions.
+migrations ao iniciar, fazer build ou atualizar dependências. GitHub Actions
+valida em bancos descartáveis e publica DEV após CI aprovada, conforme
+[Deploy DEV](deploy-dev.md); não aplica migrations persistentes.
 
 ## Fluxo e endpoints
 
@@ -115,7 +118,8 @@ de provisionamento/autorização; `src/data/schema.ts` define o schema do consum
 
 As quatro versões Foundation da entrega são fixas: auth `0.3.0`, db/tenant/audit
 `1.0.0`. `access@0.1.2` fornece o mapa estático e `security@0.2.0` fornece CSRF e
-headers. Não há provider de e-mail real nesta fase; o contrato de auth basta.
+headers. O Node captura e-mails localmente; o Worker usa o adapter Resend público,
+com configuração e limites descritos no [guia Workers](cloudflare-workers.md).
 Better Auth `1.7.7`, Drizzle `0.45.4` e Hono são imports diretos, com lockfile próprio.
 `@types/pg` é dependência de desenvolvimento para os tipos públicos do executor;
 não há cliente/pool paralelo do Levi.
@@ -165,14 +169,14 @@ TypeScript usa `strict`, `exactOptionalPropertyTypes` e `noUncheckedIndexedAcces
 integralmente declarações transitivas de terceiros. Testes reais cobrem os
 contratos críticos consumidos.
 
-Esta superfície é de desenvolvimento local, sem hardening operacional para rede
-pública. A configuração de rate limiting durável, entrega real de e-mail,
-topologia/pooling, backup/recuperação e governança de dados reais ficam para uma
-etapa operacional própria. O rate limit em memória do upstream não é tratado como
-garantia entre requests, pois auth é composto com a conexão de cada request.
-Hyperdrive e Workers remotos não foram configurados nem comprovados.
+O executável Node continua restrito ao desenvolvimento local. O Worker DEV
+possui Hyperdrive, transporte Resend e limites duráveis de abuso; procedimentos
+e limitações em [Deploy DEV](deploy-dev.md). Rate limiting em memória não é
+garantia entre invocações. Homologação local não comprova entrega externa,
+consumo remoto de CPU, recuperação ou autorização para dados reais.
 
 Não há API de alterar/excluir igrejas, organizações ou memberships. As futuras
 exclusões devem definir o tratamento do recibo que referencia a primeira igreja,
-sem enfraquecer a integridade atual. Não há dados/migrations de legado, tabelas de
-membros, permissões por igreja ou gestão de convites.
+sem enfraquecer a integridade atual. Não há dados/migrations de legado,
+permissões por igreja ou gestão de convites. O módulo de membros mantém
+ficha e histórico separados da identidade de autenticação.

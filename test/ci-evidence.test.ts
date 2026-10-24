@@ -10,6 +10,7 @@ const sha = "a".repeat(40);
 const run = {
   id: 101,
   workflow_id: 202,
+  path: ".github/workflows/ci.yml",
   run_attempt: 2,
   repository: { full_name: "t00ls-dev/levi" },
   head_repository: { full_name: "t00ls-dev/levi" },
@@ -54,6 +55,8 @@ function api(changes: Record<string, unknown> = {}): typeof fetch {
         jobs: [
           {
             name: "checks",
+            run_id: 101,
+            run_attempt: 2,
             status: "completed",
             conclusion: "success",
             head_sha: sha,
@@ -71,6 +74,7 @@ test("CI: aceita somente push canônico na main, SHA exato e tentativa atual con
   validateCIRun(run, sha, 202);
   for (const changes of [
     { workflow_id: 203 },
+    { path: ".github/workflows/other.yml" },
     { repository: { full_name: "other/levi" } },
     { head_repository: { full_name: "fork/levi" } },
     { event: "pull_request" },
@@ -113,6 +117,8 @@ test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efeti
         jobs: [
           {
             name: "checks",
+            run_id: 101,
+            run_attempt: 2,
             status: "completed",
             conclusion: "skipped",
             head_sha: sha,
@@ -126,6 +132,8 @@ test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efeti
         jobs: [
           {
             name: "checks",
+            run_id: 101,
+            run_attempt: 2,
             status: "completed",
             conclusion: "success",
             head_sha: "b".repeat(40),
@@ -214,6 +222,8 @@ test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor
           jobs: [
             {
               name: "checks",
+              run_id: 101,
+              run_attempt: 2,
               status: "completed",
               conclusion: "failure",
               head_sha: sha,

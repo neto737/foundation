@@ -10,6 +10,7 @@ export function validateCIRun(
   workflowId: number,
 ) {
   assert.equal(run.workflow_id, workflowId);
+  assert.equal(run.path, ".github/workflows/ci.yml");
   assert.equal(run.repository?.full_name, repository);
   assert.equal(run.head_repository?.full_name, repository);
   assert.equal(run.event, "push");
@@ -101,6 +102,8 @@ export async function requireSuccessfulCI(
   diagnostics.inspect("ci-job");
   assert.equal(checks.length, 1);
   assert.equal(checks[0].status, "completed");
+  assert.equal(checks[0].run_id, run.id);
+  assert.equal(checks[0].run_attempt, run.run_attempt);
   assert.equal(checks[0].conclusion, "success");
   assert.equal(checks[0].head_sha, sha);
   return { sha, runId, attempt: run.run_attempt as number };
