@@ -6,6 +6,7 @@ import ts from "typescript";
 import {
   deploySettings,
   verifyHyperdrive,
+  verifyWorkerBindings,
   deploymentConfig,
   deployOrigin,
   deployWorker,
@@ -223,17 +224,41 @@ try {
   assert.ok(Array.isArray(versions));
   diagnostics.inspect("deployment-traffic");
   assert.ok(versions.length === 1 && versions[0].percentage === 100);
+  assert.match(
+    versions[0].version_id,
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
+  );
   const version = await cloudflare(
     "version-read",
     `${account}/workers/scripts/${deployWorker}/versions/${versions[0].version_id}`,
   );
   diagnostics.inspect("version-tag");
   assert.equal(version.annotations?.["workers/tag"], settings.sha);
+  diagnostics.verify("version-binding", () =>
+    verifyWorkerBindings(version, env),
+  );
+  // A evidência do binding é da versão com tráfego, não apenas da config enviada.
+  console.info(
+    JSON.stringify({
+      operacao: "versao-dev-confirmada",
+      sha: settings.sha,
+      versionId: versions[0].version_id,
+      trafego: 100,
+      bindingHyperdrive: "conferido",
+      tlsOrigem: "verify-full-configurado",
+    }),
+  );
   for (const [path, requestCheck, responseCheck, expectedStatus] of [
     ["/", "home-read", "home-response", 200],
     ["/api/onboarding", "onboarding-read", "onboarding-response", 200],
     ["/api/organizations", "organizations-read", "organizations-response", 401],
     ["/api/churches", "churches-read", "churches-response", 401],
+    [
+      "/api/members",
+      "members-read",
+      "members-response",
+      config.vars.LEVI_MEMBERS_DEV_ORGANIZATIONS ? 401 : 404,
+    ],
   ] as const) {
     const response = await diagnostics.request(
       requestCheck,
@@ -263,12 +288,15 @@ try {
       );
       assert.deepEqual(await response.json(), { etapa: "email" });
     } else {
-      diagnostics.httpStatus(response, 401);
+      diagnostics.httpStatus(response, expectedStatus);
       await response.body?.cancel();
     }
   }
   console.info(
     `Versão ${settings.sha} publicada; SHA ativo, acesso público e bloqueio de dados privados conferidos. E-mails, fluxo autenticado e CPU Free ainda exigem validação remota.`,
+  );
+  console.info(
+    "Smokes DEV aprovados. O middleware de abuso executa SQL técnico pelo binding; conectividade inferida desse fluxo, sem consulta de identidade SQL ou homologação funcional de membros.",
   );
 } catch (error) {
   diagnostics.report(error, console.error);

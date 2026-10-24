@@ -59,6 +59,7 @@ const checks = {
   "deployment-traffic": "versão única com 100% do tráfego",
   "version-read": "consulta da versão ativa",
   "version-tag": "tag da versão ativa igual ao SHA",
+  "version-binding": "binding Hyperdrive e recorte da versão ativa",
   "home-read": "requisição da página inicial",
   "home-response": "status e cabeçalhos da página inicial",
   "onboarding-read": "requisição do onboarding anônimo",
@@ -68,6 +69,8 @@ const checks = {
   "organizations-response": "bloqueio anônimo e cabeçalhos de organizações",
   "churches-read": "requisição anônima de igrejas",
   "churches-response": "bloqueio anônimo e cabeçalhos de igrejas",
+  "members-read": "requisição anônima de membros",
+  "members-response": "recorte de membros e cabeçalhos",
   cleanup: "remoção dos arquivos privados temporários",
 } as const;
 

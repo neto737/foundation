@@ -39,8 +39,8 @@ sem canal de push, mudanças externas são conhecidas na próxima revalidação.
 
 A lista não concede membership, não prova que uma organização contém apenas dados
 sintéticos e não substitui a autorização Foundation. A seleção e verificação das
-fixtures são responsabilidade operacional. Antes de qualquer habilitação, aplicar
-a migration pendente em operação separada e explicitamente autorizada; permitir
+fixtures são responsabilidade operacional. Antes de qualquer habilitação, conferir
+o histórico aplicado e as ACLs em operação administrativa separada; permitir
 uma organização com schema anterior causará falha de operação, não migration
 automática.
 
@@ -153,8 +153,8 @@ Não dispara no SELECT FOR SHARE e não impede UPDATE de outras roles autorizada
 O retorno NULL da função é ignorado por ser um trigger por instrução; não oculta
 atualizações de outras roles nem descarta linhas silenciosamente.
 
-PostgreSQL exige UPDATE em ao menos uma coluna para FOR SHARE. Uma futura
-concessão somente em `created_at` satisfaz o lock, enquanto o trigger rejeita a
+PostgreSQL exige UPDATE em ao menos uma coluna para FOR SHARE. A concessão
+somente em `created_at` satisfaz o lock, enquanto o trigger rejeita a
 mutação efetiva pela runtime DEV. **Esta migration não concede privilégios** e
 não habilita o módulo. Sua aplicação persistente, os grants mínimos e qualquer
 deploy exigem operações separadas autorizadas.
@@ -194,5 +194,24 @@ npm run test:e2e
 Integração e E2E usam exclusivamente os containers descartáveis dos harnesses,
 com imagem PostgreSQL fixada e porta aleatória em loopback. Aplicam o histórico
 duas vezes nesse banco sintético e o removem em `finally`. Não executar
-`db:migrate:dev` ou `deploy:dev` para validar esta entrega. Geração da migration
+`db:migrate:dev` ou `deploy:dev` para validar localmente. Geração da migration
 usa `npm run db:generate -- --name=membros`, sem conexão a banco.
+
+O modo opcional reproduz as ACLs do DEV, sem ampliar permissões:
+
+```sh
+npm run test:integration -- --runtime-acls
+npm run test:worker -- --runtime-acls
+npm run test:e2e -- --runtime-acls
+```
+
+`test/runtime-acl-fixture.ts` prepara roles no cluster descartável, aplica 0000–0003
+pela migradora e separa login de execução e conexão observadora. O modo padrão
+continua disponível; a CI executa integração nos dois modos e workerd/E2E no modo
+restrito, preservando todos os cenários dessas suítes. Os sete grupos de privilégios
+e limites de segurança têm fonte única no [guia Workers](cloudflare-workers.md#roles-e-acls-mínimas-dev).
+
+A imagem local fixada é PostgreSQL 17.11. Inspeção estrutural e conexão direta
+Neon PostgreSQL 18.6 não equivalem a homologação funcional nesse servidor ou
+pelo Hyperdrive. Nenhum desses testes autoriza habilitar o módulo, publicar
+dados reais ou executar alterações remotas.

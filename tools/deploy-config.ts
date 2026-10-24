@@ -58,6 +58,36 @@ export function verifyHyperdrive(
   assert.equal(config.origin?.database, env.LEVI_DEV_DATABASE_NAME);
   assert.equal(config.origin?.user, "levi_dev_runtime");
   assert.ok(["postgres", "postgresql"].includes(config.origin?.scheme));
+  assert.equal(config.origin?.port, 5432);
+  assert.equal(config.mtls?.sslmode, "verify-full");
+  assert.match(
+    config.mtls?.ca_certificate_id ?? "",
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
+  );
+}
+
+export function verifyWorkerBindings(
+  version: Record<string, any>,
+  env: NodeJS.ProcessEnv,
+) {
+  const bindings: unknown = version.resources?.bindings;
+  assert.ok(Array.isArray(bindings));
+  const hyperdrives = bindings.filter((b) => b.type === "hyperdrive");
+  assert.equal(hyperdrives.length, 1);
+  assert.equal(hyperdrives[0].name, "HYPERDRIVE");
+  assert.equal(hyperdrives[0].id, env.LEVI_HYPERDRIVE_ID);
+  const recortes = bindings.filter(
+    (b) => b.name === "LEVI_MEMBERS_DEV_ORGANIZATIONS",
+  );
+  assert.ok(recortes.length <= 1);
+  if (recortes[0]) {
+    assert.equal(recortes[0].type, "plain_text");
+    assert.equal(typeof recortes[0].text, "string");
+  }
+  assert.equal(
+    recortes[0]?.text ?? "",
+    readMembersDevOrganizations(env.LEVI_MEMBERS_DEV_ORGANIZATIONS).join(","),
+  );
 }
 
 export function deploymentConfig(

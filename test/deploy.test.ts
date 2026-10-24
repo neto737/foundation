@@ -12,6 +12,7 @@ import {
 import {
   deploySettings,
   verifyHyperdrive,
+  verifyWorkerBindings,
   deploymentConfig,
 } from "../tools/deploy-config.js";
 
@@ -35,11 +36,17 @@ const valid: NodeJS.ProcessEnv = {
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
   RESEND_API_KEY: "synthetic-only",
 };
+const versionId = "11111111-1111-4111-8111-111111111111";
 const hyperdrive = {
   id: valid.LEVI_HYPERDRIVE_ID,
   name: "levi-dev",
   caching: { disabled: true },
+  mtls: {
+    sslmode: "verify-full",
+    ca_certificate_id: "22222222-2222-4222-8222-222222222222",
+  },
   origin: {
+    port: 5432,
     host: valid.LEVI_DEV_DATABASE_HOST,
     database: "levi_dev",
     user: "levi_dev_runtime",
@@ -83,6 +90,9 @@ test("Hyperdrive exige cache desabilitado, recurso e role exclusivos e alvo DEV 
     { name: "foundation" },
     { caching: { disabled: false } },
     { caching: {} },
+    { mtls: { sslmode: "require" } },
+    { mtls: { sslmode: "verify-full" } },
+    { origin: { ...hyperdrive.origin, port: 6432 } },
     { origin: { ...hyperdrive.origin, host: "another.neon.tech" } },
     { origin: { ...hyperdrive.origin, database: "foundation" } },
     { origin: { ...hyperdrive.origin, user: "levi_dev_migrator" } },
@@ -221,11 +231,31 @@ async function simulatedDeploy(
     if (url.pathname.endsWith("/deployments"))
       return cloudflare({
         deployments: [
-          { versions: [{ version_id: "synthetic-version", percentage: 100 }] },
+          { versions: [{ version_id: versionId, percentage: 100 }] },
         ],
       });
     if (url.pathname.includes("/versions/"))
-      return cloudflare({ annotations: { "workers/tag": valid.GITHUB_SHA } });
+      return cloudflare({
+        annotations: { "workers/tag": valid.GITHUB_SHA },
+        resources: {
+          bindings: [
+            {
+              type: "hyperdrive",
+              name: "HYPERDRIVE",
+              id: valid.LEVI_HYPERDRIVE_ID,
+            },
+            {
+              type: "plain_text",
+              name: "LEVI_MEMBERS_DEV_ORGANIZATIONS",
+              text: /^[a-f0-9-]{36}$/i.test(
+                options.membersDevOrganizations?.trim() ?? "",
+              )
+                ? options.membersDevOrganizations!.trim().toLowerCase()
+                : "",
+            },
+          ],
+        },
+      });
     if (url.hostname === "levi.t00ls.dev") {
       if (url.pathname === "/")
         return new Response("<html></html>", {
@@ -233,6 +263,15 @@ async function simulatedDeploy(
         });
       if (url.pathname === "/api/onboarding")
         return Response.json({ etapa: "email" }, { headers });
+      if (url.pathname === "/api/members")
+        return new Response(null, {
+          status: /^[a-f0-9-]{36}$/i.test(
+            options.membersDevOrganizations?.trim() ?? "",
+          )
+            ? 401
+            : 404,
+          headers,
+        });
       if (["/api/organizations", "/api/churches"].includes(url.pathname))
         return new Response(null, { status: 401, headers });
     }
@@ -284,6 +323,7 @@ async function simulatedDeploy(
     "./deploy-config.js": {
       deploySettings,
       verifyHyperdrive,
+      verifyWorkerBindings,
       deploymentConfig,
       deployOrigin: "https://levi.t00ls.dev",
       deployWorker: "levi-dev",
@@ -342,7 +382,7 @@ const sensitive =
 
 test("diagnóstico: sucesso conserva publicação única, checks, arquivos privados e limpeza", async () => {
   const result = await simulatedDeploy();
-  assert.equal(result.exitCode, 0);
+  assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
   assert.equal(result.cleanups, 1);
   assert.equal(result.writes.length, 2);
@@ -357,6 +397,7 @@ test("diagnóstico: sucesso conserva publicação única, checks, arquivos priva
     "/api/onboarding",
     "/api/organizations",
     "/api/churches",
+    "/api/members",
   ])
     assert.ok(result.requests.includes(`https://levi.t00ls.dev${path}`));
   assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET!));
@@ -435,7 +476,7 @@ test("diagnóstico: formato inválido e tráfego divergente mantêm HTTP sem ace
     [
       {
         deployments: [
-          { versions: [{ version_id: "synthetic-version", percentage: 50 }] },
+          { versions: [{ version_id: versionId, percentage: 50 }] },
         ],
       },
       "divergência de configuração",
@@ -806,11 +847,88 @@ test("script de deploy transmite o recorte à configuração temporária sem pub
     const result = await simulatedDeploy(
       value === undefined ? {} : { membersDevOrganizations: value },
     );
-    assert.equal(result.exitCode, 0);
+    assert.equal(result.exitCode, 0, result.output);
     assert.equal(
       result.writtenMembersDevOrganizations,
       value?.trim().toLowerCase() === id ? id : "",
     );
     assert.ok(!result.output.includes(id));
   }
+});
+
+test("versão ativa exige binding único, ID esperado e o mesmo recorte de membros", async () => {
+  const binding = {
+    type: "hyperdrive",
+    name: "HYPERDRIVE",
+    id: valid.LEVI_HYPERDRIVE_ID,
+  };
+  verifyWorkerBindings({ resources: { bindings: [binding] } }, valid);
+  for (const bindings of [
+    [],
+    [binding, binding],
+    [{ ...binding, id: "d".repeat(32) }],
+    [{ ...binding, name: "OTHER" }],
+    [
+      binding,
+      {
+        type: "plain_text",
+        name: "LEVI_MEMBERS_DEV_ORGANIZATIONS",
+        text: "unexpected",
+      },
+    ],
+    [binding, { type: "secret_text", name: "LEVI_MEMBERS_DEV_ORGANIZATIONS" }],
+  ]) {
+    assert.throws(() =>
+      verifyWorkerBindings({ resources: { bindings } }, valid),
+    );
+    const result = await simulatedDeploy({
+      respond: (url) =>
+        url.includes("/versions/")
+          ? Response.json({
+              success: true,
+              result: {
+                annotations: { "workers/tag": valid.GITHUB_SHA },
+                resources: { bindings },
+              },
+            })
+          : undefined,
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 1);
+    assert.ok(
+      result.output.includes("binding Hyperdrive e recorte da versão ativa"),
+    );
+    assert.ok(
+      !result.requests.some((url) => url.startsWith("https://levi.t00ls.dev")),
+    );
+  }
+});
+
+test("smoke exige membros bloqueados e não registra corpo de resposta divergente", async () => {
+  const result = await simulatedDeploy({
+    respond: (url) =>
+      url === "https://levi.t00ls.dev/api/members"
+        ? new Response(sensitive)
+        : undefined,
+  });
+  assert.equal(result.exitCode, 1);
+  assert.ok(result.output.includes("recorte de membros e cabeçalhos"));
+  assert.ok(!result.output.includes("private-"));
+});
+
+test("deploy não envia um SHA que ficou obsoleto durante a preparação", async () => {
+  let reads = 0;
+  const result = await simulatedDeploy({
+    respond: (url) => {
+      if (!url.startsWith("https://api.github.com/")) return undefined;
+      reads++;
+      return Response.json({
+        object: { sha: reads === 1 ? valid.GITHUB_SHA : "f".repeat(40) },
+      });
+    },
+  });
+  assert.equal(reads, 2);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 0);
+  assert.equal(result.cleanups, 1);
 });
