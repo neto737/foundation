@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { parse } from "yaml";
 import { workspaceManifests } from "./release-planning.mjs";
@@ -185,4 +186,149 @@ test("CI do Levi não recebe Environment, secrets ou entrada operacional", () =>
     existsSync(join(root, ".github/workflows/levi-deploy-dev.yml")),
     false,
   );
+});
+
+test("publicador Levi manual permanece isolado e fechado antes do Environment", () => {
+  const workflow = parse(
+    readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
+  );
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.execution_sha.type,
+    "string",
+  );
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.execution_sha.required,
+    true,
+  );
+  assert.deepEqual(workflow.permissions, { contents: "read", actions: "read" });
+  assert.deepEqual(workflow.concurrency, {
+    "group": "levi-dev",
+    "cancel-in-progress": false,
+  });
+  assert.deepEqual(Object.keys(workflow.jobs), ["validate", "deploy"]);
+  const { validate, deploy } = workflow.jobs;
+  assert.equal(validate.environment, undefined);
+  assert.equal(deploy.environment, "levi-dev");
+  assert.equal(deploy.needs, "validate");
+  const sha = "a".repeat(40);
+  const trusted = {
+    vars: { LEVI_DEV_DEPLOY_ENABLED: "true" },
+    github: {
+      repository: "t00ls-dev/foundation",
+      event_name: "workflow_dispatch",
+      ref: "refs/heads/master",
+      sha,
+    },
+    inputs: { execution_sha: sha },
+    needs: { validate: { result: "success", outputs: { sha } } },
+  };
+  for (const job of [validate, deploy]) {
+    const allows = (context) => runInNewContext(job.if, context);
+    assert.equal(allows(trusted), true);
+    for (const context of [
+      { ...trusted, vars: {} },
+      { ...trusted, vars: { LEVI_DEV_DEPLOY_ENABLED: "false" } },
+      { ...trusted, inputs: {} },
+      { ...trusted, inputs: { execution_sha: "b".repeat(40) } },
+      ...["workflow_run", "pull_request", "push"].map((event_name) => ({
+        ...trusted,
+        github: { ...trusted.github, event_name },
+      })),
+      ...["t00ls-dev/levi", "fork/foundation"].map((repository) => ({
+        ...trusted,
+        github: { ...trusted.github, repository },
+      })),
+      ...["refs/heads/main", "refs/heads/feature", "refs/pull/150/merge"].map(
+        (ref) => ({ ...trusted, github: { ...trusted.github, ref } }),
+      ),
+    ])
+      assert.equal(allows(context), false);
+  }
+  for (const result of ["failure", "skipped", "cancelled", "pending"])
+    assert.equal(
+      runInNewContext(deploy.if, {
+        ...trusted,
+        needs: { validate: { result, outputs: { sha } } },
+      }),
+      false,
+    );
+  assert.equal(
+    runInNewContext(deploy.if, {
+      ...trusted,
+      needs: {
+        validate: { result: "success", outputs: { sha: "b".repeat(40) } },
+      },
+    }),
+    false,
+  );
+  assert.equal(validate.steps[0].with.ref, "${{ github.sha }}");
+  assert.equal(validate.steps[0].with["persist-credentials"], false);
+  assert.equal(
+    validate.steps[1].run,
+    "node .github/scripts/ci-evidence.mjs deploy",
+  );
+  assert.equal(JSON.stringify(validate).includes("secrets."), false);
+  assert.equal(deploy.steps[0].with.ref, "${{ needs.validate.outputs.sha }}");
+  assert.equal(deploy.steps[0].with["persist-credentials"], false);
+  assert.equal(
+    deploy.steps.find((step) => step.id === "install").uses,
+    "./.github/actions/setup",
+  );
+  const setup = parse(
+    readFileSync(join(root, ".github/actions/setup/action.yml"), "utf8"),
+  );
+  assert(
+    setup.runs.steps.some(
+      (step) => step.run === "pnpm install --frozen-lockfile",
+    ),
+  );
+  assert.equal(
+    deploy.steps.find((step) => step.id === "build").run,
+    "pnpm exec turbo run build --filter=levi",
+  );
+  const publish = deploy.steps.find((step) => step.id === "publish");
+  assert.equal(publish["working-directory"], "apps/levi");
+  assert.equal(publish.run, "pnpm deploy:dev");
+  assert.equal(
+    publish.env.LEVI_DEPLOY_SHA,
+    "${{ needs.validate.outputs.sha }}",
+  );
+  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.LEVI_DEV_READY }}");
+  assert.equal(
+    publish.env.LEVI_MEMBERS_DEV_ORGANIZATIONS,
+    "${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}",
+  );
+  assert.deepEqual(
+    Object.values(publish.env)
+      .filter((value) => value.includes("secrets."))
+      .sort(),
+    [
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_TOKEN",
+      "CLOUDFLARE_READ_TOKEN",
+      "LEVI_AUTH_SECRET",
+      "RESEND_API_KEY",
+    ]
+      .map((name) => "${{ secrets." + name + " }}")
+      .sort(),
+  );
+  for (const step of deploy.steps.filter((step) => step !== publish))
+    assert.equal(JSON.stringify(step).includes("secrets."), false);
+  const operations = JSON.stringify(workflow);
+  for (const forbidden of [
+    "workflow_run",
+    "workflow_call",
+    "download-artifact",
+    "npm run",
+    "db:migrate",
+    "migrate-dev",
+    "migrations.mjs",
+    "examples/links",
+    "release.yml",
+    "D1_MIGRATION_TOKEN",
+    "DATABASE_URL",
+  ])
+    assert.equal(operations.includes(forbidden), false, forbidden);
+  assert.equal(deploy.steps.filter((step) => step.id === "publish").length, 1);
 });

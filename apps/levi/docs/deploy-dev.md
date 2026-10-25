@@ -1,63 +1,66 @@
 # Deploy DEV público
 
-Este documento descreve o fluxo operacional do repositório original
-`t00ls-dev/levi`, preservado pela incorporação. A cópia em `apps/levi` não possui
-publicador ativo no Foundation; os workflows abaixo são referência histórica.
-Consulte o [README](../README.md) para instalação/CI do workspace. O estado
-documentado de schema, ACLs e habilitação organizacional deve ser reconfirmado
-antes de qualquer transferência operacional autorizada.
+Este documento descreve o publicador manual preparado no Foundation para
+`apps/levi`. **Não houve transferência operacional:** o repositório original
+`t00ls-dev/levi`, branch main, continua como único publicador autorizado e mantém
+seu deploy automático. A cópia histórica em `apps/levi/.github` não é executada
+como workflow raiz.
 
-O Levi publica DEV em acesso público em `https://levi.t00ls.dev`, sem Cloudflare Access
-ou lista de destinatários. Cadastro continua por e-mail verificado, primeira senha
-e provisionamento de organização/primeira igreja. Dados privados exigem sessão,
-prontidão e vínculo organizacional atual no servidor.
+O [workflow Deploy Levi DEV](../../../.github/workflows/deploy-levi-dev.yml) ainda
+não possui Environment `levi-dev`, credenciais nem interruptor de repositório
+provisionados. Não executar dispatch/rerun, criar configuração operacional ou
+publicar para testar essa preparação. O estado atual de Cloudflare/Neon,
+0004/ACLs e recuperação precisa ser confirmado em leitura autorizada antes do corte.
 
-O processo reutiliza o padrão operacional comprovado do Links: CI automática,
-GitHub Actions, SHA validado, ambiente `dev`, fila de publicação e Wrangler não
-interativo. O Levi mantém npm e PostgreSQL/Hyperdrive; não copia o monorepo, D1
-ou fases de migrations do Foundation. Build e configuração declarada não
-comprovam, sozinhos, binding ativo ou conectividade.
+O alvo permanece Worker `levi-dev`, domínio `https://levi.t00ls.dev`, PostgreSQL/Neon,
+Hyperdrive e e-mail próprios. Nenhum recurso é transferido ou recriado pelo código
+de preparação. Não há deploy do Links, migrations, Release ou dependência de
+publicação npm nesse workflow. Produção permanece fora deste procedimento.
 
 ## CI, identidade e publicação
 
-[CI](../.github/workflows/ci.yml) executa em PR e push na `main`: instalação pelo
-lockfile, formatação, typecheck, unitários/contratos, build, dry-run Wrangler,
-PostgreSQL descartável, workerd e navegador. Recebe somente `contents: read`,
-sem secrets de produto, provedor ou banco persistente. Não usa `pull_request_target`.
-O setup composto local reutiliza Node/npm-cache e lockfile. O padrão Foundation
-foi adaptado em três jobs independentes: `static` (formatação/typecheck),
-`tests` (unitários, builds, integração padrão e restrita, workerd restrito) e
-`e2e` (todos os cenários desktop/móvel/proxy com ACLs restritas). O build curto do
-E2E é local ao job; não há matriz ou transferência de artefatos desnecessária.
-O agregador `checks` usa `if: always()` e exige sucesso de todos os três: omitido,
-cancelado ou reprovado falha. O contexto obrigatório permanece `checks`.
-A concorrência da CI cancela revisões obsoletas; a fila de deploy não cancela
-publicação iniciada. Cache de downloads não dispensa instalação congelada.
+A [CI raiz](../../../.github/workflows/ci.yml) valida PRs e pushes em master,
+incluindo os gates do Foundation, quatro shards Links, duas distribuições públicas
+e os jobs próprios Levi de PostgreSQL/ACLs/Worker/E2E. O agregador `checks` exige
+sucesso de todos os jobs de validação; falha, cancelamento, omissão e skip indevido
+bloqueiam o resultado. CI não recebe Environment ou secrets operacionais do Levi.
 
-[Deploy DEV](../.github/workflows/deploy-dev.yml) aguarda `workflow_run` da CI
-concluída com sucesso. Aceita somente CI de **push na main do próprio Levi**.
-PRs, forks, outras branches e CI falha não publicam. Mantém `workflow_dispatch`
-com SHA completo para recuperação controlada, também exigindo CI de push aprovada.
+O novo publicador aceita **somente workflow_dispatch**, com `execution_sha`
+obrigatório igual ao SHA selecionado de master. O job validate, sem Environment,
+reutiliza o [validador raiz](../../../.github/scripts/ci-evidence.mjs): exige
+`t00ls-dev/foundation`, ref master, CI canônica de push/master concluída com
+success no SHA exato e `checks` aprovado na tentativa atual. A conclusão global
+inclui Version Packages. Não aceita evidência de PR/fork, CI incompleta ou antiga,
+nem baixa artifacts de PR. A instalação/build só ocorrem após essa validação.
 
-O validador [ci-evidence](../tools/ci-evidence.ts) consulta a API GitHub, confirma
-workflow canônico `ci.yml`, repositório de origem, evento, branch, SHA, conclusão,
-tentativa atual e job `checks` efetivamente aprovado. Não baixa artifacts de PR.
-O checkout é do SHA confiável da main; o script reconfirma main remota e HEAD
-limpo antes do upload. Execuções obsoletas falham fechadas. O Worker recebe tag
-com o SHA validado, conferida na versão ativa após publicação.
+O job deploy recebe o SHA validado, usa setup pnpm/Node da raiz, instalação
+`pnpm install --frozen-lockfile` e `pnpm exec turbo run build --filter=levi`.
+O grafo `^build` compila os sete pacotes workspace antes do aplicativo pelos
+exports públicos. O operador executa com cwd `apps/levi`.
 
-A publicação usa `contents: read` e `actions: read`, runners padrão
-`ubuntu-latest`, environment `dev` restrito à main e fila `levi-dev` sem cancelar
-uma publicação em andamento. Secrets são encaminhados somente à etapa de deploy;
-a instalação/build não os recebem.
+O [ci-evidence Levi](../tools/ci-evidence.ts) repete as guardas Foundation/master,
+consulta run/tentativa/jobs e reconsulta run mais recente e master para recusar
+mudanças durante a consulta. [deploy-dev](../tools/deploy-dev.ts) reconfirma
+master remota, HEAD limpo e a mesma evidência imediatamente antes do upload.
+As verificações de Hyperdrive/cache/TLS, domínio, versão ativa/tag e gate de membros
+permanecem preservadas. Há uma única chamada de upload, sem retry automático.
 
-**O deploy permanece bloqueado enquanto a variable de repositório
-`LEVI_DEV_DEPLOY_ENABLED` estiver ausente ou diferente de `true`.** CI automática
-pode executar sem essa habilitação. No fluxo permanente, manter `true` somente
-após validar os pré-requisitos; `false` é o interruptor simples de suspensão.
-A flag não é uma aprovação manual por publicação. `LEVI_DEV_READY=true` é
-uma confirmação operacional explícita desses pré-requisitos, não descoberta
-ou prova automática deles.
+As permissões GITHUB_TOKEN são apenas contents: read/actions: read. Secrets ficam
+somente no step publish, após instalação e build, no Environment exclusivo
+`levi-dev`, futuramente restrito à master. A fila `levi-dev` usa
+cancel-in-progress: false e é distinta de `foundation-dev-d1`; não coordena
+publicadores de repositórios diferentes.
+
+**LEVI_DEV_DEPLOY_ENABLED ausente ou diferente de true bloqueia validate antes
+mesmo de entrar no Environment.** O segundo job repete a guarda e exige sucesso/SHA
+válido do primeiro. Sem configuração/credenciais completas, o operador também
+falha antes de publicar. `LEVI_DEV_READY=true` é uma confirmação administrativa,
+não prova automática de schema/ACLs nem autorização de transferência.
+
+Referenciar um Environment ausente pode criá-lo implicitamente no GitHub quando
+um job alcança essa etapa. Por isso não habilitar o interruptor nem fazer dispatch
+antes de preparar o Environment em tarefa autorizada; ausência de Environment não
+é proteção suficiente por si só. Não se criou nenhum Environment nesta preparação.
 
 ## Recursos e pré-requisitos remotos
 
@@ -94,19 +97,19 @@ provisionamento, planos, entrega de e-mails ou publicação.
 ## Secrets e configuração privada
 
 Não depende de `wrangler login` no runner. Configurar tokens exclusivos em
-Settings → Environments → dev do GitHub Levi, sem fornecer valores pelo chat ou
-versioná-los. Em terminal privado, `gh secret set NOME --repo t00ls-dev/levi --env dev`
+Settings → Environments → levi-dev do GitHub Foundation, sem fornecer valores pelo chat ou
+versioná-los. Em terminal privado, `gh secret set NOME --repo t00ls-dev/foundation --env levi-dev`
 solicita o valor interativamente.
 
-| Secret do environment dev | Uso                                                                |
-| ------------------------- | ------------------------------------------------------------------ |
-| `CLOUDFLARE_ACCOUNT_ID`   | Conta correta                                                      |
-| `CLOUDFLARE_API_TOKEN`    | Publicar Worker/Assets/custom domain, menor escopo disponível      |
-| `CLOUDFLARE_READ_TOKEN`   | Leitura Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas |
-| `LEVI_AUTH_SECRET`        | Aleatório, exclusivo, estável, ao menos 32 caracteres              |
-| `RESEND_API_KEY`          | Somente envio, restrito ao domínio remetente                       |
+| Secret do environment levi-dev | Uso                                                                |
+| ------------------------------ | ------------------------------------------------------------------ |
+| `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                      |
+| `CLOUDFLARE_API_TOKEN`         | Publicar Worker/Assets/custom domain, menor escopo disponível      |
+| `CLOUDFLARE_READ_TOKEN`        | Leitura Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas |
+| `LEVI_AUTH_SECRET`             | Aleatório, exclusivo, estável, ao menos 32 caracteres              |
+| `RESEND_API_KEY`               | Somente envio, restrito ao domínio remetente                       |
 
-Variables do environment `dev`: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`,
+Variables do environment `levi-dev`: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`,
 `LEVI_DEV_DATABASE_HOST`, `LEVI_DEV_DATABASE_NAME`, `LEVI_EMAIL_FROM` e
 `LEVI_DEV_READY`. A variable opcional `LEVI_MEMBERS_DEV_ORGANIZATIONS` controla
 somente o recorte sintético de membros, conforme [Gestão de membros](gestao-membros.md#habilitação-e-limites);
@@ -145,7 +148,7 @@ confirmado; ambas não provocam retry automático. Tentativas de envio falhas ta
 consomem orçamento. Credenciais inválidas no login mantêm erro/status genéricos.
 Os parâmetros criptográficos nativos permanecem intactos.
 
-O wrapper auth publicado também oferece rate limiting por banco e Turnstile; esses
+O wrapper auth compartilhado também oferece rate limiting por banco e Turnstile; esses
 contratos foram examinados. O limitador Hono existente foi escolhido para cobrir
 as rotas compostas e reutilizar o mesmo store nas quotas de envio, sem segundo
 schema de contadores ou CAPTCHA. Limites nativos do Better Auth não substituem a
@@ -162,30 +165,27 @@ ser compartilhadas com outros usos; o teto do Levi não atesta saldo do provedor
 Migrations PostgreSQL permanecem separadas de build, CI, deploy e inicialização.
 CI aplica o histórico somente nos próprios containers sintéticos. Aplicação remota
 exige tarefa/autorização específica, identificação de host/banco/role/TLS/schema
-esperado e comando `npm run db:migrate:dev`; ver
+esperado e comando `pnpm --filter levi db:migrate:dev`; ver
 [Cloudflare Workers](cloudflare-workers.md#migrations-dev-explícitas).
 
-Após os recursos validados, `LEVI_DEV_DEPLOY_ENABLED=true` mantém o fluxo
-**main → CI de push aprovada → Deploy DEV → verificações**. Não requer gate
-manual adicional. Alterar a flag não publica imediatamente: o gatilho é a próxima
-conclusão de CI elegível. Para suspender novas publicações:
+O primeiro deploy exige autorização específica, além da integração revisada do
+publicador e da CI de push/master correspondente. Antes disso, reconciliar recursos,
+schema/journal/0004/ACLs e o gate existente; preparar `levi-dev` e credenciais sob
+custódia privada, preservando LEVI_AUTH_SECRET. Não incluir credencial migradora.
+A publicação auth@0.3.2 e seu plano antigo continuam adiados e intactos.
 
-```sh
-gh variable set LEVI_DEV_DEPLOY_ENABLED --repo t00ls-dev/levi --body false
-```
+No corte autorizado, fechar/suspender o publicador original e aguardar naturalmente
+qualquer execução já iniciada. Conferir filas/CI capazes de gerar novos eventos;
+não cancelar operação persistente como mecanismo de contenção. Tokens separados e
+retirada segura da capacidade antiga, quando autorizada e comprovadamente exclusiva,
+reforçam o controle de um único publicador. Não reabrir o original enquanto
+Foundation puder publicar. Não se realizou nenhuma dessas operações nesta preparação.
 
-A suspensão não cancela um job que já passou pelo gate nem retira a versão
-ativa. Antes de reativar, conferir fila, main atual, pré-requisitos e CI.
-Usar o mesmo comando com `--body true` para retomar os próximos gatilhos.
-Para recuperação controlada do **SHA atual da main** já aprovado:
+Após preparação administrativa e autorização do primeiro dispatch, selecionar
+somente a master atual com SHA completo e CI conjunta aprovada. Qualquer avanço
+de master ou troca de tentativa/run invalida a seleção e exige nova verificação.
+Não usar SHA histórico arbitrário para sobrescrever revisão mais nova.
 
-```sh
-gh workflow run deploy-dev.yml --repo t00ls-dev/levi --ref main \
-  -f execution_sha="$(gh api repos/t00ls-dev/levi/git/ref/heads/main --jq .object.sha)"
-```
-
-Não usar SHA histórico para sobrescrever revisão mais nova. A proteção reconfirma
-main e evidência de CI imediatamente antes do upload; a fila serializa publicações.
 Falha anterior ao upload preserva a versão existente; após upload, o job pode
 falhar mesmo com versão nova ativa. Conferir APIs de deployments/versões antes de
 repetir, sem retry automático. Correção de código via novo PR e CI verde é o
@@ -234,8 +234,29 @@ para não consumir limites ou gerar ruído técnico. Os testes do runner usam I/
 simulado; apenas uma publicação real confirma essas evidências no ambiente.
 
 Os smokes não substituem testar e-mails reais, autenticação, organização,
-isolamento, CPU/quota remota ou recuperação. Membros devem continuar sem recorte
-neste fluxo até autorização específica. Privacidade, retenção, direitos dos
+isolamento, CPU/quota remota ou recuperação. O gate de membros existente deve ser reconciliado e preservado, sem ampliar,
+esvaziar ou interpretar seu conteúdo como autorização de dados reais. Privacidade, retenção, direitos dos
 titulares e recuperação precisam ser resolvidos antes de uso real. A janela móvel
 de histórico Neon e as limitações de restauração estão no [procedimento de
 migrations](cloudflare-workers.md#migrations-dev-explícitas).
+
+## Limites e rollback da futura transferência
+
+Esta preparação é validada por contratos/harnesses com I/O simulado e dry-run
+local, não por upload remoto. O original permanece inalterado. O estado conhecido
+no GitHub tem gate de membros configurado, mas não comprova schema/ACLs nem binding
+remoto atual. Não aplicar 0004 ou GRANTs para acomodar o corte sem investigação e
+autorização próprias; nenhuma migration é executada pelo publicador.
+
+Antes do primeiro upload, inventariar versão ativa e versão de rollback, identidade
+dos recursos, escopos reais dos tokens e recuperação Neon disponível. Os smokes
+HTTP do operador escrevem contadores técnicos; são parte da publicação autorizada,
+não uma investigação de leitura. E-mail real e fluxo autenticado exigem validação
+sintética adicional explicitamente autorizada.
+
+Falha após upload pode deixar versão nova ativa. Conferir a API antes de repetir.
+Rollback de Worker é uma nova operação autorizada e não reverte banco/recursos.
+Se for necessário voltar ao controlador original, primeiro conter o Foundation,
+aguardar operações iniciadas e só então restaurar uma capacidade de publicação do
+original. Não manter dois controladores, reescrever Git ou desfazer dados/schema.
+O publicador continua recusando SHA que não seja a master atual aprovada.

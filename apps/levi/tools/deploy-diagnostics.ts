@@ -16,8 +16,8 @@ const phases = {
 
 const checks = {
   configuration: "contexto e configuração DEV",
-  "main-read": "consulta da main remota",
-  "main-sha": "SHA da main remota",
+  "main-read": "consulta da master remota",
+  "main-sha": "SHA da master remota",
   "local-head": "SHA do checkout local",
   "local-clean": "checkout sem alterações",
   "ci-context": "contexto da execução CI",

@@ -8,11 +8,9 @@ export const deployWorker = "levi-dev";
 
 export function deploySettings(env: NodeJS.ProcessEnv) {
   assert.equal(env.GITHUB_ACTIONS, "true");
-  assert.equal(env.GITHUB_REPOSITORY, "t00ls-dev/levi");
-  assert.ok(
-    ["workflow_dispatch", "workflow_run"].includes(env.GITHUB_EVENT_NAME ?? ""),
-  );
-  assert.equal(env.GITHUB_REF, "refs/heads/main");
+  assert.equal(env.GITHUB_REPOSITORY, "t00ls-dev/foundation");
+  assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch");
+  assert.equal(env.GITHUB_REF, "refs/heads/master");
   assert.equal(env.LEVI_DEV_READY, "true");
   const sha = env.LEVI_DEPLOY_SHA ?? "";
   assert.match(sha, /^[a-f0-9]{40}$/);

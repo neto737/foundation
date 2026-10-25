@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { requireSuccessfulCI, validateCIRun } from "../tools/ci-evidence.js";
 import { DeployDiagnostics } from "../tools/deploy-diagnostics.js";
 
@@ -12,19 +10,19 @@ const run = {
   workflow_id: 202,
   path: ".github/workflows/ci.yml",
   run_attempt: 2,
-  repository: { full_name: "t00ls-dev/levi" },
-  head_repository: { full_name: "t00ls-dev/levi" },
+  repository: { full_name: "t00ls-dev/foundation" },
+  head_repository: { full_name: "t00ls-dev/foundation" },
   event: "push",
-  head_branch: "main",
+  head_branch: "master",
   head_sha: sha,
   status: "completed",
   conclusion: "success",
 };
 const env: NodeJS.ProcessEnv = {
   GITHUB_ACTIONS: "true",
-  GITHUB_REPOSITORY: "t00ls-dev/levi",
+  GITHUB_REPOSITORY: "t00ls-dev/foundation",
   GITHUB_EVENT_NAME: "workflow_dispatch",
-  GITHUB_REF: "refs/heads/main",
+  GITHUB_REF: "refs/heads/master",
   GITHUB_SHA: sha,
   LEVI_DEPLOY_SHA: sha,
   GITHUB_TOKEN: "synthetic-only",
@@ -37,17 +35,17 @@ function api(changes: Record<string, unknown> = {}): typeof fetch {
     );
     assert.equal(options?.redirect, "error");
     const path = String(url).replace(
-      "https://api.github.com/repos/t00ls-dev/levi/",
+      "https://api.github.com/repos/t00ls-dev/foundation/",
       "",
     );
     const responses: Record<string, unknown> = {
-      "git/ref/heads/main": { object: { sha } },
+      "git/ref/heads/master": { object: { sha } },
       "actions/workflows/ci.yml": {
         id: 202,
         path: ".github/workflows/ci.yml",
         state: "active",
       },
-      [`actions/workflows/202/runs?event=push&branch=main&head_sha=${sha}&per_page=10`]:
+      [`actions/workflows/202/runs?event=push&branch=master&head_sha=${sha}&per_page=10`]:
         { workflow_runs: [run] },
       "actions/runs/101": run,
       "actions/runs/101/attempts/2/jobs?per_page=100": {
@@ -70,7 +68,7 @@ function api(changes: Record<string, unknown> = {}): typeof fetch {
   };
 }
 
-test("CI: aceita somente push canônico na main, SHA exato e tentativa atual concluída", () => {
+test("CI: aceita somente push canônico na master, SHA exato e tentativa atual concluída", () => {
   validateCIRun(run, sha, 202);
   for (const changes of [
     { workflow_id: 203 },
@@ -79,6 +77,7 @@ test("CI: aceita somente push canônico na main, SHA exato e tentativa atual con
     { head_repository: { full_name: "fork/levi" } },
     { event: "pull_request" },
     { event: "workflow_dispatch" },
+    { head_branch: "main" },
     { head_branch: "feature" },
     { head_sha: "b".repeat(40) },
     { status: "in_progress" },
@@ -89,6 +88,94 @@ test("CI: aceita somente push canônico na main, SHA exato e tentativa atual con
     assert.throws(() => validateCIRun({ ...run, ...changes }, sha, 202));
 });
 
+test("CI: contexto manual inválido é recusado antes de qualquer request", async () => {
+  for (const changes of [
+    { GITHUB_ACTIONS: "false" },
+    { GITHUB_REPOSITORY: "t00ls-dev/levi" },
+    { GITHUB_REPOSITORY: "fork/foundation" },
+    { GITHUB_REF: "refs/heads/main" },
+    { GITHUB_REF: "refs/pull/150/merge" },
+    { GITHUB_EVENT_NAME: "workflow_run" },
+    { GITHUB_EVENT_NAME: "pull_request" },
+    { GITHUB_EVENT_NAME: "push" },
+    { LEVI_DEPLOY_SHA: "" },
+    { LEVI_DEPLOY_SHA: "invalid" },
+    { LEVI_DEPLOY_SHA: "b".repeat(40) },
+    { GITHUB_TOKEN: "" },
+  ]) {
+    let requests = 0;
+    await assert.rejects(
+      requireSuccessfulCI({ ...env, ...changes }, async () => {
+        requests++;
+        return Response.json({});
+      }),
+    );
+    assert.equal(requests, 0);
+  }
+});
+
+test("CI: falha fechada para checks ausente, duplicado, incompleto ou de outra tentativa", async () => {
+  const check = {
+    name: "checks",
+    run_id: 101,
+    run_attempt: 2,
+    status: "completed",
+    conclusion: "success",
+    head_sha: sha,
+  };
+  const path = "actions/runs/101/attempts/2/jobs?per_page=100";
+  for (const jobs of [
+    [],
+    [check, check],
+    [{ ...check, name: "other" }],
+    ...["failure", "cancelled", "skipped", "action_required", null].map(
+      (conclusion) => [{ ...check, conclusion }],
+    ),
+    [{ ...check, status: "in_progress" }],
+    [{ ...check, run_attempt: 1 }],
+    [{ ...check, run_id: 100 }],
+  ])
+    await assert.rejects(
+      requireSuccessfulCI(
+        env,
+        api({ [path]: { total_count: jobs.length, jobs } }),
+      ),
+    );
+  await assert.rejects(
+    requireSuccessfulCI(
+      env,
+      api({ [path]: { total_count: 101, jobs: [check] } }),
+    ),
+  );
+});
+
+test("CI: recusa tentativa/run substituídos e master avançada durante a consulta", async () => {
+  for (const scenario of ["attempt", "new-run", "master", "failure"] as const) {
+    const counts = new Map<string, number>();
+    const original = api();
+    await assert.rejects(
+      requireSuccessfulCI(env, async (url, options) => {
+        const path = new URL(String(url)).pathname;
+        const count = (counts.get(path) ?? 0) + 1;
+        counts.set(path, count);
+        if (count === 2) {
+          if (path.endsWith("/actions/runs/101")) {
+            if (scenario === "attempt")
+              return Response.json({ ...run, run_attempt: 3 });
+            if (scenario === "failure")
+              return Response.json({ ...run, conclusion: "failure" });
+          }
+          if (scenario === "new-run" && path.endsWith("/workflows/202/runs"))
+            return Response.json({ workflow_runs: [{ ...run, id: 102 }] });
+          if (scenario === "master" && path.endsWith("/git/ref/heads/master"))
+            return Response.json({ object: { sha: "b".repeat(40) } });
+        }
+        return original(url, options);
+      }),
+    );
+  }
+});
+
 test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efetivamente aprovado", async () => {
   assert.deepEqual(await requireSuccessfulCI(env, api()), {
     sha,
@@ -96,7 +183,7 @@ test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efeti
     attempt: 2,
   });
   for (const changes of [
-    { "git/ref/heads/main": { object: { sha: "b".repeat(40) } } },
+    { "git/ref/heads/master": { object: { sha: "b".repeat(40) } } },
     {
       "actions/workflows/ci.yml": {
         id: 202,
@@ -151,67 +238,17 @@ test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efeti
   );
 });
 
-test("CI: workflow_run recusa evento antigo quando houve nova tentativa", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "levi-ci-"));
-  const file = join(directory, "event.json");
-  const automatic = {
-    ...env,
-    GITHUB_EVENT_NAME: "workflow_run",
-    GITHUB_EVENT_PATH: file,
-  };
-  try {
-    await writeFile(
-      file,
-      JSON.stringify({ workflow_run: { id: 101, run_attempt: 2 } }),
-    );
-    assert.equal((await requireSuccessfulCI(automatic, api())).sha, sha);
-    await writeFile(
-      file,
-      JSON.stringify({ workflow_run: { id: 101, run_attempt: 1 } }),
-    );
-    await assert.rejects(requireSuccessfulCI(automatic, api()));
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("workflows públicos: CI sem secrets, deploy guardado, checkout confiável e migrations separadas", async () => {
-  const ci = await readFile(".github/workflows/ci.yml", "utf8");
-  const deploy = await readFile(".github/workflows/deploy-dev.yml", "utf8");
-  assert.ok(ci.includes("pull_request:") && ci.includes("push:"));
-  assert.ok(!ci.includes("secrets.") && !ci.includes("pull_request_target"));
-  assert.ok(
-    deploy.includes("workflow_run:") && deploy.includes("workflow_dispatch:"),
-  );
-  assert.ok(deploy.includes("vars.LEVI_DEV_DEPLOY_ENABLED == 'true'"));
-  assert.ok(deploy.includes("github.event.workflow_run.event == 'push'"));
-  assert.ok(
-    deploy.includes(
-      "github.event.workflow_run.head_repository.full_name == 't00ls-dev/levi'",
-    ),
-  );
-  assert.ok(deploy.includes("ref: ${{ github.sha }}"));
-  assert.ok(deploy.includes("persist-credentials: false"));
-  for (const file of [ci, deploy]) {
-    assert.ok(!file.includes("db:migrate") && !file.includes("migrate-dev.ts"));
-    assert.ok(
-      !file.includes("contents: write") &&
-        !file.includes("pull_request_target"),
-    );
-  }
-});
-
 test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor respostas", async () => {
   for (const [request, check, category, status] of [
     [
       async () => new Response("private-response", { status: 403 }),
-      "consulta da main remota",
+      "consulta da master remota",
       "falha HTTP",
       "403",
     ],
     [
       async () => new Response("private-invalid-json"),
-      "consulta da main remota",
+      "consulta da master remota",
       "resposta inesperada",
       "200",
     ],

@@ -6,7 +6,9 @@ A instalação npm descrita na action de setup pertence ao repositório original
 não constitui uma segunda autoridade de instalação desta cópia.
 
 A validação desta aplicação está na [CI raiz](../../../.github/workflows/ci.yml),
-com pnpm e lockfile únicos. Não copiar o deploy automático para a raiz nem acionar
-scripts operacionais desta cópia. Transferir o controlador de deploy, credenciais
-ou Environments exige tarefa e autorização próprias. O repositório original e seu
+com pnpm e lockfile únicos. O [publicador raiz preparado](../../../.github/workflows/deploy-levi-dev.yml)
+aceita somente execução manual, ainda bloqueada pela configuração administrativa
+não provisionada. Não copiar o deploy automático histórico nem acionar o novo
+publicador sem autorização. Transferir o controlador, credenciais ou Environments
+exige tarefa própria; consultar [Deploy DEV](../docs/deploy-dev.md). O repositório original e seu
 fluxo permanecem inalterados.
