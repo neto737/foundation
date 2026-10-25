@@ -18,9 +18,9 @@ import {
 
 const valid: NodeJS.ProcessEnv = {
   GITHUB_ACTIONS: "true",
-  GITHUB_REPOSITORY: "t00ls-dev/levi",
+  GITHUB_REPOSITORY: "t00ls-dev/foundation",
   GITHUB_EVENT_NAME: "workflow_dispatch",
-  GITHUB_REF: "refs/heads/main",
+  GITHUB_REF: "refs/heads/master",
   LEVI_DEV_READY: "true",
   LEVI_DEPLOY_SHA: "a".repeat(40),
   GITHUB_SHA: "a".repeat(40),
@@ -54,14 +54,14 @@ const hyperdrive = {
   },
 };
 
-test("deploy exige execução confiável da main e configuração completa, sem credenciais de migrations", () => {
+test("deploy exige execução confiável manual da master e configuração completa, sem credenciais de migrations", () => {
   assert.equal(deploySettings(valid).sha, valid.GITHUB_SHA);
-  assert.equal(
-    deploySettings({ ...valid, GITHUB_EVENT_NAME: "workflow_run" }).sha,
-    valid.GITHUB_SHA,
-  );
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
+    { GITHUB_REPOSITORY: "t00ls-dev/levi" },
+    { GITHUB_EVENT_NAME: "workflow_run" },
+    { GITHUB_EVENT_NAME: "push" },
+    { GITHUB_REF: "refs/heads/main" },
     { GITHUB_REPOSITORY: "other/levi" },
     { GITHUB_EVENT_NAME: "pull_request" },
     { GITHUB_REF: "refs/heads/feature" },
@@ -173,6 +173,11 @@ async function simulatedDeploy(
     failProgress?: boolean;
     failReport?: boolean;
     membersDevOrganizations?: string;
+    ciEvidence?: (call: number) => {
+      sha: string;
+      runId: number;
+      attempt: number;
+    };
   } = {},
 ) {
   const source = await readFile("tools/deploy-dev.ts", "utf8");
@@ -182,6 +187,7 @@ async function simulatedDeploy(
   const writes: { path: string; mode: number }[] = [];
   let writtenMembersDevOrganizations: string | undefined;
   let uploads = 0;
+  let ciCalls = 0;
   let cleanups = 0;
   const fakeProcess = {
     env: {
@@ -330,11 +336,16 @@ async function simulatedDeploy(
     },
     "./deploy-diagnostics.js": { DeployDiagnostics },
     "./ci-evidence.js": {
-      requireSuccessfulCI: async () => ({
-        sha: valid.GITHUB_SHA,
-        runId: 1,
-        attempt: 1,
-      }),
+      requireSuccessfulCI: async () => {
+        ciCalls++;
+        return (
+          options.ciEvidence?.(ciCalls) ?? {
+            sha: valid.GITHUB_SHA,
+            runId: 1,
+            attempt: 1,
+          }
+        );
+      },
     },
   };
   const compiled = ts.transpileModule(source, {
@@ -832,13 +843,15 @@ test("deploy propaga apenas o recorte explícito e limpa configuração herdada 
     ).vars.LEVI_MEMBERS_DEV_ORGANIZATIONS,
     id,
   );
-  const workflow = await readFile(".github/workflows/deploy-dev.yml", "utf8");
-  assert.ok(
-    workflow.includes(
-      "LEVI_MEMBERS_DEV_ORGANIZATIONS: ${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}",
-    ),
+  const workflow = await readFile(
+    "../../.github/workflows/deploy-levi-dev.yml",
+    "utf8",
   );
-  assert.ok(workflow.includes("environment: dev"));
+  assert.match(
+    workflow,
+    /LEVI_MEMBERS_DEV_ORGANIZATIONS:\s*\$\{\{ vars\.LEVI_MEMBERS_DEV_ORGANIZATIONS \}\}/,
+  );
+  assert.ok(workflow.includes("environment: levi-dev"));
 });
 
 test("script de deploy transmite o recorte à configuração temporária sem publicar no harness", async () => {
@@ -931,4 +944,22 @@ test("deploy não envia um SHA que ficou obsoleto durante a preparação", async
   assert.equal(result.exitCode, 1);
   assert.equal(result.uploads, 0);
   assert.equal(result.cleanups, 1);
+});
+
+test("deploy recusa CI substituída imediatamente antes do upload e limpa arquivos privados", async () => {
+  for (const scenario of ["attempt", "run"] as const) {
+    const result = await simulatedDeploy({
+      ciEvidence: (call) => ({
+        sha: valid.GITHUB_SHA!,
+        runId: scenario === "run" && call === 2 ? 2 : 1,
+        attempt: scenario === "attempt" && call === 2 ? 2 : 1,
+      }),
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.cleanups, 1);
+    assert.ok(
+      result.output.includes("evidência CI inalterada antes do upload"),
+    );
+  }
 });

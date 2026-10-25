@@ -1,7 +1,12 @@
 # Deploy
 
 Cada produto possui deploy independente. O Foundation valida somente o fluxo DEV
-usando `examples/links`.
+usando `examples/links`. O
+[publicador manual Levi preparado](../../.github/workflows/deploy-levi-dev.yml)
+é independente, usa `levi-dev` ainda não provisionado e não chama o coordenador
+D1. Seu interruptor de repositório permanece ausente/fechado. Não há
+transferência operacional nem autorização de dispatch; ver
+[Deploy Levi DEV](../../apps/levi/docs/deploy-dev.md).
 
 A política aprovada exige migrations persistentes em operação independente e
 autorizada. O job deploy já verifica schema com D1 Read, sem credencial

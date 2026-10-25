@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { DeployDiagnostics } from "./deploy-diagnostics.js";
 import type { DeployCheck } from "./deploy-diagnostics.js";
 
-const repository = "t00ls-dev/levi";
+const repository = "t00ls-dev/foundation";
 export function validateCIRun(
   run: Record<string, any>,
   sha: string,
@@ -14,7 +13,7 @@ export function validateCIRun(
   assert.equal(run.repository?.full_name, repository);
   assert.equal(run.head_repository?.full_name, repository);
   assert.equal(run.event, "push");
-  assert.equal(run.head_branch, "main");
+  assert.equal(run.head_branch, "master");
   assert.equal(run.head_sha, sha);
   assert.equal(run.status, "completed");
   assert.equal(run.conclusion, "success");
@@ -31,10 +30,8 @@ export async function requireSuccessfulCI(
   diagnostics.start("ci-context");
   assert.equal(env.GITHUB_ACTIONS, "true");
   assert.equal(env.GITHUB_REPOSITORY, repository);
-  assert.equal(env.GITHUB_REF, "refs/heads/main");
-  assert.ok(
-    ["workflow_dispatch", "workflow_run"].includes(env.GITHUB_EVENT_NAME ?? ""),
-  );
+  assert.equal(env.GITHUB_REF, "refs/heads/master");
+  assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch");
   const sha = env.LEVI_DEPLOY_SHA ?? "";
   assert.match(sha, /^[a-f0-9]{40}$/);
   assert.equal(sha, env.GITHUB_SHA);
@@ -53,7 +50,7 @@ export async function requireSuccessfulCI(
     diagnostics.httpOk(response);
     return response.json();
   }
-  const main = await github("main-read", "git/ref/heads/main");
+  const main = await github("main-read", "git/ref/heads/master");
   diagnostics.inspect("main-sha");
   assert.equal(main.object?.sha, sha);
   const workflow = await github("ci-workflow-read", "actions/workflows/ci.yml");
@@ -61,35 +58,18 @@ export async function requireSuccessfulCI(
   assert.equal(workflow.path, ".github/workflows/ci.yml");
   assert.equal(workflow.state, "active");
   assert.ok(Number.isSafeInteger(workflow.id));
-  let runId: number;
-  let triggeringAttempt: number | undefined;
-  if (env.GITHUB_EVENT_NAME === "workflow_run") {
-    diagnostics.start("ci-event", "resposta inesperada");
-    const event = JSON.parse(
-      await readFile(env.GITHUB_EVENT_PATH ?? "", "utf8"),
-    );
-    runId = event.workflow_run?.id;
-    triggeringAttempt = event.workflow_run?.run_attempt;
-    assert.ok(Number.isSafeInteger(triggeringAttempt));
-  } else {
-    const runs = await github(
-      "ci-runs-read",
-      `actions/workflows/${workflow.id}/runs?event=push&branch=main&head_sha=${sha}&per_page=10`,
-    );
-    diagnostics.inspect("ci-runs", "resposta inesperada");
-    assert.ok(
-      Array.isArray(runs.workflow_runs) && runs.workflow_runs.length > 0,
-    );
-    runId = runs.workflow_runs[0].id;
-  }
+  const runsPath = `actions/workflows/${workflow.id}/runs?event=push&branch=master&head_sha=${sha}&per_page=10`;
+  const runs = await github("ci-runs-read", runsPath);
+  diagnostics.inspect("ci-runs", "resposta inesperada");
+  assert.ok(Array.isArray(runs.workflow_runs) && runs.workflow_runs.length > 0);
+  const runId = runs.workflow_runs[0].id;
   diagnostics.inspect("ci-run-id");
   assert.ok(Number.isSafeInteger(runId) && runId > 0);
   const run = await github("ci-run-read", `actions/runs/${runId}`);
   diagnostics.inspect("ci-run");
   validateCIRun(run, sha, workflow.id);
+  assert.equal(run.id, runId);
   diagnostics.inspect("ci-attempt");
-  if (triggeringAttempt !== undefined)
-    assert.equal(run.run_attempt, triggeringAttempt);
   const jobs = await github(
     "ci-jobs-read",
     `actions/runs/${runId}/attempts/${run.run_attempt}/jobs?per_page=100`,
@@ -106,5 +86,19 @@ export async function requireSuccessfulCI(
   assert.equal(checks[0].run_attempt, run.run_attempt);
   assert.equal(checks[0].conclusion, "success");
   assert.equal(checks[0].head_sha, sha);
+  // Mesmo padrão do validador raiz: não reutiliza tentativa/run substituídos
+  // enquanto a evidência era consultada, nem um SHA que deixou de ser master.
+  const current = await github("ci-run-read", `actions/runs/${runId}`);
+  diagnostics.inspect("ci-attempt");
+  validateCIRun(current, sha, workflow.id);
+  assert.equal(current.id, runId);
+  assert.equal(current.run_attempt, run.run_attempt);
+  const latest = await github("ci-runs-read", runsPath);
+  diagnostics.inspect("ci-runs");
+  assert.ok(Array.isArray(latest.workflow_runs));
+  assert.equal(latest.workflow_runs[0]?.id, runId);
+  const master = await github("main-read", "git/ref/heads/master");
+  diagnostics.inspect("main-sha");
+  assert.equal(master.object?.sha, sha);
   return { sha, runId, attempt: run.run_attempt as number };
 }

@@ -1,0 +1,89 @@
+name: Deploy Levi DEV
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution_sha:
+        description: SHA completo da master atual com CI de push aprovada
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: levi-dev
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    # Ausente/false até a preparação administrativa e o corte autorizados.
+    if: >-
+      vars.LEVI_DEV_DEPLOY_ENABLED == 'true' && github.repository ==
+      't00ls-dev/foundation' && github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/master' && inputs.execution_sha == github.sha
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.ci.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validar CI conjunta e SHA atual sem secrets operacionais
+        id: ci
+        run: node .github/scripts/ci-evidence.mjs deploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  deploy:
+    needs: validate
+    if: >-
+      needs.validate.result == 'success' && vars.LEVI_DEV_DEPLOY_ENABLED ==
+      'true' && github.repository == 't00ls-dev/foundation' && github.event_name
+      == 'workflow_dispatch' && github.ref == 'refs/heads/master' &&
+      inputs.execution_sha == github.sha && needs.validate.outputs.sha ==
+      github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: levi-dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        id: install
+      - name: Compilar Levi e dependências workspace
+        id: build
+        run: pnpm exec turbo run build --filter=levi
+      - name: Revalidar CI, publicar uma vez e conferir versão e bindings
+        id: publish
+        working-directory: apps/levi
+        run: pnpm deploy:dev
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LEVI_DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
+          LEVI_MEMBERS_DEV_ORGANIZATIONS:
+            ${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}
+          LEVI_DEV_READY: ${{ vars.LEVI_DEV_READY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_READ_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          LEVI_HYPERDRIVE_ID: ${{ vars.LEVI_HYPERDRIVE_ID }}
+          LEVI_DEV_DATABASE_HOST: ${{ vars.LEVI_DEV_DATABASE_HOST }}
+          LEVI_DEV_DATABASE_NAME: ${{ vars.LEVI_DEV_DATABASE_NAME }}
+          LEVI_EMAIL_FROM: ${{ vars.LEVI_EMAIL_FROM }}
+          LEVI_AUTH_SECRET: ${{ secrets.LEVI_AUTH_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      - name: Resumir publicação e verificações
+        if: always()
+        continue-on-error: true
+        working-directory: apps/levi
+        run: node tools/deploy-summary.mjs
+        env:
+          SUMMARY_STATUS: ${{ job.status }}
+          SUMMARY_STEPS: ${{ toJSON(steps) }}
+          LEVI_DEPLOY_SHA: ${{ needs.validate.outputs.sha }}

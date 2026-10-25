@@ -26,9 +26,11 @@ organizacional, gestão de membros e interface React. Os testes usam PostgreSQL
 descartável e runtime workerd local.
 
 O repositório original mantém main, CI e deploy DEV sem alterações. Esta cópia
-não tem publicador ativo no Foundation: os arquivos em [.github](.github/README.md)
-são históricos e não são workflows ativos da raiz. Os scripts operacionais ainda
-exigem `t00ls-dev/levi/main` e não devem ser utilizados para transferir deploy.
+possui um [publicador manual preparado](../../.github/workflows/deploy-levi-dev.yml)
+para `t00ls-dev/foundation/master`, ainda sem capacidade operacional: o Environment
+`levi-dev`, suas credenciais e o interruptor de repositório não foram provisionados.
+Os arquivos em [.github](.github/README.md) continuam históricos. Preparar esse
+código não transfere o controle nem autoriza publicação; ver [Deploy DEV](docs/deploy-dev.md).
 Worker, domínio, PostgreSQL/Neon, Hyperdrive, e-mail e credenciais permanecem
 independentes do Links. Produção não está implementada.
 
@@ -95,6 +97,6 @@ não exige banco, sessão ou deploy compartilhado com outro aplicativo.
 - [Instruções da aplicação](AGENTS.md).
 - [Onboarding e provisionamento](docs/onboarding-provisionamento.md).
 - [Cloudflare Workers](docs/cloudflare-workers.md).
-- [Operação DEV do repositório original](docs/deploy-dev.md).
+- [Preparação do publicador manual DEV](docs/deploy-dev.md).
 - [Interface e onboarding](docs/interface-onboarding.md).
 - [Gestão de membros](docs/gestao-membros.md).

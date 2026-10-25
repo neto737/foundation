@@ -27,14 +27,17 @@ try {
   const ci = await requireSuccessfulCI(env, fetch, diagnostics);
   async function currentMain() {
     const response = await diagnostics.request("main-read", () =>
-      fetch("https://api.github.com/repos/t00ls-dev/levi/git/ref/heads/main", {
-        headers: {
-          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-          Accept: "application/vnd.github+json",
+      fetch(
+        "https://api.github.com/repos/t00ls-dev/foundation/git/ref/heads/master",
+        {
+          headers: {
+            Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+            Accept: "application/vnd.github+json",
+          },
+          redirect: "error",
+          signal: AbortSignal.timeout(15_000),
         },
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-      }),
+      ),
     );
     diagnostics.httpOk(response);
     const main = (await response.json()) as { object?: { sha?: string } };
