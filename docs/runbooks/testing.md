@@ -133,3 +133,14 @@ Assets reais em Wrangler local (porta 5175, D1 descartável e chaves Turnstile
 fictícias). Por isso requer o build antes de `test:e2e`, já ordenado pelo gate
 `pnpm check`. Verifica a resposta final de `/`, `/bookmarks`, um JavaScript
 estático e `/health`, incluindo CSP, proteção contra framing e Referrer-Policy.
+
+## Contratos de preparação do workspace
+
+`pnpm test:release` também executa `workspace.test.mjs`: descoberta com `apps/*`
+ausente ou com aplicativo privado sintético, rejeição de publicáveis
+inesperados, nomes duplicados e symlinks, planejamento privado sem upload npm e
+build real de um fecho transitivo pelo Turbo, inclusive através de pacote sem
+script de build. As fixtures vivem em diretórios temporários; não criam
+`apps/levi` no projeto. A suíte de release preserva a recomputação de planos nas
+bases históricas sem `apps/*`. Esses contratos complementam o gate integral, sem
+dispensar jobs ou aceitar `skipped` como sucesso.

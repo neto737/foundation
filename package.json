@@ -18,7 +18,7 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "test:distribution": "pnpm --filter './packages/*' -r build && node tests/distribution.mjs",
-    "test:release": "node --test .github/scripts/release.test.mjs",
+    "test:release": "node --test .github/scripts/release.test.mjs .github/scripts/workspace.test.mjs",
     "test:migrations": "node --test .github/scripts/deploy-diagnostics.test.mjs .github/scripts/migrations.test.mjs .github/scripts/migration-recovery.test.mjs .github/scripts/deploy-summary.test.mjs",
     "test:integration": "turbo run test:integration",
     "typecheck": "turbo run typecheck"
@@ -26,9 +26,11 @@
   "pnpm": {
     "overrides": {
       "vitest>jsdom": "26.1.0",
-      "miniflare>undici": "7.29.1",
+      "miniflare>undici": "7.30.1",
       "miniflare>sharp": "0.35.5",
-      "@esbuild-kit/core-utils>esbuild": "0.25.12"
+      "@esbuild-kit/core-utils>esbuild": "0.25.12",
+      "better-auth@1.7.10>zod": "4.6.7",
+      "@better-auth/core@1.7.10>zod": "4.6.7"
     }
   },
   "devDependencies": {

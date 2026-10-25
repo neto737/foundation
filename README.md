@@ -31,6 +31,13 @@ demonstra a integração dos pacotes. O projeto está em evolução; consulte o
 possui deploy automático somente em DEV; aplicações consumidoras definem seus
 próprios ambientes.
 
+O Foundation é a base principal da consolidação em monorepo. O workspace já
+aceita `apps/*`; a incorporação futura do Levi em `apps/levi` ainda não ocorreu.
+Links permanece em `examples/links`. Aplicações consomem pacotes com
+`workspace:*`, mantendo versões, deploys e recursos próprios. Publicar no npm
+continua sendo uma operação opcional e separada do consumo interno; consulte
+[versionamento e publicação](docs/runbooks/packages.md#planos-de-componentes-e-publicação).
+
 ## Principais funcionalidades
 
 - **Autenticação self-hosted:** Better Auth com senha, verificação de e-mail,

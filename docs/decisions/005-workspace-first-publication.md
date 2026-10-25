@@ -11,11 +11,21 @@ workspace do Foundation.
 
 ## Decisão
 
-O consumo entre exemplos, tooling e pacotes usa dependências `workspace:` no
-monorepo. Os nove pacotes reutilizáveis em `packages/*` são preparados para
-npmjs.com público no scope do **usuário `t00ls-dev`**, sem organização npm,
-publicação dupla ou agregador. O histórico privado GitHub permanece intacto. A
-preparação não altera o deploy DEV nem o gerador existente.
+O consumo entre aplicações, exemplos, tooling e pacotes usa dependências
+`workspace:` no monorepo Foundation. O workspace aceita `apps/*` para a futura
+incorporação do Levi; Links permanece em `examples/links`. Nenhum código Levi
+foi incorporado nesta preparação. Os nove pacotes reutilizáveis em `packages/*`
+são preparados para npmjs.com público no scope do **usuário `t00ls-dev`**, sem
+organização npm, publicação dupla ou agregador. O histórico privado GitHub
+permanece intacto. A preparação não altera o deploy DEV nem o gerador existente.
+
+Publicação npm é opcional para o consumo interno. Plano de versões de
+componentes e plano npm são distintos; este último continua restrito aos nove
+nomes publicáveis. Funções de planejamento aceitam versões privadas sem
+autorizar upload, criar tags ou alterar manifests. Version Packages permanece
+restrito ao fluxo público até existir um fluxo revisado de release dos privados;
+`privatePackages.version/tag` continuam desabilitados. Aplicações e pacotes
+mantêm versões próprias; deploy não implica uma nova release.
 
 Quando publicados, esses pacotes usam `@t00ls-dev/*`, Changesets e Semantic
 Versioning, sem GitHub Releases automáticos. Pacotes permanecem versionáveis

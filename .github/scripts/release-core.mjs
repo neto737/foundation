@@ -813,7 +813,8 @@ export function compareVersions(left, right) {
   return 0;
 }
 
-export function recordFromStatus(
+// A component plan can describe private releases without authorizing npm uploads.
+export function componentPlanFromStatus(
   status,
   { baseSha, cliVersion, changesetBytes, manifestByName },
 ) {
@@ -826,13 +827,14 @@ export function recordFromStatus(
     changesets: status.changesets
       .map((item) => ({ id: item.id, hash: hash(changesetBytes(item.id)) }))
       .sort((a, b) => a.id.localeCompare(b.id)),
-    packages: releases
+    components: releases
       .map((item) => {
+        const pkg = manifestByName(item.name);
+        assert(pkg, "Missing component manifest");
         assert(
-          names.includes(item.name),
+          pkg.private === true || names.includes(item.name),
           "Unexpected package in Changesets status",
         );
-        const pkg = manifestByName(item.name);
         assert.equal(
           pkg.version,
           item.oldVersion,
@@ -840,6 +842,8 @@ export function recordFromStatus(
         );
         return {
           name: item.name,
+          private: pkg.private === true,
+          tag: `${item.name}@${item.newVersion}`,
           oldVersion: item.oldVersion,
           version: item.newVersion,
           type: item.type,
@@ -857,8 +861,62 @@ export function recordFromStatus(
       })
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
+  validateComponentPlan(record);
+  return record;
+}
+
+export function validateComponentPlan(plan) {
+  // Validate the same provenance and SemVer invariants as the npm record,
+  // without relaxing the npm allowlist itself.
+  const ids = validateVersionHeader(plan);
+  assert(Array.isArray(plan.components) && plan.components.length > 0);
+  const seen = new Set();
+  for (const item of plan.components) {
+    assert(
+      typeof item.name === "string" &&
+        /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(item.name),
+    );
+    assert.equal(typeof item.private, "boolean");
+    assert(
+      item.private || names.includes(item.name),
+      "Unexpected public component",
+    );
+    assert(
+      !item.private || !names.includes(item.name),
+      "Public package marked private",
+    );
+    assert.equal(item.tag, `${item.name}@${item.version}`);
+    assert(!seen.has(item.name), "Duplicate component");
+    seen.add(item.name);
+    validateVersionItem(item, ids, plan.components);
+  }
+}
+
+export function npmRecordFromComponentPlan(plan) {
+  validateComponentPlan(plan);
+  const packages = plan.components
+    .filter((item) => !item.private)
+    .map(({ private: _private, tag: _tag, ...item }) => {
+      assert(
+        item.dependencies.every((name) => names.includes(name)),
+        "Public release depends on a private component",
+      );
+      return item;
+    });
+  if (!packages.length) return null;
+  const { components: _components, ...header } = plan;
+  const record = { ...header, packages };
   validateRecord(record);
   return record;
+}
+
+export function recordFromStatus(status, input) {
+  const plan = componentPlanFromStatus(status, input);
+  assert(
+    plan.components.every((item) => !item.private),
+    "Private versioning requires a separate reviewed component release flow",
+  );
+  return npmRecordFromComponentPlan(plan);
 }
 
 export function validateContext(context, authorization = false) {
@@ -926,7 +984,7 @@ export function validateContext(context, authorization = false) {
   }
 }
 
-export function validateRecord(record) {
+function validateVersionHeader(record) {
   assert.equal(record.format, 1, "Unknown release record format");
   assert.equal(record.repository, repository);
   assert(shaPattern.test(record.baseSha), "Invalid planning base");
@@ -948,6 +1006,43 @@ export function validateRecord(record) {
     assert(!ids.has(item.id), "Duplicate changeset");
     ids.add(item.id);
   }
+  return ids;
+}
+
+function validateVersionItem(item, ids, releases) {
+  assert(["patch", "minor", "major"].includes(item.type));
+  assert(
+    compareVersions(item.version, item.oldVersion) > 0,
+    "Release must advance version",
+  );
+  const old = item.oldVersion.split(".").map(BigInt);
+  const calculated =
+    item.type === "major"
+      ? `${old[0] + 1n}.0.0`
+      : item.type === "minor"
+        ? `${old[0]}.${old[1] + 1n}.0`
+        : `${old[0]}.${old[1]}.${old[2] + 1n}`;
+  assert.equal(item.version, calculated, "Version differs from declared bump");
+  assert(
+    Array.isArray(item.changesets) &&
+      item.changesets.every((id) => ids.has(id)),
+    "Unknown consumed changeset",
+  );
+  assert(Array.isArray(item.dependencies));
+  if (item.reason === "changeset") assert(item.changesets.length > 0);
+  else {
+    assert.equal(item.reason, "internal-dependency");
+    assert(
+      item.dependencies.some((name) =>
+        releases.some((release) => release.name === name),
+      ),
+      "Unexplained dependency bump",
+    );
+  }
+}
+
+export function validateRecord(record) {
+  const ids = validateVersionHeader(record);
   assert(
     Array.isArray(record.packages) && record.packages.length > 0,
     "Empty approved plan",
@@ -960,39 +1055,7 @@ export function validateRecord(record) {
     );
     assert(!seen.has(item.name), "Duplicate approved package");
     seen.add(item.name);
-    assert(["patch", "minor", "major"].includes(item.type));
-    assert(
-      compareVersions(item.version, item.oldVersion) > 0,
-      "Release must advance version",
-    );
-    const old = item.oldVersion.split(".").map(BigInt);
-    const calculated =
-      item.type === "major"
-        ? `${old[0] + 1n}.0.0`
-        : item.type === "minor"
-          ? `${old[0]}.${old[1] + 1n}.0`
-          : `${old[0]}.${old[1]}.${old[2] + 1n}`;
-    assert.equal(
-      item.version,
-      calculated,
-      "Version differs from declared bump",
-    );
-    assert(
-      Array.isArray(item.changesets) &&
-        item.changesets.every((id) => ids.has(id)),
-      "Unknown consumed changeset",
-    );
-    assert(Array.isArray(item.dependencies));
-    if (item.reason === "changeset") assert(item.changesets.length > 0);
-    else {
-      assert.equal(item.reason, "internal-dependency");
-      assert(
-        item.dependencies.some((name) =>
-          record.packages.some((release) => release.name === name),
-        ),
-        "Unexplained dependency bump",
-      );
-    }
+    validateVersionItem(item, ids, record.packages);
   }
 }
 

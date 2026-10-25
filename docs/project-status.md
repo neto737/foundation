@@ -5,8 +5,9 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: publicação npm em 22 de outubro de 2026; demais registros de
-automação em 16 de outubro de 2026.
+Última revisão: preparação de workspace e planejamento de versões em 25 de
+outubro de 2026; publicação npm em 22 de outubro de 2026. Registros operacionais
+históricos permanecem identificados nas respectivas seções e runbooks.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
@@ -16,8 +17,11 @@ existente no GitHub é `dev`; não há Environment nem operação PROD no Founda
 ## Objetivo e escopo
 
 O foundation fornece pacotes, convenções e ferramentas reutilizáveis para apps
-da organização `t00ls-dev`. Os produtos finais vivem em repositórios próprios e
-podem atualizar os pacotes de forma independente.
+da `t00ls-dev` e será a base principal do monorepo. O workspace está preparado
+para `apps/*`, sem incorporar aplicativos nesta etapa. Links permanece em
+`examples/links`; Levi será incorporado futuramente em `apps/levi`, sob MIT com
+preservação das atribuições. Aplicações mantêm versões, deploys, bancos e
+recursos próprios, compartilhando contratos públicos dos pacotes via workspace.
 
 A v0.1 valida um caminho completo e pequeno:
 
@@ -41,6 +45,25 @@ da primeira entrega.
 - ESLint compartilhado em `@t00ls-dev/eslint-config`.
 - Formatação com Prettier.
 - Builds ordenados pelos limites de dependência do workspace.
+- Descoberta de `apps/*` nos validadores de manifests e planejamento de release,
+  preservando a leitura das bases históricas e a allowlist npm de nove pacotes.
+- Planejamento de versões privadas separado do plano npm, sem ativação de
+  `privatePackages`, criação de tags ou mudanças nas versões atuais. O fluxo
+  público continua bloqueando planos privados até sua ativação futura revisada.
+- Correções locais de dependências: Zod `4.6.7` somente nas cadeias Better Auth
+  e Core `1.7.10`, e Undici `7.30.1` na cadeia Miniflare. Overrides de raiz não
+  corrigem lockfiles de consumidores externos; o Levi não foi alterado.
+- CI integral e gates existentes preservados; testes de contrato exercitam
+  aplicativos sintéticos, componentes privados e dependências transitivas com
+  `^build`, sem seleção agressiva ou mudança de publicador.
+
+O desacoplamento operacional das migrations persistentes permanece bloqueado
+nesta preparação. O coordenador atual ainda executa fases D1 no ciclo de deploy;
+a política aprovada e o motivo para não alterar parcialmente esse ciclo estão em
+[Migrations](runbooks/migrations.md#política-aprovada-e-desacoplamento-pendente).
+
+### Automação de manutenção existente
+
 - Dependabot semanal, segunda-feira às 03:00 UTC, com limite de dez PRs de
   versão por ecossistema. Atualizações minor/patch agrupadas por frontend,
   tooling/testes e GitHub Actions; majors permanecem individuais.

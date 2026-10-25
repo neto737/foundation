@@ -35,6 +35,38 @@ intervenção humana documentada, revise o plano e espere a CI do merge. O
 checkout do job version preserva temporariamente a credencial para aprofundar o
 histórico Changesets; Release mantém `persist-credentials: false`.
 
+## Planos de componentes e publicação
+
+A descoberta de manifests inclui `apps/*` sem exigir que o diretório exista.
+Aplicações privadas são inventariadas junto aos workspaces existentes, mas a
+allowlist npm continua contendo exatamente os nove pacotes públicos. Novos
+globs, nomes duplicados, links simbólicos ou um aplicativo publicável fora dessa
+lista são rejeitados. A recomputação histórica também aceita a definição antiga
+do workspace, para preservar a análise de registros anteriores à preparação.
+
+`componentPlanFromStatus` planeja versões SemVer independentes e identificadores
+de tags `<nome>@<versão>` para componentes públicos ou privados. A função
+`npmRecordFromComponentPlan` deriva somente os pacotes públicos, mantendo o
+formato 1, a proveniência dos changesets e os validadores npm. Um plano somente
+privado resulta em ausência de plano npm, não em publicação de aplicativos.
+Planejar uma tag não a cria; nenhuma dessas funções executa versionamento,
+publicação ou deploy. Changelogs continuam pertencendo ao respectivo componente.
+
+Esta etapa prepara os contratos, sem habilitar releases privadas automáticas.
+`recordFromStatus`, usado pelo Version Packages atual, bloqueia planos com
+componentes privados. `privatePackages.version/tag` e o ignore do Links
+continuam inalterados. A futura ativação exige adaptar e revisar o registro/PR
+de versões privadas, seus changelogs e tags, inclusive o caso sem pacote npm.
+Não remover essa proteção apenas para ligar a opção do Changesets; tampouco
+executar um comando de tags indiscriminado para preencher a ausência de tags
+históricas.
+
+O consumo interno não espera publicação npm. Uma mudança de código, uma release
+de componente e um deploy de aplicação têm evidências e autorizações próprias.
+As validações de distribuição e os controles de audit/approve/provenance/resume
+permanecem necessários para as publicações externas opcionais. O PR Version
+Packages existente deve continuar sendo revisado pelo seu fluxo normal.
+
 ## Roteiro operacional para próximas releases
 
 Este é o **fluxo normal**, com `distribution=release`. Bootstrap e os modos
