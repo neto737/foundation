@@ -5,9 +5,11 @@
 O `foundation` fornece pacotes, convenções e ferramentas compartilhadas para
 apps da `t00ls-dev` e será o monorepo principal. O workspace aceita `apps/*`,
 preservando `packages/*`, `tooling/*`, `examples/*` e `tests/*`. Links permanece
-em `examples/links`; a futura incorporação do Levi em `apps/levi` não faz parte
-desta preparação. Seu licenciamento MIT foi aprovado para essa incorporação,
-preservando avisos e atribuições conforme [Licenças](../runbooks/licensing.md).
+em `examples/links`; o Levi está em `apps/levi`, incorporado por subtree sem
+squash, com origem e limites no
+[README da aplicação](../../apps/levi/README.md). A cópia adota MIT e preserva
+atribuições conforme [Licenças](../runbooks/licensing.md). Seu deploy continua
+no repositório original.
 
 Aplicações mantêm domínio, schema/migrations, deploy e recursos operacionais
 próprios. Compartilham mecanismos pelos exports dos pacotes, com dependências

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution && pnpm test:release && pnpm test:migrations",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution && pnpm test:release && pnpm test:migrations && pnpm test:levi:runtime",
     "dev": "turbo run dev --filter=@t00ls-dev/example-links",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -18,10 +18,11 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "test:distribution": "pnpm --filter './packages/*' -r build && node tests/distribution.mjs",
-    "test:release": "node --test .github/scripts/release.test.mjs .github/scripts/workspace.test.mjs",
+    "test:release": "node --test .github/scripts/release.test.mjs .github/scripts/workspace.test.mjs .github/scripts/levi-workspace.test.mjs",
     "test:migrations": "node --test .github/scripts/deploy-diagnostics.test.mjs .github/scripts/migrations.test.mjs .github/scripts/migration-recovery.test.mjs .github/scripts/deploy-summary.test.mjs",
     "test:integration": "turbo run test:integration",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "test:levi:runtime": "pnpm --filter levi worker:build && pnpm --filter levi test:integration --runtime-acls && pnpm --filter levi test:worker --runtime-acls && pnpm --filter levi test:e2e --runtime-acls"
   },
   "pnpm": {
     "overrides": {

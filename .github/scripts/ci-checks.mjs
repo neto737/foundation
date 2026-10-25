@@ -4,6 +4,8 @@ const needs = JSON.parse(process.env.CI_NEEDS);
 assert.deepEqual(Object.keys(needs).sort(), [
   "distribution",
   "e2e",
+  "levi-e2e",
+  "levi-tests",
   "static",
   "tests",
 ]);

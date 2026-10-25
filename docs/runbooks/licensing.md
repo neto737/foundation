@@ -4,11 +4,11 @@ A licença MIT foi aprovada pelo mantenedor para o código próprio do Foundatio
 O texto está em [`LICENSE`](../../LICENSE); os nove pacotes reutilizáveis e a
 raiz declaram `MIT`. Os tarballs devem conter o mesmo texto da licença raiz.
 
-O mantenedor também aprovou MIT para o Levi quando ele for incorporado ao
-Foundation em `apps/levi`. A incorporação deverá preservar os avisos de
-copyright e atribuição aplicáveis. Esta preparação não incorpora código nem
-altera a licença ou os arquivos do repositório Levi. A licença MIT atual do
-Foundation permanece integralmente preservada.
+O código próprio do Levi incorporado em `apps/levi` adota MIT por aprovação do
+mantenedor. A cópia inclui [LICENSE](../../apps/levi/LICENSE) e
+[avisos de terceiros](../../apps/levi/THIRD_PARTY_NOTICES.md), preservando os
+avisos de copyright e atribuição aplicáveis. O repositório Levi original e as
+licenças dos demais componentes permanecem inalterados.
 
 ## Copyright
 

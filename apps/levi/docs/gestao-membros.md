@@ -241,28 +241,28 @@ legítimas de outras roles. Não utiliza conexão ou credencial de ambiente remo
 Com dependências e ferramentas locais existentes:
 
 ```sh
-npm run format:check
-npm run typecheck
-npm test
-npm run build
-npm run worker:build
-npm run test:integration
-npm run test:worker
-npm run test:e2e
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm worker:build
+ppnpm test:integration
+ppnpm test:worker
+ppnpm test:e2e
 ```
 
 Integração e E2E usam exclusivamente os containers descartáveis dos harnesses,
 com imagem PostgreSQL fixada e porta aleatória em loopback. Aplicam o histórico
 duas vezes nesse banco sintético e o removem em `finally`. Não executar
 `db:migrate:dev` ou `deploy:dev` para validar localmente. Geração da migration
-usa `npm run db:generate -- --name=membros`, sem conexão a banco.
+usa `pnpm db:generate -- --name=membros`, sem conexão a banco.
 
 O modo opcional reproduz as ACLs do DEV, sem ampliar permissões:
 
 ```sh
-npm run test:integration -- --runtime-acls
-npm run test:worker -- --runtime-acls
-npm run test:e2e -- --runtime-acls
+ppnpm test:integration -- --runtime-acls
+ppnpm test:worker -- --runtime-acls
+ppnpm test:e2e -- --runtime-acls
 ```
 
 `test/runtime-acl-fixture.ts` prepara roles no cluster descartável, aplica 0000–0004

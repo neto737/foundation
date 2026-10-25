@@ -17,7 +17,8 @@ completo para conferir imutabilidade dos SQL versionados.
 
 Em Actions, o gate completo é dividido entre `static`, `tests`, quatro shards
 `e2e` (com Chromium e ambiente próprios) e duas instalações `distribution`. O
-agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
+Levi possui jobs próprios `levi-tests` e `levi-e2e`, sem secrets ou Environment.
+O agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
 todas as entradas das matrizes; falha, cancelamento ou skip bloqueiam o gate.
 Version Packages depende desse job; Release manual e sua aprovação separada do
 owner validam pela API a CI aprovada do `execution_sha` exato, sem repetir a
@@ -144,3 +145,25 @@ script de build. As fixtures vivem em diretórios temporários; não criam
 `apps/levi` no projeto. A suíte de release preserva a recomputação de planos nas
 bases históricas sem `apps/*`. Esses contratos complementam o gate integral, sem
 dispensar jobs ou aceitar `skipped` como sucesso.
+
+## Levi (`apps/levi`)
+
+A [aplicação](../../apps/levi/README.md) preserva `node:test` via tsx,
+PostgreSQL sintético, ACLs restritas, Node/web, dry-run Worker e E2E
+desktop/mobile/proxy. O build usa os exports públicos e `^build` dos pacotes
+workspace; não depende de publicação npm. A CI separa o Levi dos comandos que
+encaminham reporters Vitest e dos shards do Links para não duplicar ou omitir
+sua cobertura.
+
+`pnpm test:levi:runtime`, incluído no gate local, executa dry-run Worker,
+integração/Worker e E2E com `--runtime-acls`. As tasks normais continuam
+cobrindo o modo padrão. Os harnesses criam e removem seus containers,
+aplicando/reaplicando migrations somente nesses bancos descartáveis, sem
+credenciais persistentes. Nenhum teste ou build aciona o deploy do repositório
+original.
+
+`pnpm test:release` inclui os contratos de incorporação: árvore e histórico
+subtree originais, exatamente nove publicáveis, sete links locais, grafo de
+builds, imports públicos e ausência de Environment/deploy nos jobs Levi. Os
+contratos estruturais existentes da CI exigem todos os comandos novos e recusam
+falha, cancelamento, omissão, skip, jobs desligados ou gates mascarados.

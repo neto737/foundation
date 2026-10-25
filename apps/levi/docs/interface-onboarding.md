@@ -18,8 +18,8 @@ Playwright e Axe são ferramentas de teste. Não há biblioteca de UI ou estado 
 Após configurar o ambiente local sintético conforme o guia da API:
 
 ```sh
-npm ci --ignore-scripts
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 Abra **http://localhost:5173**. O comando inicia Vite e Hono e encerra seus próprios
@@ -29,12 +29,12 @@ cookies e `Set-Cookie`; não habilita CORS nem reescreve cookies. A origem públ
 Use esse hostname de forma consistente. Para iniciar os processos separadamente:
 
 ```sh
-LEVI_PUBLIC_ORIGIN=http://localhost:5173 npm run dev:api
+LEVI_PUBLIC_ORIGIN=http://localhost:5173 pnpm dev:api
 # Em outro terminal, com a mesma LEVI_PORT se personalizada:
-npm run dev:web
+pnpm dev:web
 ```
 
-`npm run build` compila API e SPA em `dist/`. `npm start` serve ambos pela origem
+`pnpm build` compila API e SPA em `dist/`. `pnpm start` serve ambos pela origem
 local 3000. `src/web.ts` entrega HTML apenas nos caminhos conhecidos da SPA:
 `/`, `/onboarding`, `/entrar`, `/organizacoes`, `/painel`, `/igrejas` e as rotas de membros
 listadas em `src/web-paths.ts`. Rotas desconhecidas da
@@ -103,12 +103,12 @@ a capacidade da organização ativa; troca de contexto remove os dados anteriore
 ## Validação
 
 ```sh
-npm run format:check
-npm run typecheck
-npm test
-npm run build
-npm run test:integration
-npm run test:e2e
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm build
+ppnpm test:integration
+ppnpm test:e2e
 ```
 
 As duas últimas suítes exigem Docker disponível; cada comando cria e remove seu
@@ -116,7 +116,7 @@ próprio PostgreSQL sintético, sem usar uma URL externa. O E2E exige o Chromium
 versão instalada do Playwright (`npx playwright install chromium`, se ausente).
 O build deve preceder o E2E. As portas 4317, 4318 e 5173 precisam estar livres;
 processos existentes não são reutilizados. É possível filtrar casos, por exemplo
-`npm run test:e2e -- --project=desktop --grep 'fluxo real completo'`.
+`ppnpm test:e2e -- --project=desktop --grep 'fluxo real completo'`.
 
 O navegador exercita os dois e-mails capturados localmente, cookies reais,
 login/logout, retomada, seleção, revogação e consultas PostgreSQL. Falhas de rede
@@ -130,7 +130,7 @@ e Axe (WCAG 2 A/AA e 2.1 AA) nas telas de e-mail, provisionamento e igrejas. Lab
 erros associados, foco visível, regiões de status e contraste foram considerados.
 Isso constitui acessibilidade básica, não certificação ou teste em aparelho físico.
 Firefox não faz parte da suíte atual. O projeto móvel padrão usa iPhone 13 Mini
-emulado em Chromium. `LEVI_WEBKIT=1 npm run test:e2e -- --runtime-acls` inclui
+emulado em Chromium. `LEVI_WEBKIT=1 ppnpm test:e2e -- --runtime-acls` inclui
 o mesmo conjunto no WebKit (instale com `npx playwright install --with-deps webkit`).
 WebKit em Linux não equivale a Safari real nem ao teclado virtual de um iPhone.
 
@@ -144,7 +144,7 @@ Vite também omite URLs em erros. A caixa sintética temporária é removida no 
 Entrega externa de e-mail e operação pública pertencem à composição Worker DEV,
 conforme [Deploy DEV](deploy-dev.md). O E2E permanece sintético e local; não
 comprova entrega externa ou operação remota nem autoriza dados reais.
-O modo `npm run test:e2e -- --runtime-acls` preserva os mesmos cenários usando
+O modo `ppnpm test:e2e -- --runtime-acls` preserva os mesmos cenários usando
 login restrito; é o modo executado na CI.
 
 Capturas finais e roteiro de revisão estão nas [evidências da interface](evidencias-interface/index.md).

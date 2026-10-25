@@ -1,98 +1,100 @@
 # Levi
 
-Aplicação de gestão de igrejas da t00ls-dev, baseada nos recursos compartilhados
-do [Foundation](https://github.com/t00ls-dev/foundation).
+Aplicação de gestão de igrejas da t00ls-dev, incorporada ao Foundation em
+`apps/levi`. Organização é a fronteira de tenant; igreja é contexto funcional
+interno; membro não é conta de usuário. API, UI, schema, migrations, ACLs e
+recursos operacionais pertencem à aplicação.
 
-## Estado atual
+## Origem e histórico
 
-O projeto possui uma primeira fatia **web, com ambiente DEV em Cloudflare Workers**: onboarding por
-e-mail verificado e senha posterior, provisionamento atômico de organização com
-primeira igreja, vínculo administrativo e auditoria, além de contexto
-organizacional e consulta de igrejas. Há migrations próprias e testes em
-PostgreSQL descartável. A SPA React permite concluir esse fluxo, selecionar uma
-organização e consultar suas igrejas. A composição Cloudflare Workers possui
-build/dry-run e testes locais em workerd, além do fluxo de publicação DEV. A primeira fatia de
-[gestão de membros](docs/gestao-membros.md) acrescenta cadastro,
-listagem com filtros/paginação, ficha e edição cadastral, habilitados somente para validação
-sintética local. O módulo de membros no Worker permanece desabilitado por padrão, com recorte DEV
-preparado para organizações sintéticas autorizadas, conforme o guia. Ambiente de produção
-ainda não foi implementado. A interface foi reformulada com navegação administrativa
-responsiva, painel e formulários por seções; detalhes em [Interface de onboarding](docs/interface-onboarding.md).
-Migration 0004 e ACLs da edição foram apenas versionadas e validadas localmente,
-sem aplicação persistente ou deploy nesta entrega.
+Origem: [t00ls-dev/levi](https://github.com/t00ls-dev/levi), main
+[`b2c892e27e3a8988f0be554692ffea43d35fcd61`](https://github.com/t00ls-dev/levi/commit/b2c892e27e3a8988f0be554692ffea43d35fcd61).
+A incorporação usa subtree sem squash sobre Foundation
+`3f892412a3f223df7ea394720b3bfe5b149c01c6`. O commit
+`dfd1192b7b5e509878f65bec09228cb269d9cd82` preserva a árvore original sob
+`apps/levi` e os 35 commits alcançáveis, com autoria, datas e SHAs intactos.
+Adaptações de workspace, CI e licença são commits posteriores. Caminhos antigos
+continuam na raiz dos commits originais; seguir apenas o prefixo atual não mostra
+automaticamente todo o passado. PRs antigos permanecem no repositório de origem.
+Para manter esse grafo na master, a integração do PR exige merge commit, sem squash.
 
-Consulte [Onboarding e provisionamento](docs/onboarding-provisionamento.md) para
-execução local, endpoints, decisões técnicas e limites desta entrega.
-[Interface de onboarding](docs/interface-onboarding.md) descreve a SPA e seus testes.
+## Estado e limites operacionais
 
-## MVP aprovado
+A aplicação inclui onboarding por e-mail verificado e senha posterior,
+provisionamento atômico de organização/igreja/membership/auditoria, contexto
+organizacional, gestão de membros e interface React. Os testes usam PostgreSQL
+descartável e runtime workerd local.
 
-- Organização é o tenant e pode conter várias igrejas.
-- Somente administradores organizacionais, com acesso aos recursos disponíveis de
-  todas as igrejas da própria organização.
-- Membro pertence à organização e tem exatamente uma igreja atual, independente
-  das contas de usuários autenticados.
-- Cadastro com nome obrigatório; nascimento, telefone, e-mail, ingresso conhecido,
-  endereço, data de batismo e função na igreja são opcionais.
-- Situações **Ativo** e **Inativo**, com histórico de alterações e transferências
-  internas à organização, preservando a identidade do membro.
-- Busca, listagem, aniversariantes e indicadores simples, com detalhes de consulta
-  ainda a definir.
-- Onboarding: **e-mail verificado → definição de senha → criação da organização
-  com a primeira igreja**.
-- PostgreSQL compartilhado, UUIDs gerados no servidor, operações relacionadas
-  atômicas e separação entre histórico pessoal e auditoria técnica mínima.
+O repositório original mantém main, CI e deploy DEV sem alterações. Esta cópia
+não tem publicador ativo no Foundation: os arquivos em [.github](.github/README.md)
+são históricos e não são workflows ativos da raiz. Os scripts operacionais ainda
+exigem `t00ls-dev/levi/main` e não devem ser utilizados para transferir deploy.
+Worker, domínio, PostgreSQL/Neon, Hyperdrive, e-mail e credenciais permanecem
+independentes do Links. Produção não está implementada.
 
-A fonte de decisões vigentes é [Decisões do MVP](docs/decisoes-mvp.md), que detalha
-as invariantes, exclusões, recomendações técnicas e pendências reais. Financeiro,
-comercialização, migração do legado e permissões locais por igreja ficam fora da
-implementação inicial.
+Migrations persistentes exigem operação independente e autorizada. Importar,
+instalar, compilar ou iniciar a aplicação não aplica migrations persistentes.
+Replays de migrations em containers sintéticos isolados continuam permitidos.
+A documentação histórica de DEV não atesta o schema/ACLs ou o recorte organizacional
+remoto atual; conferi-los antes de qualquer transferência operacional.
 
-## Relação com o Foundation
+## Workspace e validação
 
-O Foundation fornece a base tecnológica; o Levi concentra as regras de gestão de
-igrejas e sua composição. Os pacotes oficiais `@t00ls-dev/*` são publicados no
-npmjs.com. A integração deve reutilizar seus contratos públicos conforme a
-necessidade, sem copiar o monorepo ou tratar o exemplo Links como aplicação pronta
-para o Levi.
+Node `>=22.22.0`, pnpm `10.15.1` e lockfile único na raiz do Foundation.
+O pacote continua `levi@0.1.0`, privado. Os sete pacotes Foundation já utilizados
+resolvem por `workspace:*` e exports públicos compilados, sem depender de npm.
+Não há dependência do Links nem consumo de fontes internas de outro pacote.
 
-Consulte a [arquitetura do Foundation](https://github.com/t00ls-dev/foundation/blob/master/docs/architecture/overview.md)
-e o [guia de consumo de pacotes](https://github.com/t00ls-dev/foundation/blob/master/docs/runbooks/packages.md).
-O preset `basic-d1` não corresponde ao PostgreSQL aprovado; UI e ferramentas
-privadas do workspace não são pacotes públicos disponíveis ao consumidor. Esta
-fatia usa um único projeto TypeScript, Hono, Better Auth e Drizzle com PostgreSQL
-via `pg`, consumindo versões publicadas. O servidor Node é uma superfície local;
-DEV usa Workers → Hyperdrive → Neon PostgreSQL. Produção não está implementada.
+Na raiz do monorepo:
 
-## Documentação e contribuição
+```sh
+pnpm install --frozen-lockfile
+pnpm exec turbo run build --filter=levi
+pnpm --filter levi typecheck
+pnpm --filter levi test
+pnpm --filter levi worker:build
+pnpm --filter levi test:integration
+pnpm --filter levi test:integration --runtime-acls
+pnpm --filter levi test:worker --runtime-acls
+pnpm --filter levi exec playwright install --with-deps chromium
+pnpm --filter levi test:e2e --runtime-acls
+```
 
-- [Decisões do MVP](docs/decisoes-mvp.md): escopo e precedência documental.
-- [Instruções do repositório](AGENTS.md): responsabilidades, convenções e validação.
-- [Onboarding e provisionamento](docs/onboarding-provisionamento.md): contratos,
-  execução e validação da primeira fatia.
-- [Cloudflare Workers](docs/cloudflare-workers.md): bindings, dry-run, validação
-  workerd, separação de roles, ACLs mínimas e migrations DEV explícitas.
-- [Deploy DEV](docs/deploy-dev.md): CI paralela e deploy automático após CI aprovada
-  da main, via GitHub Actions/Wrangler; suspensão pela flag existente, smokes e
-  conferência do Hyperdrive e do binding na versão ativa.
-- [Interface de onboarding](docs/interface-onboarding.md): React, desenvolvimento
-  com Vite, navegação e testes de navegador.
+`worker:build` é apenas dry-run local. Integração, Worker e E2E exigem Docker,
+criam seus próprios bancos sintéticos e os removem ao final; não recebem secrets
+ou Environments operacionais. A CI raiz tem jobs próprios `levi-tests` e
+`levi-e2e`, incluindo ACLs restritas, ligados ao agregador único `checks`.
+O gate raiz `pnpm check` mantém os testes Foundation e adiciona o contrato runtime
+do Levi. Os reporters Vitest e Node permanecem separados.
 
-Documentação e mensagens próprias usam português brasileiro. Com Node
-`>=22.22.0`, instale com `npm ci --ignore-scripts`, execute `npm run typecheck`,
-`npm test` e `npm run build`. `npm run test:integration` exige Docker: cria seu
-próprio PostgreSQL, aplica explicitamente o histórico apenas nesse banco sintético,
-executa os testes e remove o container. Não usa um banco externo configurado. `npm run test:e2e` exercita a interface em
-Chromium contra outra instância descartável, após `npm run build`.
+Para desenvolvimento com banco exclusivamente local, siga
+[Onboarding](docs/onboarding-provisionamento.md). Execute em `apps/levi` ou use
+`pnpm --filter levi dev`; não há carregamento automático de `.env`. O Vite usa
+`http://localhost:5173` e a API usa loopback na porta 3000. `pnpm --filter levi start`
+serve o build e a API localmente. Preserve cwd e reserve portas diferentes quando
+executar outro aplicativo simultaneamente.
 
-O modo opcional `--runtime-acls` das suítes de integração, workerd e E2E usa
-logins independentes de migradora/runtime/observador e as permissões mínimas DEV.
-A CI usa três jobs paralelos e o agregador obrigatório `checks`. Migrations
-persistentes e habilitação de membros continuam exigindo autorização separada.
+## Versões, licença e separação futura
 
-Com o banco sintético e o segredo local configurados conforme o guia de onboarding,
-`npm run dev` inicia Vite em `http://localhost:5173` e a API em loopback na porta 3000. `npm start` serve o build e a API juntos em `http://localhost:3000`.
+A versão própria permanece no manifest; deploy não implica nova release.
+Versionamento privado automático e tags continuam desabilitados no Changesets.
+O plano npm continua restrito aos nove pacotes públicos. A publicação de
+`auth@0.3.2` foi adiada; a futura integração desta incorporação altera entradas
+protegidas e pode exigir revisão posterior do plano antigo, sem dispensar gates
+ou editar seu record para acomodar a importação.
 
-O legado permanece em [t00ls-dev/Levi.old](https://github.com/t00ls-dev/Levi.old),
-separado deste repositório. Configurações locais e segredos ficam fora do
-versionamento, conforme o [.gitignore](.gitignore).
+O código próprio adota [MIT](LICENSE). [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
+preservam as licenças de ícones e dependências. A licença do repositório original
+não foi alterada. Extração futura leva a aplicação com seu histórico/proveniência
+e seu fecho de dependências, ou consome versões públicas realmente disponíveis;
+não exige banco, sessão ou deploy compartilhado com outro aplicativo.
+
+## Documentação
+
+- [Decisões do MVP](docs/decisoes-mvp.md).
+- [Instruções da aplicação](AGENTS.md).
+- [Onboarding e provisionamento](docs/onboarding-provisionamento.md).
+- [Cloudflare Workers](docs/cloudflare-workers.md).
+- [Operação DEV do repositório original](docs/deploy-dev.md).
+- [Interface e onboarding](docs/interface-onboarding.md).
+- [Gestão de membros](docs/gestao-membros.md).

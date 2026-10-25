@@ -6,14 +6,13 @@
   "engines": {
     "node": ">=22.22.0"
   },
-  "packageManager": "npm@10.9.8",
   "scripts": {
     "dev": "tsx tools/dev.ts",
     "build": "tsc -p tsconfig.build.json && vite build",
     "start": "node dist/local.js",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json",
-    "format": "prettier --write src web tools test e2e .github '*.json' '*.jsonc' '*.ts' README.md docs",
-    "format:check": "prettier --check src web tools test e2e .github '*.json' '*.jsonc' '*.ts' README.md docs",
+    "format": "prettier --write src web tools test e2e .github '*.json' '*.jsonc' '*.ts' '*.md' docs",
+    "format:check": "prettier --check src web tools test e2e .github '*.json' '*.jsonc' '*.ts' '*.md' docs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx tools/migrate.ts",
     "test": "tsx --test test/abuse.test.ts test/contracts.test.ts test/member-contracts.test.ts test/web.test.ts test/worker-config.test.ts test/deploy.test.ts test/ci-evidence.test.ts test/ci-pipeline.test.ts test/migration-history.test.ts",
@@ -30,14 +29,14 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
-    "@t00ls-dev/access": "0.1.2",
-    "@t00ls-dev/audit": "1.0.0",
-    "@t00ls-dev/auth": "0.3.0",
-    "@t00ls-dev/db": "1.0.0",
-    "@t00ls-dev/email": "0.1.2",
-    "@t00ls-dev/security": "0.2.0",
-    "@t00ls-dev/tenant": "1.0.0",
-    "better-auth": "1.7.7",
+    "@t00ls-dev/access": "workspace:*",
+    "@t00ls-dev/audit": "workspace:*",
+    "@t00ls-dev/auth": "workspace:*",
+    "@t00ls-dev/db": "workspace:*",
+    "@t00ls-dev/email": "workspace:*",
+    "@t00ls-dev/security": "workspace:*",
+    "@t00ls-dev/tenant": "workspace:*",
+    "better-auth": "1.7.10",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.13",
     "react": "19.3.0",
@@ -45,7 +44,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.1",
-    "@cloudflare/workers-types": "5.20261010.1",
+    "@cloudflare/workers-types": "5.20261016.1",
     "@playwright/test": "1.64.0",
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",
@@ -54,13 +53,11 @@
     "@vitejs/plugin-react": "6.1.2",
     "drizzle-kit": "0.31.11",
     "miniflare": "5.20261006.1-alpha",
-    "prettier": "3.9.9",
+    "playwright-core": "1.64.0",
     "tsx": "4.20.5",
     "typescript": "6.0.3",
     "vite": "8.3.4",
     "wrangler": "4.149.0"
   },
-  "overrides": {
-    "playwright-core": "1.64.0"
-  }
+  "license": "MIT"
 }

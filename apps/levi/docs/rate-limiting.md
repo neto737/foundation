@@ -114,7 +114,7 @@ Desafios ou validação Turnstile ficam para uma entrega futura separada.
 
 ## Validação
 
-Os testes de categorias/janelas e cliente entram em `npm test`. A integração
+Os testes de categorias/janelas e cliente entram em `pnpm test`. A integração
 existente acrescenta sessões reais, revogação/expiração, NAT, troca de tenant,
 isolamento, concorrência entre conexões e limpeza com locks. Runtime e E2E usam
 os harnesses descartáveis existentes; nenhum cenário de carga deve acessar o DEV.

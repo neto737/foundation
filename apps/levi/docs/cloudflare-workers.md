@@ -1,5 +1,10 @@
 # Cloudflare Workers
 
+A composição e os recursos descritos pertencem ao Levi. Esta cópia no workspace
+não transfere o deploy: o fluxo operacional permanece no repositório original.
+A incorporação não comprova o estado atual de migrations, ACLs ou feature gates
+remotos. Consulte o [README](../README.md) para origem e validação no monorepo.
+
 A aplicação tem composição Cloudflare Workers para DEV, separada do executável
 Node local, com Neon PostgreSQL via Hyperdrive. Produção não está implementada.
 O escopo de produto
@@ -71,19 +76,19 @@ banco/secrets do Foundation. A identidade continua no schema do Levi.
 
 ## Desenvolvimento e validação local
 
-O fluxo Node/Vite permanece em `npm run dev` e `npm start`, conforme o guia de
+O fluxo Node/Vite permanece em `pnpm dev` e `pnpm start`, conforme o guia de
 onboarding. Não foi alterado para aceitar URLs remotas. Para validar o Worker:
 
 ```sh
-npm ci --ignore-scripts
-npm run format:check
-npm run typecheck
-npm test
-npm run build
-npm run worker:build
-npm run test:integration
-npm run test:worker
-npm run test:e2e
+pnpm install --frozen-lockfile
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm worker:build
+ppnpm test:integration
+ppnpm test:worker
+ppnpm test:e2e
 ```
 
 `worker:build` faz bundle e dry-run reais do Wrangler, grava `dist/worker` e
@@ -147,8 +152,8 @@ Antes de cada operação autorizada, o operador configura privadamente:
 - `LEVI_DEV_DATABASE_HOST`: hostname exato esperado;
 - `LEVI_DEV_DATABASE_NAME`: `levi_dev` ou prefixo `levi_dev_`;
 - `LEVI_DEV_MIGRATION_CONFIRMATION`: `CONSULTAR:<host>/<banco>` para
-  `npm run db:status:dev`, ou `APLICAR:<host>/<banco>` para
-  `npm run db:migrate:dev`.
+  `pnpm db:status:dev`, ou `APLICAR:<host>/<banco>` para
+  `pnpm db:migrate:dev`.
 
 Não há carregamento automático de `.env`. Não copiar credenciais privadas para o
 projeto ou CI. O runner exige role `levi_dev_migrator`, senha, porta padrão, endpoint

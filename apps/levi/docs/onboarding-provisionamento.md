@@ -10,17 +10,17 @@ A composição e os limites de validação do runtime remoto estão em
 
 ## Execução local
 
-Requisitos: Node `>=22.22.0`, npm (lockfile produzido com `10.9.8`) e PostgreSQL 17.
+Requisitos: Node `>=22.22.0`, pnpm `10.15.1` com lockfile único na raiz do monorepo e PostgreSQL 17.
 Docker só é necessário para a suíte descartável ou para iniciar o banco local.
 
 ```sh
-npm ci --ignore-scripts
-npm run typecheck
-npm test
-npm run test:integration
-npm run build
-npm run test:e2e
-npm run format:check
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+ppnpm test:integration
+pnpm build
+ppnpm test:e2e
+pnpm format:check
 ```
 
 A integração cria um container exclusivo, com imagem PostgreSQL fixada por digest,
@@ -42,13 +42,13 @@ docker run --rm --detach --name levi-local \
 export LEVI_DATABASE_URL='postgresql://levi_local:synthetic-only@127.0.0.1:54329/levi_local'
 export LEVI_LOCAL_DATABASE=1
 export LEVI_AUTH_SECRET="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
-npm run db:migrate
-npm run dev
+pnpm db:migrate
+pnpm dev
 ```
 
-`npm run dev` inicia Vite em `http://localhost:5173` e a API em
+`pnpm dev` inicia Vite em `http://localhost:5173` e a API em
 `127.0.0.1:3000`. O proxy preserva cookies e a origem de navegador.
-`npm start` executa o build já produzido e serve SPA/API juntos em
+`pnpm start` executa o build já produzido e serve SPA/API juntos em
 `http://localhost:3000`, com o servidor ligado somente a `127.0.0.1`.
 `LEVI_PORT` altera a porta da API; `LEVI_PUBLIC_ORIGIN` permite somente origem HTTP
 local e é configurada pelo comando de desenvolvimento. Banco remoto é recusado
@@ -61,7 +61,7 @@ O transporte local grava e-mails em `.local/mail/`, com diretório privado e arq
 credenciais temporárias e não aparecem nos logs. Remova os arquivos locais após
 o exercício. Encerre o banco sintético com `docker stop levi-local`.
 
-Migrations não são importadas pelo servidor. `npm run db:migrate` é uma ação
+Migrations não são importadas pelo servidor. `pnpm db:migrate` é uma ação
 explícita e exige `LEVI_LOCAL_DATABASE=1`. `db:generate` apenas gera SQL/snapshot a
 partir do schema; não altera banco. A aplicação não verifica/aplica automaticamente
 migrations ao iniciar, fazer build ou atualizar dependências. GitHub Actions

@@ -2,13 +2,15 @@
 
 ## Responsabilidades e referência
 
-- Levi é a aplicação de gestão de igrejas. Foundation é a base tecnológica
-  compartilhada, mantida em repositório independente.
+- Levi é a aplicação de gestão de igrejas. Foundation é o monorepo
+  principal; esta cópia vive em `apps/levi` e consome seus pacotes pelo workspace.
+  O repositório Levi original permanece como origem operacional até transferência
+  explicitamente autorizada.
 - Consulte o [README](README.md) para o estágio atual e
   [Decisões do MVP](docs/decisoes-mvp.md) para o escopo vigente. Recomendações e
   relatos históricos não constituem aprovação de funcionalidades.
 - Preserve trabalho preexistente e mantenha as mudanças no escopo autorizado.
-  Esta preparação documental não autoriza implementar o MVP.
+  Incorporação de código/CI não autoriza deploy, migrations persistentes ou publicação.
 
 ## Reutilização e organização
 
@@ -21,8 +23,9 @@
 - Mantenha limites claros entre interface, contratos/validação, regras de negócio
   e persistência. Evite dependências de servidor na interface, abstrações
   especulativas e pacotes sem necessidade concreta.
-- Não replique a estrutura pnpm/Turborepo, o exemplo D1, os workflows ou a
-  configuração operacional do Foundation como requisitos do Levi.
+- Use pnpm/lockfile e CI da raiz. Preserve configurações TypeScript, banco PG e
+  runtime próprios; não copie o D1, credenciais ou publicadores do Links.
+- Workflows sob `apps/levi/.github` são históricos, sem execução ativa no Foundation.
 
 ## Convenções e manutenção
 
@@ -64,7 +67,7 @@
 - Valide proporcionalmente à mudança e registre limitações. Para documentação,
   confira diffs, links e coerência com as decisões. Não invente comandos de build
   ou teste enquanto não houver aplicação e scripts correspondentes.
-- Em implementação futura autorizada, priorize testes de contrato e regras,
+- Ao implementar mudanças autorizadas, priorize testes de contrato e regras,
   integração PostgreSQL real para isolamento/integridade/transações e E2E dos
   fluxos críticos, com acessibilidade e uso móvel. Use dados sintéticos e serviços
   isolados; mocks não comprovam garantias de banco.

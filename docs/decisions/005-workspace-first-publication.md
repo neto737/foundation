@@ -12,12 +12,12 @@ workspace do Foundation.
 ## Decisão
 
 O consumo entre aplicações, exemplos, tooling e pacotes usa dependências
-`workspace:` no monorepo Foundation. O workspace aceita `apps/*` para a futura
-incorporação do Levi; Links permanece em `examples/links`. Nenhum código Levi
-foi incorporado nesta preparação. Os nove pacotes reutilizáveis em `packages/*`
-são preparados para npmjs.com público no scope do **usuário `t00ls-dev`**, sem
-organização npm, publicação dupla ou agregador. O histórico privado GitHub
-permanece intacto. A preparação não altera o deploy DEV nem o gerador existente.
+`workspace:` no monorepo Foundation. O workspace aceita `apps/*` e o Levi está
+incorporado em `apps/levi`, sem transferência de deploy; Links permanece em
+`examples/links`. Os nove pacotes reutilizáveis em `packages/*` são preparados
+para npmjs.com público no scope do **usuário `t00ls-dev`**, sem organização npm,
+publicação dupla ou agregador. O histórico privado GitHub permanece intacto. A
+preparação não altera o deploy DEV nem o gerador existente.
 
 Publicação npm é opcional para o consumo interno. Plano de versões de
 componentes e plano npm são distintos; este último continua restrito aos nove

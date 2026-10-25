@@ -1,5 +1,12 @@
 # Deploy DEV público
 
+Este documento descreve o fluxo operacional do repositório original
+`t00ls-dev/levi`, preservado pela incorporação. A cópia em `apps/levi` não possui
+publicador ativo no Foundation; os workflows abaixo são referência histórica.
+Consulte o [README](../README.md) para instalação/CI do workspace. O estado
+documentado de schema, ACLs e habilitação organizacional deve ser reconfirmado
+antes de qualquer transferência operacional autorizada.
+
 O Levi publica DEV em acesso público em `https://levi.t00ls.dev`, sem Cloudflare Access
 ou lista de destinatários. Cadastro continua por e-mail verificado, primeira senha
 e provisionamento de organização/primeira igreja. Dados privados exigem sessão,
