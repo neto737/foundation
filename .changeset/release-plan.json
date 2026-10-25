@@ -1,66 +1,22 @@
 {
-  "baseSha": "09e61bbb2333bd7e8720f74cb516949f3c275a8c",
+  "baseSha": "e250c1663f1b73e969c86ee20a82cc1d137c1e2c",
   "changesets": [
     {
-      "hash": "52672bfeec2e38b82ce5c324b440b1a0aeafb8242bbdffa64107c32fc181428b",
-      "id": "auth-password-failure-order"
-    },
-    {
-      "hash": "98d283599220ba114767ed9044c5327ed80a6567daa133d87cecfee7d226e8c6",
-      "id": "cloudflare-workers-types-update"
-    },
-    {
-      "hash": "801f9695ecace5a7b6403d6ef574fa64ed45abcb90e514b87c8439b4af22fce1",
-      "id": "config-zod-update"
+      "hash": "1acf03eef0142b850c2c4b6e12f078e83833afea32c14b27b215fb66300c64ac",
+      "id": "strict-turnstile-verification"
     }
   ],
   "cliVersion": "3.0.3",
   "format": 1,
   "packages": [
     {
-      "changesets": ["cloudflare-workers-types-update"],
-      "dependencies": [],
-      "name": "@t00ls-dev/audit",
-      "oldVersion": "1.0.0",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "1.0.1"
-    },
-    {
-      "changesets": ["auth-password-failure-order"],
+      "changesets": ["strict-turnstile-verification"],
       "dependencies": [],
       "name": "@t00ls-dev/auth",
-      "oldVersion": "0.3.0",
+      "oldVersion": "0.3.1",
       "reason": "changeset",
       "type": "patch",
-      "version": "0.3.1"
-    },
-    {
-      "changesets": ["config-zod-update"],
-      "dependencies": [],
-      "name": "@t00ls-dev/config",
-      "oldVersion": "0.1.2",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "0.1.3"
-    },
-    {
-      "changesets": ["cloudflare-workers-types-update"],
-      "dependencies": [],
-      "name": "@t00ls-dev/db",
-      "oldVersion": "1.0.0",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "1.0.1"
-    },
-    {
-      "changesets": ["cloudflare-workers-types-update"],
-      "dependencies": [],
-      "name": "@t00ls-dev/tenant",
-      "oldVersion": "1.0.0",
-      "reason": "changeset",
-      "type": "patch",
-      "version": "1.0.1"
+      "version": "0.3.2"
     }
   ],
   "repository": "t00ls-dev/foundation"
