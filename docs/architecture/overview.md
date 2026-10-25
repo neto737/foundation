@@ -3,9 +3,23 @@
 ## Objetivo
 
 O `foundation` fornece pacotes, convenções e ferramentas compartilhadas para
-apps da `t00ls-dev`. Os produtos vivem em repositórios independentes, possuem
-deploy e ciclo de atualização próprios e não colocam regras de negócio neste
-monorepo.
+apps da `t00ls-dev` e será o monorepo principal. O workspace aceita `apps/*`,
+preservando `packages/*`, `tooling/*`, `examples/*` e `tests/*`. Links permanece
+em `examples/links`; a futura incorporação do Levi em `apps/levi` não faz parte
+desta preparação. Seu licenciamento MIT foi aprovado para essa incorporação,
+preservando avisos e atribuições conforme [Licenças](../runbooks/licensing.md).
+
+Aplicações mantêm domínio, schema/migrations, deploy e recursos operacionais
+próprios. Compartilham mecanismos pelos exports dos pacotes, com dependências
+`workspace:*`, sem imports entre implementações de aplicações. Pacotes não
+dependem de aplicações. A estrutura deve permitir extração futura com seu fecho
+de dependências, sem exigir banco ou implantação conjunta.
+
+O planejamento de versões já distingue componentes privados e o subconjunto npm
+publicável. A automação de versões privadas continua desabilitada; o
+[runbook](../runbooks/packages.md#planos-de-componentes-e-publicação) registra
+os limites da preparação. Release de componente, publicação npm e deploy são
+operações distintas, com versões independentes.
 
 O projeto é Cloudflare-first, internal-first, modular e seguro por padrão. Os
 pacotes podem ser reutilizados por consumidores autorizados, mas não há

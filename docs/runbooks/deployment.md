@@ -3,6 +3,13 @@
 Cada produto possui deploy independente. O Foundation valida somente o fluxo DEV
 usando `examples/links`.
 
+A política aprovada exige migrations persistentes em operação independente e
+autorizada. O job deploy já verifica schema com D1 Read, sem credencial
+migradora; o workflow completo ainda coordena fases modificadoras em outros
+jobs. Esse desacoplamento operacional permanece pendente pelos motivos em
+[Migrations](migrations.md#política-aprovada-e-desacoplamento-pendente). Os
+workflows/publicadores não foram alterados na preparação de `apps/*`.
+
 ## DEV automático
 
 Na verificação de 16/10/2026, o workflow `Deploy DEV` está habilitado e a

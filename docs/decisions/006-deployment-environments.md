@@ -16,13 +16,21 @@ deploy automático do exemplo no ambiente Cloudflare DEV. O Worker usa o Custom
 Domain `foundation.t00ls.dev`, sem `*.workers.dev` nem Preview URLs. O
 Foundation não provisiona nem implanta um ambiente PROD.
 
-O D1 e os secrets são exclusivos de DEV. Migrations têm ciclo próprio,
-desacoplado de CI, deploy e inicialização. DEV coordena
-`expand → deploy → [backfill] → contract` com fases em workflow próprio,
-metadata versionada e journal nativo. Deploy verifica pré-condições read-only e
-termina com smoke Worker/SHA/D1. Contract exige evidências atuais; tempo é
-proteção adicional, inicialmente zero. Dirty exige recuperação explícita. Falhas
-de schema preferem forward-fix.
+O D1 e os secrets são exclusivos de DEV. A política aprovada exige que
+migrations persistentes tenham operação independente e autorizada, sem execução
+automática em CI, deploy ou inicialização. Replays sintéticos isolados continuam
+permitidos como testes. O coordenador existente ainda precisa ser desacoplado:
+DEV coordena `expand → deploy → [backfill] → contract` com fases em workflow
+próprio, metadata versionada e journal nativo. Deploy verifica pré-condições
+read-only e termina com smoke Worker/SHA/D1. Contract exige evidências atuais;
+tempo é proteção adicional, inicialmente zero. Dirty exige recuperação
+explícita. Falhas de schema preferem forward-fix.
+
+A preparação do workspace não muda esse coordenador. O
+[bloqueio de autorização e evidência](../runbooks/migrations.md#política-aprovada-e-desacoplamento-pendente)
+precisa ser resolvido antes de alterar seus gatilhos e fases, sem interromper
+deploys por uma adaptação parcial. A descrição operacional acima não equivale a
+declarar concluída a política de desacoplamento.
 
 ## Consequências
 

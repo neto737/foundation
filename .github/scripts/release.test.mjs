@@ -2128,6 +2128,26 @@ test("independent planning uses original nine-package PATCH changeset and accept
   );
   validateRecordPlan(structuredClone(expected), expected);
 });
+test("planning recalculates legacy bases and discovers private apps without changing the npm record", async () => {
+  const current = await recordFromBase(baseSnapshot());
+  const legacy = await recordFromBase(
+    baseSnapshot({
+      "pnpm-workspace.yaml":
+        "packages:\n  - packages/*\n  - tooling/*\n  - examples/*\n  - tests/*\n",
+    }),
+  );
+  assert.deepEqual(legacy, current);
+  const withApp = await recordFromBase(
+    baseSnapshot({
+      "apps/pilot/package.json": JSON.stringify({
+        name: "pilot",
+        version: "0.1.0",
+        private: true,
+      }),
+    }),
+  );
+  assert.deepEqual(withApp, current);
+});
 test("regression: correct PATCH hash and bot author/parent cannot authorize access-only major", async () => {
   const expected = await recordFromBase(baseSnapshot());
   const forged = structuredClone(expected);

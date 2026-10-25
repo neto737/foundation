@@ -1,10 +1,36 @@
 # Migrations
 
-**Migrations são desacopladas de CI, deploy e inicialização.** Cada aplicação é
-dona do schema composto e histórico. Pacotes exportam schemas, não aplicam SQL
-no banco de consumidores. CI valida em bancos descartáveis; deploy publica
-código compatível, sem executar migrations. Coordenação não funde essas
-operações.
+Cada aplicação é dona do schema composto e histórico. Pacotes exportam schemas,
+não aplicam SQL no banco de consumidores. Os SQLs, journals, hashes e
+validadores existentes permanecem preservados.
+
+## Política aprovada e desacoplamento pendente
+
+Migrations em bancos persistentes exigem operação independente e autorizada; não
+devem executar automaticamente em CI, deploy ou startup. Replays em bancos
+sintéticos, descartáveis e isolados continuam permitidos nos testes, sem
+credenciais ou recursos persistentes. O deploy deve somente verificar
+precondições de schema com leitura e publicar código compatível.
+
+**O coordenador operacional atual ainda não atende integralmente essa
+política.** Embora seu job `deploy` já use D1 Read e não receba a credencial
+migradora, o workflow `Deploy DEV` chama automaticamente
+expand/backfill/contract em outros jobs. A preparação do monorepo não alterou
+esses workflows nem executou SQL persistente.
+
+O bloqueio é concreto: `authorizedContext` aceita as fases no contexto de
+`Deploy DEV`, e `deploymentEvidence` associa backfill/contract ao job deploy da
+mesma execução/tentativa do Actions, além da versão Cloudflare ativa e do
+health. Apenas trocar o gatilho por manual ou remover os jobs quebraria esse
+contrato de autorização, evidência e serialização. Não foi introduzida uma
+separação parcial ou um novo executor como atalho.
+
+Uma etapa operacional própria precisa adaptar e validar o vínculo com o deploy
+autorizado, a execução manual das fases e seus retries/recuperação, preservando
+CI/SHA, journal, provas de contract e a fila compartilhada. Também precisa
+reconfirmar o estado persistente do alvo antes da transição. Até essa validação,
+os detalhes abaixo descrevem o fluxo existente, não uma comprovação do
+desacoplamento aprovado. A preparação não autoriza acionar esse fluxo.
 
 ## Contrato de evolução
 

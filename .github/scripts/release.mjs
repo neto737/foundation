@@ -52,6 +52,7 @@ import {
   recordFromBase,
   contentBinding,
   treeAtCommit,
+  workspaceManifests,
 } from "./release-planning.mjs";
 import { approvedCi } from "./ci-evidence.mjs";
 import {
@@ -248,22 +249,7 @@ async function provenance(value) {
 const jsonFrom = (buffer) => JSON.parse(buffer.toString());
 
 function manifests() {
-  const result = [{ path: ".", pkg: json("package.json") }];
-  // Reject changed workspace globs rather than overlooking a new publishable directory.
-  assert.equal(
-    readFileSync("pnpm-workspace.yaml", "utf8").split("\n\n")[0],
-    "packages:\n  - packages/*\n  - tooling/*\n  - examples/*\n  - tests/*",
-  );
-  for (const group of ["packages", "tooling", "examples", "tests"]) {
-    for (const dir of readdirSync(group, { withFileTypes: true }).filter(
-      (entry) => entry.isDirectory(),
-    )) {
-      const path = `${group}/${dir.name}`;
-      if (existsSync(`${path}/package.json`))
-        result.push({ path, pkg: json(`${path}/package.json`) });
-    }
-  }
-  return result;
+  return workspaceManifests();
 }
 
 function sourceGates(record) {

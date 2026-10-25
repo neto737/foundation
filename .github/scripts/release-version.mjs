@@ -10,6 +10,7 @@ import {
   repository,
   shaPattern,
 } from "./release-core.mjs";
+import { workspaceManifests } from "./release-planning.mjs";
 
 // Invoked ONLY by the Changesets Action version-script. Tests do not invoke
 // version, and publish/audit never call this script.
@@ -35,14 +36,14 @@ try {
     stdio: "inherit",
   });
   const status = JSON.parse(readFileSync(output, "utf8"));
+  const manifests = new Map(
+    workspaceManifests().map(({ pkg }) => [pkg.name, pkg]),
+  );
   const record = recordFromStatus(status, {
     baseSha: process.env.GITHUB_SHA,
     cliVersion,
     changesetBytes: (id) => readFileSync(`.changeset/${id}.md`),
-    manifestByName: (name) =>
-      JSON.parse(
-        readFileSync(`packages/${name.split("/")[1]}/package.json`, "utf8"),
-      ),
+    manifestByName: (name) => manifests.get(name),
   });
   execFileSync("pnpm", ["exec", "changeset", "version"], { stdio: "inherit" });
   writeFileSync(".changeset/release-plan.json", canonical(record) + "\n");

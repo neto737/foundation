@@ -3,6 +3,7 @@ packages:
   - tooling/*
   - examples/*
   - tests/*
+  - apps/*
 
 onlyBuiltDependencies:
   - esbuild
