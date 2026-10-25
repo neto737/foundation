@@ -10,39 +10,57 @@ jobs. Esse desacoplamento operacional permanece pendente pelos motivos em
 [Migrations](migrations.md#política-aprovada-e-desacoplamento-pendente). Os
 workflows/publicadores não foram alterados na preparação de `apps/*`.
 
-## DEV automático
+## DEV manual e reativação pendente
 
-Na verificação de 16/10/2026, o workflow `Deploy DEV` está habilitado e a
-execução automática pós-reativação foi confirmada: o
+O workflow `Deploy DEV` aceita exclusivamente `workflow_dispatch`, com
+`execution_sha` obrigatório igual ao SHA atual de master. A entrada
+`workflow_run` foi removida, e o job `validate` rejeita eventos automáticos,
+incluindo conclusões antigas da CI e suas reexecuções. Os jobs operacionais
+dependem dessa validação e da cadeia de sucesso existente.
+
+Na conferência de 25/10/2026, o workflow remoto permanece `disabled_manually`.
+Esta preparação não o reativa, não executa dispatch e não autoriza deploy ou
+migrations persistentes. Após revisão e integração, a reativação exige
+autorização própria e conferência da definição efetiva em master, CI e ausência
+de operações pendentes; não disparar o ciclo como teste de reativação. Cada
+execução futura também exige autorização específica para o ciclo completo,
+incluindo as fases persistentes. O modo manual não implementa o desacoplamento
+permanente de migrations.
+
+Como registro histórico anterior ao modo manual, em 16/10/2026 a execução
+automática pós-reativação foi confirmada: o
 [run 38788787384](https://github.com/t00ls-dev/foundation/actions/runs/38788787384)
 concluiu com sucesso para o SHA `abe0483d8ef6366b81e5b8d0da0dcd086559451e`, após
 a
 [CI aprovada](https://github.com/t00ls-dev/foundation/actions/runs/38788305767)
 do mesmo SHA. Esse registro não substitui os gates de execuções futuras.
 
-Um push em `master` executa a CI completa. O workflow `Deploy DEV` recebe o SHA
-validado e coordena expand/deploy/backfill/contract em jobs independentes. O job
-de deploy **não aplica migrations**: verifica schema read-only, publica o Worker
-e consulta `/health` no Custom Domain `foundation.t00ls.dev`. O endpoint
-verifica D1 e expõe `X-Foundation-SHA` quando configurado; a versão Cloudflare
-também recebe tag do SHA. O deploy não repete os testes.
+Um push em `master` executa a CI completa, sem iniciar Deploy DEV. Um dispatch
+autorizado recebe o SHA validado e coordena expand/deploy/backfill/contract em
+jobs independentes. O job de deploy **não aplica migrations**: verifica schema
+read-only, publica o Worker e consulta `/health` no Custom Domain
+`foundation.t00ls.dev`. O endpoint verifica D1 e expõe `X-Foundation-SHA` quando
+configurado; a versão Cloudflare também recebe tag do SHA. O deploy não repete
+os testes.
 
-A origem exige repositório e head repository `t00ls-dev/foundation`, evento
-`push` e branch `master`. Antes de instalar dependências do SHA alvo, um
-checkout do SHA confiável do workflow fornece o validador; a API confirma
-identidade/path do workflow CI, run concluído com `success` e job `checks`
-concluído com `success` no mesmo SHA e tentativa. Reruns que alterem a tentativa
-durante a consulta bloqueiam o deploy. O segundo checkout usa somente o SHA
-aprovado pelo validador. PRs/forks e artifacts de CI não fornecem código para o
-deploy privilegiado. Exige master atual no SHA autorizado e revalida cada fase.
-Credenciais Git não persistem nos checkouts; secrets Cloudflare ficam apenas nos
-steps de migration e deploy, não na instalação ou validação. O cache pnpm usa o
-escopo de master do GitHub, sem recuperar caches das refs de PR.
+A evidência da CI exige repositório e head repository `t00ls-dev/foundation`,
+evento `push` e branch `master`; uma CI de PR não a substitui. A entrada do
+deploy exige evento manual no próprio repositório, ref master e SHA exato. Antes
+de instalar dependências do SHA alvo, um checkout do SHA confiável do workflow
+fornece o validador; a API confirma identidade/path do workflow CI, run
+concluído com `success` e job `checks` concluído com `success` no mesmo SHA e
+tentativa. Reruns que alterem a tentativa durante a consulta bloqueiam o deploy.
+O segundo checkout usa somente o SHA aprovado pelo validador. PRs/forks e
+artifacts de CI não fornecem código para o deploy privilegiado. Exige master
+atual no SHA autorizado e revalida cada fase. Credenciais Git não persistem nos
+checkouts; secrets Cloudflare ficam apenas nos steps de migration e deploy, não
+na instalação ou validação. O cache pnpm usa o escopo de master do GitHub, sem
+recuperar caches das refs de PR.
 
 O workflow aguarda a conclusão da CI, incluindo Version Packages. Falha no
 versionamento bloqueia o deploy mesmo se `checks` passou; o SHA permanece
-identificável para investigação. Retry manual do ciclo usa `workflow_dispatch`,
-somente master/SHA atual e CI aprovada; não é atalho para código de PR.
+identificável para investigação. O ciclo manual usa `workflow_dispatch`, somente
+master/SHA atual e CI aprovada; não é atalho para código de PR.
 
 Uma falha de migration, deploy ou health check encerra o workflow com erro.
 `DEV_HEALTH_URL` deve conter `https://foundation.t00ls.dev`; o smoke SHA/D1 é

@@ -28,8 +28,9 @@ Os **nove pacotes oficiais estão publicados no npm**. O repositório inclui
 [Links](examples/links/README.md), uma biblioteca privada de bookmarks que
 demonstra a integração dos pacotes. O projeto está em evolução; consulte o
 [estado atual](docs/project-status.md) para entregas e pendências. O exemplo
-possui deploy automático somente em DEV; aplicações consumidoras definem seus
-próprios ambientes.
+possui fluxo de deploy manual somente em DEV, ainda suspenso; aplicações
+consumidoras definem seus próprios ambientes. Reativação e execução exigem
+autorizações posteriores, conforme o [runbook](docs/runbooks/deployment.md).
 
 O Foundation é a base principal da consolidação em monorepo. O workspace já
 aceita `apps/*`; a incorporação futura do Levi em `apps/levi` ainda não ocorreu.

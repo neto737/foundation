@@ -19,16 +19,18 @@ equivalentes com valores reais nunca devem ser versionados.
 
 ## DEV
 
-DEV recebe deploy automático depois de uma CI verde em `master`. Ele possui
-Worker, D1 e secrets próprios e usa `foundation.t00ls.dev` como Custom Domain. O
-endereço `*.workers.dev` e as Preview URLs estão desabilitados. A configuração
-operacional do GitHub pertence ao **Environment `dev`**, associado ao job
-`deploy`, ao job `migration` do reusable workflow e ao job `recover`. `validate`
-consulta apenas evidência GitHub; ele e a CI não usam esse Environment.
+O fluxo de deploy DEV é exclusivamente manual e exige CI verde do SHA atual de
+`master`. Ele possui Worker, D1 e secrets próprios e usa `foundation.t00ls.dev`
+como Custom Domain. O endereço `*.workers.dev` e as Preview URLs estão
+desabilitados. A configuração operacional do GitHub pertence ao **Environment
+`dev`**, associado ao job `deploy`, ao job `migration` do reusable workflow e ao
+job `recover`. `validate` consulta apenas evidência GitHub; ele e a CI não usam
+esse Environment.
 
-Na verificação de 11/10/2026, o workflow `Deploy DEV` está habilitado. A
-primeira execução automática após a reativação ainda está pendente de
-observação.
+Na verificação de 25/10/2026, o workflow `Deploy DEV` permanece
+`disabled_manually`. Esta preparação não autoriza reativação ou dispatch; veja
+[Deploy](deployment.md#dev-manual-e-reativação-pendente). Não há mudança no
+Environment, em suas proteções ou credenciais nesta etapa.
 
 ### Provisionamento no GitHub
 

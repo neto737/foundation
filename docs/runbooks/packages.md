@@ -79,7 +79,8 @@ para novas versões. Cada operação exige autorização específica do mantened
    `.changeset/release-plan.json`. Se a CI do PR bot exigir intervenção humana,
    revise sua origem antes de autorizar o workflow; aprovação de CI não é
    aprovação npm. Integre somente o PR de versões validado e aguarde CI/master e
-   DEV do merge.
+   DEV do merge. O ciclo DEV agora é manual e depende de reativação e
+   autorização próprias; não o acione implicitamente como parte da publicação.
 2. Registre `release_pr` e seu merge imutável `release_sha`; obtenha o SHA atual
    de master como `execution_sha`. Confira owner/admin, CI exata, ausência de
    operação concorrente e o registry dos nove pacotes. Confirme no npm a conta,

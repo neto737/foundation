@@ -921,15 +921,15 @@ test("DEV credentials resolve in the actual environment jobs with explicit same-
   // cannot reach operational jobs through contribution CI or a public dispatch.
   assert.deepEqual(Object.keys(migration.on), ["workflow_call"]);
   assert.deepEqual(Object.keys(recovery.on), ["workflow_dispatch"]);
-  assert(!deploy.on.pull_request && !deploy.on.pull_request_target);
+  assert.deepEqual(Object.keys(deploy.on), ["workflow_dispatch"]);
   assert(
     deploy.jobs.validate.if.includes(
-      "github.event.workflow_run.event == 'push'",
+      "github.event_name == 'workflow_dispatch'",
     ),
   );
   assert(
     deploy.jobs.validate.if.includes(
-      "github.event.workflow_run.head_repository.full_name",
+      "github.repository == 't00ls-dev/foundation'",
     ),
   );
   assert(

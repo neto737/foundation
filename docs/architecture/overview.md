@@ -151,8 +151,10 @@ teste antecipado; a publicação existente não comprova esse fluxo. Veja o
 O exemplo do Foundation possui apenas `local` e `dev`. Aplicações consumidoras
 definem seus próprios ambientes DEV e PROD com recursos e secrets separados.
 
-- O exemplo recebe deploy DEV automático após integração e gates de qualidade,
-  no Custom Domain `foundation.t00ls.dev`.
+- O exemplo possui fluxo de deploy DEV exclusivamente manual, condicionado à CI
+  aprovada do SHA atual de master, no Custom Domain `foundation.t00ls.dev`. O
+  workflow permanece suspenso até autorização de reativação; habilitar não
+  autoriza sua execução.
 - O Foundation não possui deploy PROD.
 - migrations são executadas apenas no ambiente alvo e quando forem seguras para
   o fluxo.

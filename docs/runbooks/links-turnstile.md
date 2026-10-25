@@ -41,7 +41,7 @@ Nenhuma chave real foi configurada nesta PR. Para ativar DEV, provisionar um
 widget com hostname DEV, declarar sua site key nas vars versionadas apropriadas
 e instalar o secret por operação autorizada separada. Não reutilizar chaves de
 produção/local; usar chaves oficiais de teste no smoke local autorizado. O
-Foundation não possui PROD. Merge/deploy automático e smoke remoto exigem
+Foundation não possui PROD. Merge, deploy manual e smoke remoto exigem
 coordenação posterior; não fazer deploy/release/publicação ou manipular Version
 Packages para validar este recurso.
 
