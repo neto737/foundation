@@ -1,0 +1,4 @@
+# Somente nomes; configuração vazia falha fechada. Não use credenciais reais em testes.
+LEVI_AUTH_SECRET=""
+RESEND_API_KEY=""
+LEVI_EMAIL_FROM=""

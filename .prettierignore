@@ -5,3 +5,9 @@ node_modules
 pnpm-lock.yaml
 # Preserve third-party Agent Skills exactly as provided upstream.
 .agents/skills
+
+# Artefatos sintéticos e configurações temporárias do Levi.
+apps/levi/.local
+
+# Metadados gerados pelo Drizzle; preservar bytes e histórico originais.
+apps/levi/migrations/meta

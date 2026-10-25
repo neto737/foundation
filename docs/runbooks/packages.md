@@ -67,6 +67,14 @@ As validações de distribuição e os controles de audit/approve/provenance/res
 permanecem necessários para as publicações externas opcionais. O PR Version
 Packages existente deve continuar sendo revisado pelo seu fluxo normal.
 
+A incorporação do Levi preserva `levi@0.1.0` privado e não cria changeset
+privado. A publicação de `auth@0.3.2` do #146 foi adiada por decisão do
+mantenedor. A futura integração da incorporação altera `apps/levi`, lockfile e
+CI, que são protected inputs; o snapshot antigo poderá deixar de ser publicável
+pelo fluxo normal na nova master. Essa decisão não altera o record, exceções,
+workflow ou qualquer autorização de Release. Uma solução futura exige revisão
+própria; consumo interno workspace não depende dessa publicação.
+
 ## Roteiro operacional para próximas releases
 
 Este é o **fluxo normal**, com `distribution=release`. Bootstrap e os modos

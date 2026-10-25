@@ -5,10 +5,9 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: entrada manual do Deploy DEV, preparação de workspace e
-planejamento de versões em 25 de outubro de 2026; publicação npm em 22 de
-outubro de 2026. Registros operacionais históricos permanecem identificados nas
-respectivas seções e runbooks.
+Última revisão de código: incorporação do Levi e CI conjunta em 25 de outubro de
+2026; publicação npm em 22 de outubro de 2026. Registros operacionais históricos
+permanecem identificados nas respectivas seções e runbooks.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
@@ -19,10 +18,12 @@ existente no GitHub é `dev`; não há Environment nem operação PROD no Founda
 
 O foundation fornece pacotes, convenções e ferramentas reutilizáveis para apps
 da `t00ls-dev` e será a base principal do monorepo. O workspace está preparado
-para `apps/*`, sem incorporar aplicativos nesta etapa. Links permanece em
-`examples/links`; Levi será incorporado futuramente em `apps/levi`, sob MIT com
-preservação das atribuições. Aplicações mantêm versões, deploys, bancos e
-recursos próprios, compartilhando contratos públicos dos pacotes via workspace.
+para `apps/*`, incluindo o Levi em `apps/levi`, sob MIT com histórico subtree
+sem squash e preservação das atribuições. Links permanece em `examples/links`. A
+incorporação não transfere o deploy do Levi; o repositório original permanece
+independente e operacionalmente inalterado. Aplicações mantêm versões, deploys,
+bancos e recursos próprios, compartilhando contratos públicos dos pacotes via
+workspace.
 
 A v0.1 valida um caminho completo e pequeno:
 
@@ -42,6 +43,11 @@ da primeira entrega.
 
 ### Fundação e tooling
 
+- Levi privado em `apps/levi`, com sete dependências workspace, build ordenado,
+  validação PG/ACLs/Worker/E2E em CI e domínio/schema/recursos independentes.
+  Origem, SHAs e limites operacionais estão no [README](../apps/levi/README.md).
+  Versionamento privado automático e transferência de deploy seguem pendentes.
+
 - Workspace pnpm com Turborepo e Node.js `>=22.22.0`.
 - TypeScript strict compartilhado em `@t00ls-dev/typescript-config`.
 - ESLint compartilhado em `@t00ls-dev/eslint-config`.
@@ -54,7 +60,8 @@ da primeira entrega.
   público continua bloqueando planos privados até sua ativação futura revisada.
 - Correções locais de dependências: Zod `4.6.7` somente nas cadeias Better Auth
   e Core `1.7.10`, e Undici `7.30.1` na cadeia Miniflare. Overrides de raiz não
-  corrigem lockfiles de consumidores externos; o Levi não foi alterado.
+  corrigem lockfiles de consumidores externos; a cópia Levi incorporada usa os
+  overrides raiz, preservando o lockfile do repositório original.
 - CI integral e gates existentes preservados; testes de contrato exercitam
   aplicativos sintéticos, componentes privados e dependências transitivas com
   `^build`, sem seleção agressiva ou mudança de publicador.

@@ -26,17 +26,20 @@ com D1 como preset inicial e suporte a PostgreSQL via Drizzle.
 
 Os **nove pacotes oficiais estão publicados no npm**. O repositório inclui
 [Links](examples/links/README.md), uma biblioteca privada de bookmarks que
-demonstra a integração dos pacotes. O projeto está em evolução; consulte o
-[estado atual](docs/project-status.md) para entregas e pendências. O exemplo
-possui fluxo de deploy manual somente em DEV, ainda suspenso; aplicações
-consumidoras definem seus próprios ambientes. Reativação e execução exigem
-autorizações posteriores, conforme o [runbook](docs/runbooks/deployment.md).
+demonstra a integração dos pacotes. Inclui também o [Levi](apps/levi/README.md),
+aplicação privada de gestão de igrejas com domínio e banco próprios. O projeto
+está em evolução; consulte o [estado atual](docs/project-status.md) para
+entregas e pendências. O exemplo possui fluxo de deploy manual somente em DEV;
+cada execução exige autorização específica, conforme o
+[runbook](docs/runbooks/deployment.md). Aplicações consumidoras definem seus
+próprios ambientes e controladores de deploy.
 
 O Foundation é a base principal da consolidação em monorepo. O workspace já
-aceita `apps/*`; a incorporação futura do Levi em `apps/levi` ainda não ocorreu.
-Links permanece em `examples/links`. Aplicações consomem pacotes com
-`workspace:*`, mantendo versões, deploys e recursos próprios. Publicar no npm
-continua sendo uma operação opcional e separada do consumo interno; consulte
+aceita `apps/*`; o Levi está incorporado em `apps/levi` com histórico
+preservado, sem transferência operacional. Links permanece em `examples/links`.
+Aplicações consomem pacotes com `workspace:*`, mantendo versões, deploys e
+recursos próprios. Publicar no npm continua sendo uma operação opcional e
+separada do consumo interno; consulte
 [versionamento e publicação](docs/runbooks/packages.md#planos-de-componentes-e-publicação).
 
 ## Principais funcionalidades

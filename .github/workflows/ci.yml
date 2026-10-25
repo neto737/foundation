@@ -36,13 +36,14 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Unitários
         run:
-          pnpm test -- --reporter=default
+          pnpm exec turbo run test --filter='!levi' -- --reporter=default
           --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"
         env:
           GITHUB_TEST_SUITE: Unitários
       - name: Integração
         run:
-          pnpm test:integration -- --reporter=default
+          pnpm exec turbo run test:integration --filter='!levi' --
+          --reporter=default
           --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"
         env:
           GITHUB_TEST_SUITE: Integração
@@ -67,7 +68,9 @@ jobs:
           pnpm --filter @t00ls-dev/example-links exec playwright install
           --with-deps chromium
 
-      - run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
+      - run:
+          pnpm exec turbo run test:e2e --filter='!levi' -- --shard=${{
+          matrix.shard }}/4
 
   distribution:
     runs-on: ubuntu-latest
@@ -84,9 +87,45 @@ jobs:
         env:
           DISTRIBUTION_ATTEMPT: ${{ matrix.attempt }}
 
+  levi-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_WRITE_LOGS: "false"
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec turbo run build --filter=levi
+      - run: pnpm --filter levi test
+      - run: pnpm --filter levi worker:build
+      # Somente containers PostgreSQL sintéticos, sem credenciais persistentes.
+      - run: pnpm --filter levi test:integration
+      - run: pnpm --filter levi test:integration --runtime-acls
+      - run: pnpm --filter levi test:worker --runtime-acls
+
+  levi-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_WRITE_LOGS: "false"
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec turbo run build --filter=levi
+      - run: pnpm --filter levi exec playwright install --with-deps chromium
+      - run: pnpm --filter levi test:e2e --runtime-acls
+
   checks:
     if: always()
-    needs: [static, tests, e2e, distribution]
+    needs: [static, tests, e2e, distribution, levi-tests, levi-e2e]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

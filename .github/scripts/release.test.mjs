@@ -2808,19 +2808,32 @@ const ciSetup = () =>
   parse(readFileSync(".github/actions/setup/action.yml", "utf8"));
 const currentCi = () => parse(readFileSync(".github/workflows/ci.yml", "utf8"));
 const validationCommands = {
-  static: ["pnpm format:check", "pnpm lint", "pnpm typecheck"],
-  tests: [
-    'pnpm test -- --reporter=default --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"',
-    'pnpm test:integration -- --reporter=default --reporter="$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs"',
+  "static": ["pnpm format:check", "pnpm lint", "pnpm typecheck"],
+  "tests": [
+    "pnpm exec turbo run test --filter='!levi' -- --reporter=default --reporter=\"$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs\"",
+    "pnpm exec turbo run test:integration --filter='!levi' -- --reporter=default --reporter=\"$GITHUB_WORKSPACE/.github/scripts/vitest-summary.mjs\"",
     "pnpm build",
     "pnpm test:release",
     "pnpm test:migrations",
   ],
-  e2e: [
+  "e2e": [
     "pnpm --filter @t00ls-dev/example-links exec playwright install --with-deps chromium",
-    "pnpm test:e2e -- --shard=${{ matrix.shard }}/4",
+    "pnpm exec turbo run test:e2e --filter='!levi' -- --shard=${{ matrix.shard }}/4",
   ],
-  distribution: ["pnpm test:distribution"],
+  "distribution": ["pnpm test:distribution"],
+  "levi-tests": [
+    "pnpm exec turbo run build --filter=levi",
+    "pnpm --filter levi test",
+    "pnpm --filter levi worker:build",
+    "pnpm --filter levi test:integration",
+    "pnpm --filter levi test:integration --runtime-acls",
+    "pnpm --filter levi test:worker --runtime-acls",
+  ],
+  "levi-e2e": [
+    "pnpm exec turbo run build --filter=levi",
+    "pnpm --filter levi exec playwright install --with-deps chromium",
+    "pnpm --filter levi test:e2e --runtime-acls",
+  ],
 };
 
 // Compare executable YAML objects, not text occurrences. Any new execution
@@ -2844,6 +2857,8 @@ function validateCiStructure(ci, setup) {
     "checks",
     "distribution",
     "e2e",
+    "levi-e2e",
+    "levi-tests",
     "static",
     "tests",
     "version",
@@ -2879,6 +2894,14 @@ function validateCiStructure(ci, setup) {
         DISTRIBUTION_ATTEMPT: "${{ matrix.attempt }}",
       };
     }
+    if (name === "levi-tests" || name === "levi-e2e") {
+      expected["timeout-minutes"] = name === "levi-tests" ? 20 : 15;
+      expected.env = {
+        WRANGLER_WRITE_LOGS: "false",
+        WRANGLER_SEND_METRICS: "false",
+      };
+      expected.steps[0].with["persist-credentials"] = false;
+    }
     assert.deepEqual(jobs[name], expected, `Required validation job: ${name}`);
   }
   assert.deepEqual(jobs.checks, {
@@ -2912,7 +2935,7 @@ function validateCiStructure(ci, setup) {
   const local = JSON.parse(readFileSync("package.json", "utf8")).scripts.check;
   assert.equal(
     local,
-    "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution && pnpm test:release && pnpm test:migrations",
+    "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:distribution && pnpm test:release && pnpm test:migrations && pnpm test:levi:runtime",
   );
 }
 

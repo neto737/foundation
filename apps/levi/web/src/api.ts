@@ -1,0 +1,359 @@
+import {
+  isCivilDate,
+  memberTextLimits,
+  type Member,
+  type MemberInput,
+  type MemberFilters,
+  type MemberPage,
+  type MemberEditInput,
+} from "../../src/member-types.js";
+export type Stage =
+  "email" | "verificar-email" | "senha" | "organizacao" | "concluido";
+export interface NamedItem {
+  id: string;
+  nome: string;
+}
+export interface ChurchItem extends NamedItem {
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+}
+export interface ProvisionInput {
+  organizationName: string;
+  churchName: string;
+  churchAddress?: string | null;
+  churchPhone?: string | null;
+  churchEmail?: string | null;
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+    public readonly retryAt: number | null = null,
+  ) {
+    super(message);
+  }
+}
+// Somente espera de UX em memória; o servidor continua impondo todas as quotas.
+const cooldowns = new Map<string, number>();
+let identityGeneration = 0;
+function category(path: string, method: string): string {
+  if (
+    path === "/api/onboarding/email" ||
+    path === "/api/onboarding/password-email"
+  )
+    return "email";
+  if (path === "/api/auth/sign-in/email") return "login";
+  if (path === "/api/auth/sign-out") return "logout";
+  if (path === "/api/tenant") return "selection";
+  if (method === "POST" && path === "/api/organizations") return "provision";
+  if (path === "/api/onboarding/password") return "password";
+  return method === "GET" ? "read" : "write";
+}
+function retrySeconds(headers: Headers): number {
+  for (const name of ["Retry-After", "X-Retry-After"]) {
+    const value = headers.get(name)?.trim();
+    if (!value) continue;
+    if (/^\d+$/.test(value)) {
+      const seconds = Number(value);
+      if (Number.isSafeInteger(seconds))
+        return Math.max(1, Math.min(seconds, 86_400));
+    } else if (
+      /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)
+    ) {
+      const date = Date.parse(value);
+      if (Number.isFinite(date))
+        return Math.max(
+          1,
+          Math.min(Math.ceil((date - Date.now()) / 1_000), 86_400),
+        );
+    }
+  }
+  return 60;
+}
+function rateLimitError(retryAt: number): ApiError {
+  const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000));
+  return new ApiError(
+    429,
+    "LIMITE_DE_SOLICITACOES",
+    `Muitas solicitações. Tente novamente em ${seconds} ${seconds === 1 ? "segundo" : "segundos"}.`,
+    retryAt,
+  );
+}
+function contractError(): never {
+  throw new ApiError(
+    502,
+    "RESPOSTA_INVALIDA",
+    "Não foi possível confirmar os dados. Tente atualizar novamente.",
+  );
+}
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return contractError();
+  return value as Record<string, unknown>;
+}
+function id(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      value,
+    )
+  )
+    return contractError();
+  return value;
+}
+async function request(
+  path: string,
+  body?: object,
+  key?: string,
+  method?: "PATCH",
+): Promise<unknown> {
+  const requestMethod = method ?? (body ? "POST" : "GET");
+  const generation = identityGeneration;
+  const scope = category(path, requestMethod);
+  const waiting = cooldowns.get(scope);
+  if (waiting && waiting > Date.now()) throw rateLimitError(waiting);
+  cooldowns.delete(scope);
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: requestMethod,
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...(key ? { "Idempotency-Key": key } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch {
+    throw new ApiError(
+      0,
+      "REDE",
+      "Não foi possível confirmar a operação. Verifique sua conexão e consulte o estado antes de tentar novamente.",
+    );
+  }
+  if (response.status === 429) {
+    const retryAt = Date.now() + retrySeconds(response.headers) * 1_000;
+    // Resposta atrasada de uma identidade anterior não limita a nova sessão.
+    if (generation !== identityGeneration) throw rateLimitError(retryAt);
+    cooldowns.set(scope, Math.max(cooldowns.get(scope) ?? 0, retryAt));
+    throw rateLimitError(cooldowns.get(scope)!);
+  }
+  if (
+    response.ok &&
+    [
+      "/api/auth/sign-out",
+      "/api/auth/sign-in/email",
+      "/api/onboarding/password",
+    ].includes(path)
+  ) {
+    identityGeneration++;
+    cooldowns.clear();
+  }
+  const value: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const data =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    throw new ApiError(
+      response.status,
+      typeof data.erro === "string" ? data.erro : "INDISPONIVEL",
+      typeof data.mensagem === "string" && data.mensagem.length < 500
+        ? data.mensagem
+        : "Não foi possível concluir a solicitação. Tente novamente.",
+    );
+  }
+  return record(value);
+}
+function namedItems(list: unknown): NamedItem[] {
+  if (!Array.isArray(list)) return contractError();
+  return list.map((value: unknown) => {
+    const item = record(value);
+    if (
+      typeof item.nome !== "string" ||
+      !item.nome.trim() ||
+      item.nome.length > 160
+    )
+      return contractError();
+    return { id: id(item.id), nome: item.nome };
+  });
+}
+export const api = {
+  async stage(): Promise<Stage> {
+    const { etapa } = record(await request("/api/onboarding"));
+    if (
+      etapa !== "email" &&
+      etapa !== "verificar-email" &&
+      etapa !== "senha" &&
+      etapa !== "organizacao" &&
+      etapa !== "concluido"
+    )
+      return contractError();
+    return etapa;
+  },
+  email: (email: string) => request("/api/onboarding/email", { email }),
+  passwordEmail: () => request("/api/onboarding/password-email", {}),
+  password: (token: string, newPassword: string) =>
+    request("/api/onboarding/password", { token, newPassword }),
+  login: (email: string, password: string) =>
+    request("/api/auth/sign-in/email", { email, password }),
+  logout: () => request("/api/auth/sign-out", {}),
+  async organizations() {
+    return namedItems(
+      record(await request("/api/organizations")).organizations,
+    );
+  },
+  async provision(input: ProvisionInput, key: string) {
+    const result = record(await request("/api/organizations", input, key));
+    return {
+      organizationId: id(result.organizationId),
+      churchId: id(result.churchId),
+    };
+  },
+  select: (organizationId: string) =>
+    request("/api/tenant", { organizationId }),
+  async context() {
+    const data = record(await request("/api/context"));
+    if (data.role !== "admin") return contractError();
+    if (typeof data.membersEnabled !== "boolean") return contractError();
+    return {
+      organizationId: id(data.organizationId),
+      membersEnabled: data.membersEnabled,
+    };
+  },
+  async churches() {
+    const data = record(await request("/api/churches"));
+    return {
+      organizationId: id(data.organizationId),
+      churches: namedItems(data.churches).map((item, index): ChurchItem => {
+        const source = record((data.churches as unknown[])[index]);
+        for (const key of ["address", "phone", "email"])
+          if (source[key] != null && typeof source[key] !== "string")
+            contractError();
+        return {
+          ...item,
+          address: (source.address as string | null) ?? null,
+          phone: (source.phone as string | null) ?? null,
+          email: (source.email as string | null) ?? null,
+        };
+      }),
+    };
+  },
+};
+
+function memberSummary(value: unknown): MemberPage["members"][number] {
+  const data = record(value);
+  if (
+    typeof data.name !== "string" ||
+    !data.name.trim() ||
+    data.name.length > 160 ||
+    typeof data.churchName !== "string" ||
+    !data.churchName.trim() ||
+    (data.status !== "Ativo" && data.status !== "Inativo")
+  )
+    return contractError();
+  return {
+    id: id(data.id),
+    name: data.name,
+    churchId: id(data.churchId),
+    churchName: data.churchName,
+    status: data.status,
+  };
+}
+function memberReceipt(value: unknown) {
+  const data = record(value);
+  return {
+    organizationId: id(data.organizationId),
+    memberId: id(data.memberId),
+  };
+}
+export const memberApi = {
+  async list(filters: MemberFilters = {}): Promise<MemberPage> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters))
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    const data = record(await request(`/api/members?${params}`));
+    if (
+      !Array.isArray(data.members) ||
+      !Number.isInteger(data.page) ||
+      Number(data.page) < 1 ||
+      !Number.isInteger(data.pageSize) ||
+      Number(data.pageSize) < 1 ||
+      Number(data.pageSize) > 100 ||
+      typeof data.hasNext !== "boolean" ||
+      data.members.length > Number(data.pageSize)
+    )
+      return contractError();
+    return {
+      organizationId: id(data.organizationId),
+      members: data.members.map(memberSummary),
+      page: Number(data.page),
+      pageSize: Number(data.pageSize),
+      hasNext: data.hasNext,
+    };
+  },
+  async find(
+    memberId: string,
+  ): Promise<{ organizationId: string; member: Member }> {
+    const data = record(await request(`/api/members/${id(memberId)}`));
+    const value = record(data.member);
+    const summary = memberSummary(value);
+    for (const field of ["birthDate", "joinedOn", "baptismDate"])
+      if (
+        value[field] !== null &&
+        (typeof value[field] !== "string" ||
+          !isCivilDate(value[field] as string))
+      )
+        return contractError();
+    for (const field of ["phone", "email", "address", "churchRole"])
+      if (
+        value[field] !== null &&
+        (typeof value[field] !== "string" ||
+          (value[field] as string).length >
+            memberTextLimits[
+              field as "phone" | "email" | "address" | "churchRole"
+            ])
+      )
+        return contractError();
+    if (
+      !Number.isSafeInteger(value.version) ||
+      Number(value.version) < 1 ||
+      typeof value.createdAt !== "string" ||
+      !Number.isFinite(Date.parse(value.createdAt))
+    )
+      return contractError();
+    return {
+      organizationId: id(data.organizationId),
+      member: {
+        ...summary,
+        birthDate: value.birthDate as string | null,
+        joinedOn: value.joinedOn as string | null,
+        baptismDate: value.baptismDate as string | null,
+        phone: value.phone as string | null,
+        email: value.email as string | null,
+        address: value.address as string | null,
+        churchRole: value.churchRole as string | null,
+        createdAt: value.createdAt,
+        version: Number(value.version),
+      },
+    };
+  },
+  async edit(memberId: string, input: MemberEditInput) {
+    return memberReceipt(
+      await request(`/api/members/${id(memberId)}`, input, undefined, "PATCH"),
+    );
+  },
+  async create(input: MemberInput, key: string) {
+    return memberReceipt(await request("/api/members", input, key));
+  },
+  async recover(key: string) {
+    return memberReceipt(
+      await request(`/api/members/requests/${encodeURIComponent(key)}`),
+    );
+  },
+};
