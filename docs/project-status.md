@@ -5,9 +5,10 @@ Este documento é a fonte de verdade sobre o que existe no
 deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
-Última revisão: preparação de workspace e planejamento de versões em 25 de
-outubro de 2026; publicação npm em 22 de outubro de 2026. Registros operacionais
-históricos permanecem identificados nas respectivas seções e runbooks.
+Última revisão: entrada manual do Deploy DEV, preparação de workspace e
+planejamento de versões em 25 de outubro de 2026; publicação npm em 22 de
+outubro de 2026. Registros operacionais históricos permanecem identificados nas
+respectivas seções e runbooks.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
@@ -30,7 +31,8 @@ A v0.1 valida um caminho completo e pequeno:
 - D1 como preset inicial e PostgreSQL como adapter suportado;
 - Better Auth, e-mail, segurança, tenancy e autorização;
 - gerador de projeto e diagnóstico básico;
-- desenvolvimento local, CI e deploy automático do exemplo somente em DEV.
+- desenvolvimento local, CI e fluxo de deploy manual do exemplo somente em DEV,
+  com reativação e execução ainda não autorizadas nesta preparação.
 
 O projeto é Cloudflare-first e internal-first, sem regras de negócio de um
 produto específico. Providers e capabilities sem consumidor real não fazem parte
@@ -243,12 +245,16 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 - `Release`: somente manual; audit/approve/preflight/publisher verificam pela
   API a CI aprovada do SHA exato, preservando autorização, provenance e checks
   de registry.
-- `Deploy DEV`: inicia após uma CI verde em `master`, faz checkout do SHA
-  validado e coordena expand/deploy/backfill/contract em jobs independentes.
-  Migration DEV é workflow reutilizável; deploy não aplica SQL e verifica
-  `/health` com SHA/D1 obrigatórios. Verifica evento push/master, repositório de
-  origem, identidade do workflow e job aprovado na mesma tentativa. Não repete a
-  suíte de testes. Na verificação de 16/10/2026, a execução automática
+- `Deploy DEV`: aceita somente `workflow_dispatch`, com SHA atual de master e CI
+  push/master aprovada; não recebe mais eventos `workflow_run`. Permanece
+  `disabled_manually` até autorização posterior. A reativação não autoriza um
+  dispatch. Faz checkout do SHA validado e coordena
+  expand/deploy/backfill/contract em jobs independentes. Migration DEV é
+  workflow reutilizável; deploy não aplica SQL e verifica `/health` com SHA/D1
+  obrigatórios. Verifica evento push/master, repositório de origem, identidade
+  do workflow e job aprovado na mesma tentativa. Não repete a suíte de testes.
+  Como registro histórico anterior ao modo manual, em 16/10/2026 a execução
+  automática
   [38788787384](https://github.com/t00ls-dev/foundation/actions/runs/38788787384)
   concluiu com sucesso para o SHA `abe0483d8ef6366b81e5b8d0da0dcd086559451e`,
   após a
@@ -274,7 +280,7 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 
 ### Infraestrutura externa
 
-DEV possui banco, secrets, envio de e-mail e deploy automático validados. O
+DEV possui banco, secrets, envio de e-mail e histórico de deploy validado. O
 Custom Domain `foundation.t00ls.dev` responde ao smoke em `/health` com o Worker
 e o D1 operacionais. `DEV_HEALTH_URL` está configurado no GitHub; `BASE_URL` e
 `EMAIL_FROM` estão declarados em `env.dev.vars`. O bypass de cache no domínio

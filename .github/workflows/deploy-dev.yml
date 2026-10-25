@@ -8,13 +8,6 @@ on:
           Full current master SHA for explicit retry after reconciliation
         type: string
         required: true
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
-    branches:
-      - master
 
 permissions:
   contents: read
@@ -27,14 +20,9 @@ concurrency:
 jobs:
   validate:
     if: >-
-      github.repository == 't00ls-dev/foundation' && ((github.event_name ==
+      github.repository == 't00ls-dev/foundation' && github.event_name ==
       'workflow_dispatch' && github.ref == 'refs/heads/master' &&
-      inputs.execution_sha == github.sha) || (github.event_name ==
-      'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'master' &&
-      github.event.workflow_run.head_repository.full_name ==
-      't00ls-dev/foundation'))
+      inputs.execution_sha == github.sha
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.ci.outputs.sha }}

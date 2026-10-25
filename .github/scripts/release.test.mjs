@@ -3255,6 +3255,109 @@ test("CI evidence paginates attempt jobs and rejects a newly created run", async
   );
 });
 
+test("Deploy DEV accepts only explicit manual entry and blocks automatic events and reruns", () => {
+  const workflow = parse(
+    readFileSync(".github/workflows/deploy-dev.yml", "utf8"),
+  );
+  assert.equal(workflow.name, "Deploy DEV");
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), [
+    "execution_sha",
+  ]);
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.execution_sha.required,
+    true,
+  );
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.execution_sha.type,
+    "string",
+  );
+  const valid = {
+    github: {
+      repository: "t00ls-dev/foundation",
+      event_name: "workflow_dispatch",
+      ref: "refs/heads/master",
+      sha,
+      run_attempt: "1",
+      event: {},
+    },
+    inputs: { execution_sha: sha },
+  };
+  const accepts = (context) =>
+    runInNewContext(workflow.jobs.validate.if, context, { timeout: 1000 });
+  assert.equal(accepts(valid), true);
+  // Manual retries still require the same entry checks and fresh CI evidence.
+  assert.equal(
+    accepts({ ...valid, github: { ...valid.github, run_attempt: "2" } }),
+    true,
+  );
+  for (const event_name of [
+    "workflow_run",
+    "push",
+    "pull_request",
+    "pull_request_target",
+    "repository_dispatch",
+  ]) {
+    for (const attempt of [1, 2])
+      assert.equal(
+        accepts({
+          ...valid,
+          github: {
+            ...valid.github,
+            event_name,
+            run_attempt: String(attempt),
+            event: {
+              workflow_run: {
+                ...ciRun(),
+                id: 40151793873,
+                run_attempt: attempt,
+              },
+            },
+          },
+        }),
+        false,
+        `${event_name}, attempt ${attempt}: even a green historical CI cannot enter`,
+      );
+  }
+  for (const candidate of [
+    {
+      ...valid,
+      github: { ...valid.github, repository: "attacker/foundation" },
+    },
+    { ...valid, github: { ...valid.github, ref: "refs/heads/feature" } },
+    { ...valid, github: { ...valid.github, ref: "refs/tags/release" } },
+    { ...valid, inputs: { execution_sha: "b".repeat(40) } },
+    { ...valid, inputs: { execution_sha: "master" } },
+    { ...valid, inputs: { execution_sha: "" } },
+    { ...valid, inputs: {} },
+  ])
+    assert.equal(accepts(candidate), false);
+
+  const needs = {
+    expand: ["validate"],
+    deploy: ["validate", "expand"],
+    backfill: ["validate", "deploy"],
+    contract: ["validate", "deploy", "backfill"],
+  };
+  assert.deepEqual(Object.keys(workflow.jobs), [
+    "validate",
+    ...Object.keys(needs),
+  ]);
+  for (const [name, required] of Object.entries(needs)) {
+    const job = workflow.jobs[name];
+    assert.deepEqual([job.needs].flat(), required);
+    assert(!/always\(|failure\(|cancelled\(/.test(job.if ?? ""));
+  }
+  assert(workflow.jobs.deploy.if.includes("needs.expand.result == 'success'"));
+  const guard = workflow.jobs.validate.steps.find((step) => step.id === "ci");
+  assert.equal(guard.run, "node .github/scripts/ci-evidence.mjs deploy");
+  assert.deepEqual(guard.env, { GITHUB_TOKEN: "${{ github.token }}" });
+  assert.equal(
+    workflow.jobs.validate.outputs.sha,
+    "${{ steps.ci.outputs.sha }}",
+  );
+});
+
 test("deploy validates trusted workflow code before exact-SHA checkout and limits secrets", () => {
   const workflow = parse(
     readFileSync(".github/workflows/deploy-dev.yml", "utf8"),

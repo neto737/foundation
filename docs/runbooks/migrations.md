@@ -14,16 +14,18 @@ precondições de schema com leitura e publicar código compatível.
 
 **O coordenador operacional atual ainda não atende integralmente essa
 política.** Embora seu job `deploy` já use D1 Read e não receba a credencial
-migradora, o workflow `Deploy DEV` chama automaticamente
-expand/backfill/contract em outros jobs. A preparação do monorepo não alterou
-esses workflows nem executou SQL persistente.
+migradora, o workflow `Deploy DEV`, quando disparado manualmente, coordena
+expand/backfill/contract em outros jobs. O ciclo completo continua acoplado; a
+entrada manual não torna as fases persistentes operações independentes. O
+workflow permanece suspenso até autorização de reativação e execução.
 
 O bloqueio é concreto: `authorizedContext` aceita as fases no contexto de
 `Deploy DEV`, e `deploymentEvidence` associa backfill/contract ao job deploy da
 mesma execução/tentativa do Actions, além da versão Cloudflare ativa e do
-health. Apenas trocar o gatilho por manual ou remover os jobs quebraria esse
-contrato de autorização, evidência e serialização. Não foi introduzida uma
-separação parcial ou um novo executor como atalho.
+health. Separar as fases em execuções manuais próprias ou remover os jobs
+quebraria esse contrato de autorização, evidência e serialização. A entrada
+manual já suportada para o ciclo completo preserva o protocolo, sem resolver
+esse desacoplamento. Não foi introduzido um novo executor como atalho.
 
 Uma etapa operacional própria precisa adaptar e validar o vínculo com o deploy
 autorizado, a execução manual das fases e seus retries/recuperação, preservando
@@ -35,7 +37,7 @@ desacoplamento aprovado. A preparação não autoriza acionar esse fluxo.
 ## Contrato de evolução
 
 ```text
-merge/master → CI → EXPAND (workflow próprio) → DEPLOY/health
+CI push/master → dispatch autorizado → EXPAND → DEPLOY/health
                                                ↓
                                      BACKFILL opcional/validação
                                                ↓
@@ -162,12 +164,14 @@ O validador não prova compatibilidade de negócio. Revisão humana, testes de
 compatibilidade e probes significativas continuam necessários. Sintaxe fora do
 subconjunto exige extensão revisada; não existe escape para "expand seguro".
 
-## DEV automático e independente
+## Ciclo DEV manual
 
-`Deploy DEV` recebe CI push/master aprovada e coordena jobs independentes.
-`expand`, `backfill` e `contract` chamam o workflow reutilizável
-`Migration DEV`. O job `deploy` verifica schema read-only, publica e faz smoke,
-sem aplicar SQL.
+`Deploy DEV` exige dispatch com o SHA atual de master e consulta sua CI
+push/master aprovada; a conclusão da CI não o dispara automaticamente.
+Reativação do workflow e execução do ciclo exigem autorizações próprias. O ciclo
+coordena jobs separados, não operações persistentes independentes. `expand`,
+`backfill` e `contract` chamam o workflow reutilizável `Migration DEV`. O job
+`deploy` verifica schema read-only, publica e faz smoke, sem aplicar SQL.
 
 1. Validador confiável verifica CI, origem, workflow, SHA e tentativa exatos.
 2. Exige master ainda no SHA validado; execução obsoleta falha fechado.
