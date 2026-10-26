@@ -12,8 +12,8 @@ O executável Node local habilita a fatia apenas com `LEVI_LOCAL_DATABASE=1`,
 conservando suas guardas de origem/banco local e servidor em loopback. Os harnesses
 sintéticos a habilitam explicitamente. O Worker nunca recebe esse booleano.
 
-No Worker, `LEVI_MEMBERS_DEV_ORGANIZATIONS` é uma configuração **não secreta** do
-environment `dev`, com UUIDs de organizações sintéticas separados por vírgula.
+No Worker, o binding `LEVI_MEMBERS_DEV_ORGANIZATIONS` recebe a variable **não secreta**
+`MEMBERS_DEV_ORGANIZATIONS` do Environment `levi-dev`, com UUIDs de organizações sintéticas separados por vírgula.
 Espaços nas extremidades e letras maiúsculas são normalizados; duplicatas são
 removidas. Ausente, vazia, acima de 4096 caracteres ou com qualquer item inválido
 (inclusive item vazio, separador final, JSON ou curinga) desabilita o conjunto
@@ -48,8 +48,7 @@ O workflow DEV propaga a variable para a configuração temporária gerada pelo
 deploy. Ausência/erro escreve valor vazio explicitamente, sem herdar recorte antigo
 do arquivo base. A configuração Wrangler raiz permanece sem UUIDs e desabilitada.
 Mudar a variable GitHub não modifica o Worker já publicado: habilitação **e
-retirada do recorte** exigem novo deploy autorizado. `LEVI_DEV_DEPLOY_ENABLED` e os
-gatilhos existentes não foram alterados. A presença das rotas da SPA no bundle não
+retirada do recorte** exigem novo deploy autorizado. O interruptor `DEPLOY_READY` controla somente a publicação e não habilita membros. A presença das rotas da SPA no bundle não
 concede acesso às APIs. Ver [Deploy DEV](deploy-dev.md) para as guardas operacionais.
 
 Esta entrega não autoriza dados reais, migrations persistentes ou deploy. Usar

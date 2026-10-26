@@ -67,7 +67,7 @@ try {
   ): Promise<any> {
     const response = await diagnostics.request(check, () =>
       fetch(`https://api.cloudflare.com/client/v4${path}`, {
-        headers: { Authorization: `Bearer ${env.CLOUDFLARE_READ_TOKEN}` },
+        headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
       }),

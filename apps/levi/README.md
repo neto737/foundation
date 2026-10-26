@@ -27,8 +27,8 @@ descartável e runtime workerd local.
 
 O repositório original mantém main, CI e deploy DEV sem alterações. Esta cópia
 possui um [publicador manual preparado](../../.github/workflows/deploy-levi-dev.yml)
-para `t00ls-dev/foundation/master`, ainda sem capacidade operacional: o Environment
-`levi-dev`, suas credenciais e o interruptor de repositório não foram provisionados.
+para `t00ls-dev/foundation/master`, bloqueado por `DEPLOY_READY=false` no Environment
+`levi-dev`. Os cadastros utilizam nomes locais ao Environment e token Cloudflare único.
 Os arquivos em [.github](.github/README.md) continuam históricos. Preparar esse
 código não transfere o controle nem autoriza publicação; ver [Deploy DEV](docs/deploy-dev.md).
 Worker, domínio, PostgreSQL/Neon, Hyperdrive, e-mail e credenciais permanecem

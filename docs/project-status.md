@@ -46,9 +46,10 @@ da primeira entrega.
 - Levi privado em `apps/levi`, com sete dependências workspace, build ordenado,
   validação PG/ACLs/Worker/E2E em CI e domínio/schema/recursos independentes.
   Origem, SHAs e limites operacionais estão no [README](../apps/levi/README.md).
-  Publicador manual Levi preparado, bloqueado pelo interruptor ausente e pela
-  configuração `levi-dev` ainda não provisionada; o original continua único
-  publicador autorizado. Versionamento privado e transferência seguem pendentes.
+  Publicador manual Levi preparado, com token Cloudflare único e nomes de
+  cadastro locais ao Environment `levi-dev`, bloqueado por `DEPLOY_READY=false`;
+  o original continua único publicador autorizado. Versionamento privado e
+  transferência seguem pendentes.
 
 - Workspace pnpm com Turborepo e Node.js `>=22.22.0`.
 - TypeScript strict compartilhado em `@t00ls-dev/typescript-config`.

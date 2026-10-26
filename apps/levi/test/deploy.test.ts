@@ -28,7 +28,6 @@ const valid: NodeJS.ProcessEnv = {
   CLOUDFLARE_ACCOUNT_ID: "b".repeat(32),
   CLOUDFLARE_ZONE_ID: "d".repeat(32),
   CLOUDFLARE_API_TOKEN: "synthetic-only",
-  CLOUDFLARE_READ_TOKEN: "synthetic-only",
   LEVI_HYPERDRIVE_ID: "c".repeat(32),
   LEVI_DEV_DATABASE_HOST: "ep-synthetic-only.us-east-2.aws.neon.tech",
   LEVI_DEV_DATABASE_NAME: "levi_dev",
@@ -70,7 +69,6 @@ test("deploy exige execução confiável manual da master e configuração compl
     { LEVI_DEPLOY_SHA: "not-a-sha" },
     { CLOUDFLARE_API_TOKEN: "" },
     { CLOUDFLARE_ZONE_ID: "" },
-    { CLOUDFLARE_READ_TOKEN: "" },
     { LEVI_HYPERDRIVE_ID: "0".repeat(32) },
     { LEVI_DEV_DATABASE_NAME: "foundation" },
     {
@@ -168,6 +166,7 @@ test("CLI sem contexto autorizado falha antes de qualquer rede e sanitiza valore
 // subprocesso, arquivo privado ou request real pode ser criado pelo harness.
 async function simulatedDeploy(
   options: {
+    env?: NodeJS.ProcessEnv;
     respond?: (url: string, published: boolean) => Response | undefined;
     cleanupError?: Error;
     failProgress?: boolean;
@@ -193,6 +192,7 @@ async function simulatedDeploy(
     env: {
       ...valid,
       LEVI_MEMBERS_DEV_ORGANIZATIONS: options.membersDevOrganizations,
+      ...options.env,
     },
     execPath: process.execPath,
     exitCode: 0,
@@ -203,8 +203,13 @@ async function simulatedDeploy(
   };
   const cloudflare = (result: unknown) =>
     Response.json({ success: true, result });
-  const request = async (input: string) => {
+  const request = async (input: string, init: RequestInit) => {
     requests.push(input);
+    if (new URL(input).hostname === "api.cloudflare.com")
+      assert.equal(
+        new Headers(init.headers).get("Authorization"),
+        `Bearer ${valid.CLOUDFLARE_API_TOKEN}`,
+      );
     const override = options.respond?.(input, uploads > 0);
     if (override) return override;
     const url = new URL(input);
@@ -301,7 +306,16 @@ async function simulatedDeploy(
     "node:child_process": {
       execFileSync: (_cmd: string, args: string[]) =>
         args[0] === "rev-parse" ? valid.GITHUB_SHA : "",
-      spawnSync: () => {
+      spawnSync: (
+        _command: string,
+        _args: string[],
+        settings: { env: NodeJS.ProcessEnv },
+      ) => {
+        assert.equal(
+          settings.env.CLOUDFLARE_API_TOKEN,
+          valid.CLOUDFLARE_API_TOKEN,
+        );
+        assert.equal("CLOUDFLARE_READ_TOKEN" in settings.env, false);
         uploads++;
         return { status: 0 };
       },
@@ -384,9 +398,43 @@ async function simulatedDeploy(
     cleanups,
     writes,
     writtenMembersDevOrganizations,
+    ciCalls,
     exitCode: fakeProcess.exitCode,
   };
 }
+
+test("readiness inválido bloqueia antes de CI, consultas, arquivos e upload", async () => {
+  for (const value of [
+    undefined,
+    "",
+    "false",
+    "TRUE",
+    "1",
+    " true ",
+    "invalid",
+  ]) {
+    const result = await simulatedDeploy({ env: { LEVI_DEV_READY: value } });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.requests.length, 0);
+    assert.equal(result.ciCalls, 0);
+    assert.equal(result.writes.length, 0);
+  }
+});
+
+test("token único ausente não usa token legado nem inicia operação privilegiada", async () => {
+  const result = await simulatedDeploy({
+    env: {
+      CLOUDFLARE_API_TOKEN: undefined,
+      CLOUDFLARE_READ_TOKEN: "legacy-must-not-be-used",
+    },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.ciCalls, 0);
+  assert.equal(result.requests.length, 0);
+  assert.equal(result.writes.length, 0);
+  assert.equal(result.uploads, 0);
+});
 
 const sensitive =
   "postgres://user:private-password@private.invalid/db?token=private-token\nAuthorization: Bearer private-token\nCookie: session=private-cookie";
@@ -849,7 +897,7 @@ test("deploy propaga apenas o recorte explícito e limpa configuração herdada 
   );
   assert.match(
     workflow,
-    /LEVI_MEMBERS_DEV_ORGANIZATIONS:\s*\$\{\{ vars\.LEVI_MEMBERS_DEV_ORGANIZATIONS \}\}/,
+    /LEVI_MEMBERS_DEV_ORGANIZATIONS:\s*\$\{\{ vars\.MEMBERS_DEV_ORGANIZATIONS \}\}/,
   );
   assert.ok(workflow.includes("environment: levi-dev"));
 });

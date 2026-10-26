@@ -3,8 +3,8 @@
 Cada produto possui deploy independente. O Foundation valida somente o fluxo DEV
 usando `examples/links`. O
 [publicador manual Levi preparado](../../.github/workflows/deploy-levi-dev.yml)
-é independente, usa `levi-dev` ainda não provisionado e não chama o coordenador
-D1. Seu interruptor de repositório permanece ausente/fechado. Não há
+é independente, usa o Environment `levi-dev` e não chama o coordenador D1. Seu
+único interruptor administrativo `DEPLOY_READY` permanece false. Não há
 transferência operacional nem autorização de dispatch; ver
 [Deploy Levi DEV](../../apps/levi/docs/deploy-dev.md).
 
