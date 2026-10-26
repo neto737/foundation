@@ -293,3 +293,58 @@ test("retorno e foco removem dados revogados e respostas antigas não restauram 
     await database.client.end();
   }
 });
+
+test("busca alterada descarta resposta antiga antes de oferecer uma concessão", async ({
+  page,
+  browser,
+}) => {
+  await administrator(page);
+  const other = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+  });
+  let release: () => void = () => {};
+  let received: () => void = () => {};
+  const pending = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let first = true;
+  await page.route("**/api/admin/accounts/find", async (route) => {
+    if (!first) return route.continue();
+    first = false;
+    const response = await route.fetch();
+    received();
+    await delayed;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  try {
+    const target = await readyAccount(await other.newPage());
+    await page.bringToFront();
+    await page.goto("/admin");
+    const email = page.getByLabel("E-mail exato da conta");
+    await email.fill(target);
+    await page
+      .getByRole("button", { name: "Localizar conta", exact: true })
+      .click();
+    await pending;
+    await email.fill(`${randomUUID()}@example.test`);
+    release();
+    await expect(
+      page.getByText("Busca concluída.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Conceder acesso", exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Localizar conta", exact: true })
+      .click();
+    await expect(
+      page.getByText("Nenhuma conta única encontrada.", { exact: true }),
+    ).toBeVisible();
+  } finally {
+    release();
+    await other.close();
+  }
+});

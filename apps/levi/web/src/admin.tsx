@@ -252,6 +252,7 @@ function AdminContent({
   ) => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
+  const lookupGeneration = useRef(0);
   const [found, setFound] = useState<
     AdministrativeAccount | null | undefined
   >();
@@ -340,12 +341,18 @@ function AdminContent({
         <form
           onSubmit={(event) => {
             event.preventDefault();
+            const lookup = ++lookupGeneration.current;
             setFound(undefined);
             void run(
               async (signal) => {
                 const account = await adminApi.find(email, signal);
                 return () => {
-                  if (alive.current && !signal.aborted) setFound(account);
+                  if (
+                    alive.current &&
+                    !signal.aborted &&
+                    lookup === lookupGeneration.current
+                  )
+                    setFound(account);
                 };
               },
               "Busca concluída.",
@@ -361,6 +368,7 @@ function AdminContent({
               maxLength={254}
               value={email}
               onChange={(event) => {
+                lookupGeneration.current++;
                 setEmail(event.target.value);
                 setFound(undefined);
               }}
