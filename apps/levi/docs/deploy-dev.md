@@ -10,7 +10,7 @@ O [workflow Deploy Levi DEV](../../../.github/workflows/deploy-levi-dev.yml) uti
 os cadastros do Environment `levi-dev`, já preparado administrativamente, mas
 permanece bloqueado por `DEPLOY_READY=false`. Não executar dispatch/rerun ou
 publicar para testar essa preparação. O estado atual de Cloudflare/Neon,
-0004/ACLs e recuperação precisa ser confirmado em leitura autorizada antes do corte.
+0005–0006/ACLs e recuperação precisa ser confirmado em leitura autorizada antes do corte.
 
 O alvo permanece Worker `levi-dev`, domínio `https://levi.t00ls.dev`, PostgreSQL/Neon,
 Hyperdrive e e-mail próprios. Nenhum recurso é transferido ou recriado pelo código
@@ -42,8 +42,23 @@ O [ci-evidence Levi](../tools/ci-evidence.ts) repete as guardas Foundation/maste
 consulta run/tentativa/jobs e reconsulta run mais recente e master para recusar
 mudanças durante a consulta. [deploy-dev](../tools/deploy-dev.ts) reconfirma
 master remota, HEAD limpo e a mesma evidência imediatamente antes do upload.
-As verificações de Hyperdrive/cache/TLS, domínio, versão ativa/tag e gate de membros
-permanecem preservadas. Há uma única chamada de upload, sem retry automático.
+Antes de gravar configuração ou chamar Wrangler, exige Worker e domínio existentes,
+domínio público habilitado e sem previews, workers.dev/previews desabilitados,
+Hyperdrive/cache/TLS corretos, uma versão com
+100% do tráfego e tag SHA identificável. Confere Assets, presença dos dois secrets,
+origem pública, remetente e recorte de membros da versão ativa. Ausência, 403 ou
+divergência bloqueiam antes do upload; o executor não provisiona esses recursos.
+
+A última versão enviada deve ser a versão ativa, pois a herança de secrets do
+Wrangler usa a última versão enviada. O executor registra SHA/UUID anteriores e
+reconfere versão/bindings imediatamente antes do upload. Isso detecta mudanças
+entre consultas, mas não constitui lock com outro repositório nem impede uma
+escrita externa após a última consulta. A contenção operacional é obrigatória.
+O executor chama Wrangler uma vez e não repete automaticamente o comando/job.
+O Wrangler 4.149.0 pode repetir internamente requisições de API em falhas
+transitórias (`retryOnAPIFailure`); não há garantia de um único POST de versão.
+Falha ou timeout exige conferir deployments e versões enviadas antes de decidir
+qualquer nova tentativa, inclusive se houver versão enviada sem tráfego.
 
 As permissões GITHUB_TOKEN são apenas contents: read/actions: read. Secrets ficam
 somente no step publish, após readiness, instalação e build, no Environment exclusivo
@@ -108,8 +123,6 @@ solicita o valor interativamente.
 | ------------------------------ | ------------------------------------------------------------------------- |
 | `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                             |
 | `CLOUDFLARE_API_TOKEN`         | Leitura dos recursos verificados e publicação Worker/Assets/custom domain |
-| `AUTH_SECRET`                  | Mapeado para o binding interno LEVI_AUTH_SECRET; ao menos 32 caracteres   |
-| `RESEND_API_KEY`               | Somente envio, restrito ao domínio remetente                              |
 
 Variables do Environment: `CLOUDFLARE_ZONE_ID`, `HYPERDRIVE_ID`, `DATABASE_HOST`,
 `DATABASE_NAME`, `EMAIL_FROM` e `DEPLOY_READY`. O workflow as mapeia para as entradas
@@ -120,20 +133,34 @@ existentes; host direto Neon e banco `levi_dev` ou prefixo permitido.
 A variable opcional `MEMBERS_DEV_ORGANIZATIONS` é mapeada para o binding
 `LEVI_MEMBERS_DEV_ORGANIZATIONS`: controla somente o recorte sintético de membros,
 conforme [Gestão de membros](gestao-membros.md#habilitação-e-limites).
-Ausente/vazia/inválida desabilita o módulo; reconciliar o binding publicado antes
-do corte para evitar desativação involuntária ou ampliação do rollout.
+Ausente/vazia/inválida desabilita o módulo no runtime. O publicador exige que a
+seleção canônica calculada seja igual ao binding ativo; um cadastro ausente não
+pode apagar um recorte existente. Antes do corte, reconciliar privadamente a
+seleção exata atual, sem acrescentar organizações. Não substitui o avaliador por
+Feature Flags nem altera sua disponibilidade.
 
 O token Cloudflare único deve permitir todas as leituras anteriores/posteriores
 (Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas) e o upload. Sua presença
 não comprova os escopos efetivos; falha de permissão bloqueia sem contorno. Esta
 adaptação não concede permissões nem requer Hyperdrive Write ou acesso migrador.
 
-O mantenedor gerou novamente `AUTH_SECRET` intencionalmente. Não recuperar ou
-substituir o cadastro nesta preparação: o primeiro deploy autorizado enviará o
-novo valor ao binding existente `LEVI_AUTH_SECRET`. Antes do corte, avaliar os
-efeitos em sessões/tokens e nos contadores HMAC de abuso, além da compatibilidade
-do rollback com essa mudança. Não prometer continuidade criptográfica do segredo
-anterior nem assumir que rollback de código restaura secrets automaticamente.
+O publicador **não recebe nem envia** `AUTH_SECRET`, `LEVI_AUTH_SECRET` ou
+`RESEND_API_KEY`. A configuração temporária declara os nomes remotos obrigatórios
+`LEVI_AUTH_SECRET` e `RESEND_API_KEY`; não há `--secrets-file`. O Wrangler 4.149.0
+fixado no lockfile conserva secrets remotos e exige a herança dos nomes declarados.
+Ver [Secrets](https://developers.cloudflare.com/workers/configuration/secrets/).
+Essa estratégia evita substituir o secret ativo pelo cadastro divergente do
+Foundation. Não copiar, exibir, comparar em logs ou rotacionar valores para o corte.
+Os cadastros GitHub preexistentes não são apagados ou alterados nesta preparação;
+esses dois valores deixam de ser consumidos pelo workflow.
+
+Presença/nome/data de atualização não provam equivalência de secrets. O custodiante
+precisa confirmar, sem exportar valores, que a versão ativa é a origem autorizada
+dos secrets e que não há versão pendente ou publicador alternativo. Sem essa
+comprovação, interromper. Preservar o secret evita rotação pelo publicador, mas não
+certifica continuidade de todas as sessões após a atualização Better Auth: testar
+uma sessão sintética anterior e um novo login no corte autorizado. E-mail real
+somente com destinatário sintético aprovado e configuração Resend validada.
 
 `LEVI_ACCESS_APP_ID` e `LEVI_DEV_EMAIL_ALLOWLIST` deixaram de ser consumidos;
 nenhum endereço pessoal deve ser colocado em variables públicas. Chaves de gestão
@@ -187,9 +214,8 @@ esperado e comando `pnpm --filter levi db:migrate:dev`; ver
 
 O primeiro deploy exige autorização específica, além da integração revisada do
 publicador e da CI de push/master correspondente. Antes disso, reconciliar recursos,
-schema/journal/0004/ACLs e o gate existente; preparar `levi-dev` e credenciais sob
-custódia privada, reconhecendo a troca intencional de AUTH_SECRET no primeiro
-deploy autorizado. Não incluir credencial migradora.
+schema/journal/0005–0006/ACLs e o gate existente; preparar `levi-dev` e credenciais sob
+custódia privada, preservando os secrets do Worker existente. Não incluir credencial migradora.
 A publicação auth@0.3.2 e seu plano antigo continuam adiados e intactos.
 
 No corte autorizado, fechar/suspender o publicador original e aguardar naturalmente
@@ -211,7 +237,7 @@ caminho normal. Reverter conteúdo usa commit revisável compatível com o schem
 sem reescrever Git ou desfazer migrations. Retirar domínio ou restaurar banco são
 operações excepcionais, autorizadas separadamente; não são rollback automático.
 
-A publicação gera config/secrets temporários privados e os remove ao terminar.
+A publicação gera somente configuração temporária privada e a remove ao terminar.
 A saída bruta Wrangler e seus logs em disco ficam desabilitados/sanitizados.
 Não habilitar request logs ou traces com URLs de autenticação. O resumo do job
 registra SHA e conclusões em vocabulário fechado, em melhor esforço; o sucesso
@@ -224,7 +250,7 @@ depende das verificações do runner, não do resumo.
    TLS `verify-full` e identificador da CA. Não comprova consulta SQL.
 2. **Binding ativo:** consultar deployments do Worker, exigir versão única com
    100% do tráfego, consultar essa versão e conferir tag SHA, binding `HYPERDRIVE`,
-   ID do recurso e allowlist efetiva. A configuração enviada não basta.
+   ID do recurso, Assets, presença dos secrets, origem, remetente e recorte efetivo. A configuração enviada não basta.
    O runner registra somente SHA, UUID da versão, tráfego e resultados sanitizados,
    sem expor outros bindings ou valores de secrets. As permissões de leitura
    existentes do workflow são necessárias; 403 bloqueia confirmação, sem contorno.
@@ -240,7 +266,8 @@ depende das verificações do runner, não do resumo.
    funcional autenticada. Conexão direta administrativa não substitui esse caminho.
 4. **Rotas:** HTML público, onboarding anônimo `{ etapa: "email" }`,
    `401` em organizações/igrejas e `404` em membros sem recorte
-   (`401` se houver recorte explicitamente autorizado no futuro), com headers
+   (`401` quando o recorte atual estiver preservado), além de `404` anônimo em
+   `/admin` e `/api/admin/session` com `no-store`, headers
    de segurança e sem redirects. Nenhuma chamada de criação de negócio ou
    envio de e-mail é feita. O smoke de membros não habilita o módulo.
 
@@ -258,23 +285,89 @@ titulares e recuperação precisam ser resolvidos antes de uso real. A janela m�
 de histórico Neon e as limitações de restauração estão no [procedimento de
 migrations](cloudflare-workers.md#migrations-dev-explícitas).
 
-## Limites e rollback da futura transferência
+## Plano de corte posterior: prosseguimento e interrupção
 
-Esta preparação é validada por contratos/harnesses com I/O simulado e dry-run
-local, não por upload remoto. O original permanece inalterado. O estado conhecido
-no GitHub tem gate de membros configurado, mas não comprova schema/ACLs nem binding
-remoto atual. Não aplicar 0004 ou GRANTs para acomodar o corte sem investigação e
-autorização próprias; nenhuma migration é executada pelo publicador.
+Nenhuma etapa abaixo está autorizada pela preparação. O original permanece ativo
+e `DEPLOY_READY=false` no Foundation. Cada passagem exige evidência atual e um
+responsável identificado; falha, 403, identidade incerta ou resultado ambíguo
+interrompe antes da etapa seguinte. Não executar o workflow para testar o gate.
 
-Antes do primeiro upload, inventariar versão ativa e versão de rollback, identidade
-dos recursos, escopos reais dos tokens e recuperação Neon disponível. Os smokes
-HTTP do operador escrevem contadores técnicos; são parte da publicação autorizada,
-não uma investigação de leitura. E-mail real e fluxo autenticado exigem validação
-sintética adicional explicitamente autorizada.
+| Ordem                   | Evidência e ação a autorizar                                                                                                                                                                                                                                                                                                                                                                                                                         | Interromper se                                                                                                                                                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Recuperação          | Custodiante identifica conta/Worker/domínio/Hyperdrive e projeto/branch/banco Neon. Registrar UUID, SHA, Assets/configuração da versão ativa e versão anterior recuperável; comprovar leitura de deployments/versions/domains e capacidade autorizada de republicar essa versão. No Neon comprovar janela PITR/backup, retenção que cubra a operação, ponto recuperável, RPO/RTO aceitos e procedimento de restauração validado em ambiente isolado. | Houver 403, versão sem identificação, perda de histórico durante a janela, restauração não comprovada ou versão anterior incompatível com schema/configuração previstos. Não criar backup/branch/restore sem autorização própria. |
+| 2. Banco e ACLs         | Autorizar explicitamente 0005 e 0006 e aplicação independente de [administracao-runtime-acls.sql](../ops/administracao-runtime-acls.sql), após os preflights abaixo. Reconsultar journal e permissões em conexão nova.                                                                                                                                                                                                                               | Aparecer outra migration pendente, hash/objeto/owner divergente, colisão, evento incompatível com CHECK, espera de lock ou falha de commit. Não iniciar upload com schema/ACLs incompletos.                                       |
+| 3. Continuidade         | Sob autorização específica para configurações, reconciliar `EMAIL_FROM` e `MEMBERS_DEV_ORGANIZATIONS` com o remetente e seleção exata ativos. Confirmar Resend/domínio, origin, Assets, Hyperdrive, cache/TLS e nomes dos secrets existentes; manter seus valores remotos. Validar escopos reais do token exclusivo Foundation e restrição do Environment à master.                                                                                  | Não for possível conferir o binding ativo, a seleção mudar ou for necessária rotação de secrets. Nenhuma dessas divergências é corrigida automaticamente pelo executor.                                                           |
+| 4. Candidato            | Preparação integrada por revisão, master limpa, SHA completo escolhido e CI push/master mais recente aprovada, incluindo checks e Version Packages. Confirmar compatibilidade de rollback e matriz de validação.                                                                                                                                                                                                                                     | Houver avanço da master, nova tentativa/run pendente, falha, skip obrigatório ou candidato não revisado.                                                                                                                          |
+| 5. Conter original      | Com autorização para o original, fechar `LEVI_DEV_DEPLOY_ENABLED`, fechar `LEVI_DEV_READY` e suspender `.github/workflows/deploy-dev.yml`. Inventariar gatilhos, dispatch/rerun, execuções e filas; aguardar término natural das já iniciadas. Retirar a capacidade de publicação antiga sob custódia, somente após comprovar token exclusivo, sem afetar o novo ou outros consumidores.                                                             | Restar execução/ator/automação capaz de escrever, ou os tokens forem compartilhados/escopo incerto. Não cancelar upload em curso para simular exclusão. Grupos concurrency entre repositórios não são lock.                       |
+| 6. Habilitar Foundation | Com autorização do corte e exclusividade comprovada, abrir `DEPLOY_READY` somente no Environment levi-dev; preservar execução manual, revisão e proteções. Registrar responsável e janela.                                                                                                                                                                                                                                                           | O original ainda puder publicar ou qualquer condição anterior tiver expirado. Não abrir gates como investigação.                                                                                                                  |
+| 7. Publicar             | Dispatch manual do SHA exato da master aprovada, no Worker levi-dev e domínio existentes. Preflight deve confirmar última versão enviada igual à ativa e configurações preservadas. Uma invocação Wrangler, sem retry do executor; observar os retries internos descritos acima.                                                                                                                                                                     | Houver qualquer divergência remota ou mudança de versão. Após upload, falha do job não prova que a versão anterior continua ativa: consultar antes de decidir.                                                                    |
+| 8. Validar              | Confirmar SHA/UUID/100% tráfego, bindings e smokes; depois, com conta sintética aprovada, sessão anterior, login/logout, onboarding, organizações, permissões/isolamento e mesma disponibilidade de membros. `/admin` e `/api/admin` devem manter 404 anônimo/comum; usar admin existente somente se disponível. Conferir logs sanitizados, quotas e saúde.                                                                                          | Houver regressão, perda de sessão não aceita, ampliação de membros ou exposição administrativa. Sem primeiro admin, declarar painel publicado tecnicamente e não ativado. Não fazer bootstrap como correção.                      |
+| 9. Consolidar           | Registrar versão ativa, CI/run de publicação, publicador único Foundation e original contido, incluindo custódia e canais manuais. Manter evidência privada de configurações sem secrets em logs.                                                                                                                                                                                                                                                    | Existir segundo escritor ou versão sem comprovação. Aguardar estabilidade antes de encerrar a janela.                                                                                                                             |
+| 10. Falha               | Aplicar somente recuperação previamente validada e autorizada, conforme os limites abaixo; interromper novas publicações e revalidar estado.                                                                                                                                                                                                                                                                                                         | A ação necessária exceder a autorização ou não houver evidência de recuperação segura. Não improvisar DDL reverso nem alternar publicadores concorrentes.                                                                         |
 
-Falha após upload pode deixar versão nova ativa. Conferir a API antes de repetir.
-Rollback de Worker é uma nova operação autorizada e não reverte banco/recursos.
-Se for necessário voltar ao controlador original, primeiro conter o Foundation,
-aguardar operações iniciadas e só então restaurar uma capacidade de publicação do
-original. Não manter dois controladores, reescrever Git ou desfazer dados/schema.
-O publicador continua recusando SHA que não seja a master atual aprovada.
+### Migrations e ACLs: verificações independentes
+
+O [runner DEV](../tools/migrate-dev.ts) aplica todas as migrations pendentes pelo
+histórico Drizzle, com advisory lock não bloqueante. Confirmar imediatamente
+antes que sejam **somente 0005 e 0006**, na ordem. A 0005 depende do histórico
+0000–0004, de `user`, `tenants` e `audit_events`, ownership apropriado, ausência de
+colisões das quatro tabelas e de ações globais reservadas incompatíveis no audit.
+A 0006 depende de `admin_bootstrap` e cria função/trigger permanente, sem seed.
+
+A operação autorizada deve conferir hashes/ordem do journal, banco/role/schema,
+TLS, projeto/branch Neon via gestão, owners, privilégios, constraints e índices,
+trigger append-only e locks; definir janela, `lock_timeout` e `statement_timeout`
+de sessão proporcionais ao tamanho real. O runner não define esses timeouts.
+ALTER/CHECK/FKs podem bloquear escritas; não prometer ausência de interrupção.
+
+Após aplicação, em nova conexão: journal 0000–0006 sem pendências/hashes divergentes;
+quatro tabelas presentes e vazias; FK/PK/UNIQUE/CHECK/versionamento corretos;
+`audit_events.tenant` nullable apenas para ações globais conhecidas; triggers
+append-only e de proteção do recibo habilitados. Confirmar preservação dos totais
+de negócio/auditoria, sem inserir eventos ou contas de teste no DEV.
+
+Aplicar os grants runtime em transação própria e conferir com funções de inspeção
+de privilégios, sem DML de teste persistente. Os grants são por coluna: consultar
+`has_column_privilege` além de ACLs da relação. Runtime pode ler/inserir concessões
+e flags, atualizar somente colunas permitidas e substituir seleções; não pode
+escrever recibo, alterar identidade, apagar concessões/flags, executar DDL ou
+alterar auditoria. Preservar grants legados de auth/tenancy/abuse e ausência de
+ownership, grant option e memberships privilegiadas. Não criar default ACL ampla.
+A revisão do artefato não substitui verificar o estado real após GRANT.
+
+A role `levi_dev_bootstrap` e
+[administracao-bootstrap-acls.sql](../ops/administracao-bootstrap-acls.sql) são uma
+operação opcional posterior, independente do deploy: não são necessárias para
+publicar com zero administradores. Exigem conta/sessão/UUID e confirmação assistida
+conforme [Administração global](administracao-global.md). Não configurar ADMIN_EMAIL,
+criar concessões ou semear flags durante migrations/deploy. Não tocar no recibo
+para recuperar privilégios.
+
+### Recuperação de código, banco e configuração
+
+- **Código/Worker:** voltar a uma versão UUID comprovada exige procedimento e
+  autorização de recuperação, incluindo Assets, bindings e compatibilidade com o
+  schema aditivo. O publicador normal exige master atual; não aceita SHA histórico
+  arbitrário para recuperação. Um rollback Cloudflare não desfaz Neon ou recursos
+  conectados. Registrar a nova versão/deployment ativo e repetir validações.
+  Um rollback pode deixar a última versão enviada diferente da ativa. Nesse caso,
+  o publicador normal permanece bloqueado: uma operação de recuperação separada,
+  previamente validada e autorizada, precisa restabelecer essa linha de base com
+  código, Assets, configuração e secrets comprovados. Um novo PR, isoladamente,
+  não resolve essa divergência. Não retirar a guarda ou reutilizar o deploy
+  normal para contorná-la. Sem esse procedimento, a recuperação segue pendente
+  e o corte não pode prosseguir.
+- **Banco:** PITR/backup precisa de ponto/branch, janela e procedimento comprovados;
+  timestamp/LSN não criam backup nem reservam retenção. Restauração pode perder
+  gravações legítimas posteriores e afetar recibos permanentes. Exige decisão
+  própria sobre perda de dados e preservação da unicidade do bootstrap. Não
+  executar down migrations, apagar journal ou restaurar recibo por automatismo.
+- **Configuração:** variables, gates, domínio, Hyperdrive, Resend e secrets têm
+  custódia e plano de restauração separados. Não presumir que rollback de código
+  restaura esses recursos ou secrets. Reconferir metadados/valores não sensíveis e
+  continuidade funcional; valores secretos permanecem sob custódia privada.
+
+Para devolver a publicação ao original em recuperação, primeiro conter Foundation,
+aguardar execuções e retirar sua capacidade exclusiva, depois restaurar a do
+original mediante autorização. Nunca manter dois escritores. Esta preparação
+não executa qualquer um desses procedimentos.

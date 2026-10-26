@@ -60,11 +60,7 @@ try {
   }
   await currentMain();
   const account = `/accounts/${settings.account}`;
-  async function cloudflare(
-    check: DeployCheck,
-    path: string,
-    missing = false,
-  ): Promise<any> {
+  async function cloudflare(check: DeployCheck, path: string): Promise<any> {
     const response = await diagnostics.request(check, () =>
       fetch(`https://api.cloudflare.com/client/v4${path}`, {
         headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
@@ -72,7 +68,6 @@ try {
         signal: AbortSignal.timeout(15_000),
       }),
     );
-    if (missing && response.status === 404) return null;
     diagnostics.httpOk(response);
     const body = (await response.json()) as {
       success: boolean;
@@ -110,22 +105,28 @@ try {
     const alternate = await cloudflare(
       "subdomain-read",
       `${account}/workers/scripts/${deployWorker}/subdomain`,
-      true,
     );
     diagnostics.inspect("subdomain");
-    if (alternate) {
-      assert.equal(alternate.enabled, false);
-      assert.equal(alternate.previews_enabled, false);
-    }
+    assert.equal(alternate.enabled, false);
+    assert.equal(alternate.previews_enabled, false);
     const domains = await list(
       "domains-read",
       "domains-shape",
       `${account}/workers/domains`,
     );
     diagnostics.inspect("domains");
+    assert.equal(
+      domains.filter(
+        (domain) => domain.hostname === new URL(deployOrigin).hostname,
+      ).length,
+      1,
+    );
     for (const domain of domains) {
-      if (domain.hostname === new URL(deployOrigin).hostname)
+      if (domain.hostname === new URL(deployOrigin).hostname) {
         assert.equal(domain.service, deployWorker);
+        assert.equal(domain.enabled, true);
+        assert.equal(domain.previews_enabled, false);
+      }
       if (domain.service === deployWorker)
         assert.equal(domain.hostname, new URL(deployOrigin).hostname);
     }
@@ -150,6 +151,48 @@ try {
     assert.ok(routes.every((route) => route.script !== deployWorker));
   }
   await protections();
+  async function activeVersion() {
+    const deployments = await cloudflare(
+      "deployments-read",
+      `${account}/workers/scripts/${deployWorker}/deployments`,
+    );
+    diagnostics.inspect("deployment-shape", "resposta inesperada");
+    const versions = deployments.deployments?.[0]?.versions;
+    assert.ok(Array.isArray(versions));
+    diagnostics.inspect("deployment-traffic");
+    assert.ok(versions.length === 1 && versions[0].percentage === 100);
+    const versionId: unknown = versions[0].version_id;
+    assert.ok(typeof versionId === "string");
+    assert.match(
+      versionId,
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
+    );
+    // Wrangler herda secrets da última versão enviada, que pode não ter tráfego.
+    const uploaded = await cloudflare(
+      "versions-read",
+      `${account}/workers/scripts/${deployWorker}/versions`,
+    );
+    diagnostics.inspect("version-latest");
+    assert.ok(Array.isArray(uploaded.items));
+    assert.equal(uploaded.items[0]?.id, versionId);
+    const version = await cloudflare(
+      "version-read",
+      `${account}/workers/scripts/${deployWorker}/versions/${versionId}`,
+    );
+    diagnostics.inspect("version-tag");
+    const sha: unknown = version.annotations?.["workers/tag"];
+    assert.ok(typeof sha === "string");
+    assert.match(sha, /^[a-f0-9]{40}$/);
+    diagnostics.verify("version-binding", () =>
+      verifyWorkerBindings(version, env),
+    );
+    return { versionId, sha };
+  }
+  // Falha antes do upload se o alvo ou a continuidade não puderem ser comprovados.
+  const previous = await activeVersion();
+  console.info(
+    JSON.stringify({ operacao: "versao-dev-anterior", ...previous }),
+  );
   diagnostics.phase = "bundle";
   diagnostics.start("bundle-read", "falha de operação local");
   const baseConfig = await readFile("wrangler.jsonc", "utf8");
@@ -168,22 +211,17 @@ try {
   await mkdir(".local", { recursive: true });
   directory = await mkdtemp(resolve(".local/deploy-"));
   const configPath = join(directory, "wrangler.json");
-  const secretsPath = join(directory, "secrets.json");
   diagnostics.start("bundle-files", "falha de operação local");
   await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
-  await writeFile(
-    secretsPath,
-    JSON.stringify({
-      LEVI_AUTH_SECRET: env.LEVI_AUTH_SECRET,
-      RESEND_API_KEY: env.RESEND_API_KEY,
-    }),
-    { mode: 0o600 },
-  );
   await currentMain();
   diagnostics.phase = "publish";
   const currentCI = await requireSuccessfulCI(env, fetch, diagnostics);
   diagnostics.start("ci-unchanged");
   assert.deepEqual(currentCI, ci);
+  const beforeUpload = await activeVersion();
+  diagnostics.start("version-unchanged");
+  assert.deepEqual(beforeUpload, previous);
+  // Detecta mudanças durante o preflight; não substitui contenção entre repositórios.
   // A saída bruta pode conter configuração privada: nunca é impressa ou anexada.
   diagnostics.start("wrangler", "falha de operação local");
   const result = spawnSync(
@@ -193,8 +231,6 @@ try {
       "deploy",
       "--config",
       configPath,
-      "--secrets-file",
-      secretsPath,
       "--tag",
       settings.sha,
       "--strict",
@@ -218,34 +254,15 @@ try {
   assert.equal(result.status, 0);
   diagnostics.phase = "published";
   await protections();
-  const deployments = await cloudflare(
-    "deployments-read",
-    `${account}/workers/scripts/${deployWorker}/deployments`,
-  );
-  diagnostics.inspect("deployment-shape", "resposta inesperada");
-  const versions = deployments.deployments?.[0]?.versions;
-  assert.ok(Array.isArray(versions));
-  diagnostics.inspect("deployment-traffic");
-  assert.ok(versions.length === 1 && versions[0].percentage === 100);
-  assert.match(
-    versions[0].version_id,
-    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
-  );
-  const version = await cloudflare(
-    "version-read",
-    `${account}/workers/scripts/${deployWorker}/versions/${versions[0].version_id}`,
-  );
+  const published = await activeVersion();
   diagnostics.inspect("version-tag");
-  assert.equal(version.annotations?.["workers/tag"], settings.sha);
-  diagnostics.verify("version-binding", () =>
-    verifyWorkerBindings(version, env),
-  );
+  assert.equal(published.sha, settings.sha);
   // A evidência do binding é da versão com tráfego, não apenas da config enviada.
   console.info(
     JSON.stringify({
       operacao: "versao-dev-confirmada",
       sha: settings.sha,
-      versionId: versions[0].version_id,
+      versionId: published.versionId,
       trafego: 100,
       bindingHyperdrive: "conferido",
       tlsOrigem: "verify-full-configurado",
@@ -253,6 +270,8 @@ try {
   );
   for (const [path, requestCheck, responseCheck, expectedStatus] of [
     ["/", "home-read", "home-response", 200],
+    ["/admin", "admin-read", "admin-response", 404],
+    ["/api/admin/session", "admin-api-read", "admin-api-response", 404],
     ["/api/onboarding", "onboarding-read", "onboarding-response", 200],
     ["/api/organizations", "organizations-read", "organizations-response", 401],
     ["/api/churches", "churches-read", "churches-response", 401],
@@ -278,6 +297,8 @@ try {
     );
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
     assert.ok(response.headers.get("content-security-policy"));
+    if (path === "/admin" || path === "/api/admin/session")
+      assert.ok(response.headers.get("cache-control")?.includes("no-store"));
     if (path === "/") {
       diagnostics.httpStatus(response, 200);
       assert.ok(response.headers.get("content-type")?.includes("text/html"));

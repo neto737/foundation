@@ -81,8 +81,6 @@ jobs:
           LEVI_DEV_DATABASE_HOST: ${{ vars.DATABASE_HOST }}
           LEVI_DEV_DATABASE_NAME: ${{ vars.DATABASE_NAME }}
           LEVI_EMAIL_FROM: ${{ vars.EMAIL_FROM }}
-          LEVI_AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       - name: Resumir publicação e verificações
         if: always()
         continue-on-error: true
