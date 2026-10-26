@@ -149,6 +149,10 @@ export async function withGlobalAdministrator<T>(
       administrativeNotFound();
     }
     const actor = await authorize(tx, input.identity, input.recent);
-    return operation(tx, actor);
+    const result = await operation(tx, actor);
+    // Locks posteriores (inclusive no append da auditoria) podem consumir a
+    // validade/recência. A mesma transação deve desfazer tudo antes de confirmar.
+    if (input.mutation) await authorize(tx, input.identity, input.recent);
+    return result;
   });
 }

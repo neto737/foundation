@@ -1159,3 +1159,147 @@ test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// O lock é PostgreSQL real; somente a passagem do tempo é acelerada no teste.
+async function denyAfterAuditWait(input: {
+  context: import("node:test").TestContext;
+  database: Database;
+  operation: () => Promise<unknown>;
+  advanceTo: number;
+  status: number;
+}) {
+  const pid = Number(
+    (await input.database.client.query("SELECT pg_backend_pid() AS pid"))
+      .rows[0].pid,
+  );
+  await observer.client.query("BEGIN");
+  await observer.client.query("LOCK TABLE audit_events IN SHARE MODE");
+  const outcome = input.operation().then(
+    () => ({ kind: "accepted" }) as const,
+    (error: unknown) => ({ kind: "denied", error }) as const,
+  );
+  try {
+    try {
+      await waitBlocked(pid);
+      input.context.mock.method(Date, "now", () => input.advanceTo);
+    } finally {
+      await observer.client.query("COMMIT");
+    }
+    const result = await outcome;
+    assert.equal(
+      result.kind,
+      "denied",
+      "A sessão deixou de satisfazer o contrato durante a espera por auditoria.",
+    );
+    if (result.kind === "denied") assert.ok(denied(input.status)(result.error));
+  } finally {
+    await outcome;
+    input.context.mock.restoreAll();
+  }
+}
+
+test("concessão: recência vencida após autorização e antes do commit desfaz estado e auditoria", async (t) => {
+  await boot(owner);
+  const operationId = randomUUID();
+  await denyAfterAuditWait({
+    context: t,
+    database: runtime,
+    advanceTo: Date.now() + 11 * 60_000,
+    status: 403,
+    operation: () =>
+      changeGlobalAdministrator({
+        database: runtime,
+        identity: owner.identity,
+        userId: second.userId,
+        enabled: true,
+        expectedVersion: 0,
+        operationId,
+      }),
+  });
+  assert.equal(
+    (
+      await observer.client.query(
+        "SELECT 1 FROM global_administrators WHERE user_id=$1",
+        [second.userId],
+      )
+    ).rowCount,
+    0,
+  );
+  assert.equal(
+    (
+      await observer.client.query(
+        "SELECT 1 FROM audit_events WHERE request_id=$1",
+        [operationId],
+      )
+    ).rowCount,
+    0,
+  );
+});
+
+test("flag: sessão expirada após autorização e antes do commit desfaz política e auditoria", async (t) => {
+  await boot(owner);
+  const operationId = randomUUID();
+  const { rows } = await observer.client.query<{ expires_at: Date }>(
+    "SELECT expires_at FROM session WHERE id=$1",
+    [owner.sessionId],
+  );
+  assert.ok(rows[0]);
+  await denyAfterAuditWait({
+    context: t,
+    database: runtime,
+    advanceTo: rows[0].expires_at.getTime() + 1,
+    status: 404,
+    operation: () =>
+      updateFeatureFlag({
+        database: runtime,
+        identity: owner.identity,
+        key: "members",
+        policy: { kind: "all" },
+        expectedVersion: 0,
+        operationId,
+      }),
+  });
+  assert.equal(
+    (await observer.client.query("SELECT 1 FROM feature_flags")).rowCount,
+    0,
+  );
+  assert.equal(
+    (
+      await observer.client.query(
+        "SELECT 1 FROM audit_events WHERE request_id=$1",
+        [operationId],
+      )
+    ).rowCount,
+    0,
+  );
+});
+
+test("bootstrap: recência vencida durante a auditoria não consome recibo nem concede acesso", async (t) => {
+  const confirmed = confirmation(owner);
+  await denyAfterAuditWait({
+    context: t,
+    database: bootstrap,
+    advanceTo: Date.now() + 11 * 60_000,
+    status: 403,
+    operation: () =>
+      bootstrapAdministrator({ database: bootstrap, confirmation: confirmed }),
+  });
+  assert.equal(
+    (await observer.client.query("SELECT 1 FROM admin_bootstrap")).rowCount,
+    0,
+  );
+  assert.equal(
+    (await observer.client.query("SELECT 1 FROM global_administrators"))
+      .rowCount,
+    0,
+  );
+  assert.equal(
+    (
+      await observer.client.query(
+        "SELECT 1 FROM audit_events WHERE request_id=$1",
+        [confirmed.operationId],
+      )
+    ).rowCount,
+    0,
+  );
+});

@@ -25,6 +25,9 @@ Esse limite representa idade da sessão, **não prova de magic link recente ou M
 Bootstrap, concessões/revogações e mudanças de flags compartilham o advisory lock
 transacional `(715463, 2)`. Após aguardar, a mutation relê e bloqueia identidade,
 sessão e concessão do ator. Estado e auditoria usam o mesmo transaction handle.
+Após as escritas e a auditoria, a autoridade e a validade/recência da sessão são
+revalidadas antes do commit. Se vencerem durante outra espera, toda a operação é
+desfeita, inclusive o recibo de bootstrap quando aplicável.
 Não há retry automático. Autorrevogação e retirada do último administrador
 elegível são recusadas. O contador começa em 1; criar concessão/flag exige versão
 esperada 0. Conflito exige consultar o estado; no-op com versão atual não incrementa

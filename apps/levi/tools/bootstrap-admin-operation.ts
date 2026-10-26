@@ -72,6 +72,9 @@ export async function bootstrapAdministrator(input: {
       tenant: null,
       action: "admin.bootstrapped",
     });
+    // Uma espera na persistência/auditoria não pode consumir a sessão e ainda
+    // confirmar concessão e recibo. Todos permanecem na mesma transação.
+    await lockReadyIdentity(tx, confirmation, true);
     return { kind: "completed" } as const;
   });
 }
