@@ -64,16 +64,17 @@ export async function lockReadyIdentity(
     .for("share");
   // Clock após aguardar os locks; updatedAt não representa nova autenticação.
   const now = Date.now();
+  if (!currentSession) administrativeNotFound();
+  const expiresAt = currentSession.expiresAt.getTime();
+  const createdAt = currentSession.createdAt.getTime();
   if (
-    !currentSession ||
-    currentSession.expiresAt.getTime() <= now ||
-    currentSession.createdAt.getTime() > now
+    !Number.isFinite(expiresAt) ||
+    !Number.isFinite(createdAt) ||
+    expiresAt <= now ||
+    createdAt > now
   )
     administrativeNotFound();
-  if (
-    recent &&
-    now - currentSession.createdAt.getTime() > administrativeSessionAgeMs
-  )
+  if (recent && now - createdAt > administrativeSessionAgeMs)
     throw new RequestError(
       403,
       "REAUTENTICACAO_NECESSARIA",

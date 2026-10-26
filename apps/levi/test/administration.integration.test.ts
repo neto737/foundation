@@ -246,6 +246,8 @@ test("bootstrap: identidade inválida, ambiguidade, senha e sessão inadequadas 
     ["created_at=now()-interval '11 minutes'", 403],
     ["expires_at=now()-interval '1 second'", 404],
     ["created_at=now()+interval '1 day'", 404],
+    ["created_at='infinity'", 404],
+    ["expires_at='infinity'", 404],
   ] as const) {
     await observer.client.query(
       `UPDATE session SET ${assignment} WHERE id=$1`,
