@@ -69,7 +69,11 @@ export async function prepareRuntimeRoles(observerUrl: string) {
   const url = localTestDatabaseUrl(observerUrl, "levi_test");
   const observer = await createPostgresDatabase(observerUrl);
   try {
-    for (const role of ["levi_dev_migrator", "levi_dev_runtime"])
+    for (const role of [
+      "levi_dev_migrator",
+      "levi_dev_runtime",
+      "levi_dev_bootstrap",
+    ])
       await observer.client.query(
         `CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
          NOREPLICATION NOBYPASSRLS PASSWORD 'synthetic-runtime-acls-only'`,
@@ -118,6 +122,21 @@ export async function applyRuntimeGrants(migratorUrl: string) {
       await migrator.client.query(
         await readFile(
           new URL("../ops/interface-e-edicao-acls.sql", import.meta.url),
+          "utf8",
+        ),
+      );
+      await migrator.client.query(
+        await readFile(
+          new URL("../ops/administracao-runtime-acls.sql", import.meta.url),
+          "utf8",
+        ),
+      );
+      await migrator.client.query(
+        "GRANT CONNECT ON DATABASE levi_test TO levi_dev_bootstrap",
+      );
+      await migrator.client.query(
+        await readFile(
+          new URL("../ops/administracao-bootstrap-acls.sql", import.meta.url),
           "utf8",
         ),
       );

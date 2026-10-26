@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { test } from "node:test";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { inspectMigrationHistory } from "../tools/migration-history.js";
@@ -23,7 +24,10 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
     await observer.client.query("BEGIN READ ONLY");
     try {
       const status = await inspectMigrationHistory(observer.client);
-      assert.equal(status.applied.length, 5);
+      assert.equal(
+        status.applied.length,
+        readMigrationFiles({ migrationsFolder: "migrations" }).length,
+      );
       assert.deepEqual(status.pending, []);
       assert.equal(
         (await observer.client.query("SHOW transaction_read_only")).rows[0]
@@ -63,7 +67,10 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
     try {
       await empty.client.query("BEGIN READ ONLY");
       const status = await inspectMigrationHistory(empty.client);
-      assert.equal(status.pending.length, 5);
+      assert.equal(
+        status.pending.length,
+        readMigrationFiles({ migrationsFolder: "migrations" }).length,
+      );
       assert.deepEqual(status.applied, []);
       assert.equal(
         (

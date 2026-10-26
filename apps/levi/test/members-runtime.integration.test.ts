@@ -52,7 +52,7 @@ test("ACLs reais: trÃªs logins independentes, journal e ownership corretos", asy
       "SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
     )
   ).rows;
-  assert.equal(applied.length, 5);
+  assert.equal(applied.length, journal.entries.length);
   for (const [index, entry] of journal.entries.entries()) {
     assert.equal(applied[index].created_at, String(entry.when));
     assert.equal(
@@ -76,6 +76,7 @@ test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privilÃ
     SELECT c.relname, x.privilege_type FROM pg_class c
     CROSS JOIN LATERAL aclexplode(c.relacl) x
     WHERE c.relnamespace='public'::regnamespace
+      AND c.relname <> 'feature_flag_organizations'
       AND x.grantee='levi_dev_runtime'::regrole
   `)
   ).rows;
@@ -171,6 +172,7 @@ test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privilÃ
     FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
     CROSS JOIN LATERAL aclexplode(a.attacl) x
     WHERE c.relnamespace='public'::regnamespace AND a.attnum>0
+      AND c.relname NOT IN ('global_administrators', 'feature_flags', 'feature_flag_organizations')
       AND x.grantee='levi_dev_runtime'::regrole
   `);
   assert.equal(rows.length, 63);

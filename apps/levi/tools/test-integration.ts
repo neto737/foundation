@@ -121,6 +121,7 @@ try {
       "--test-concurrency=1",
       "test/runtime-acl-fixture.test.ts",
       "test/integration.test.ts",
+      "test/administration.integration.test.ts",
       "test/migration-history.integration.test.ts",
       "test/members.integration.test.ts",
       restricted
