@@ -460,7 +460,7 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         );
         await writeFile(
           join(directory, "meta/_journal.json"),
-          JSON.stringify(journal),
+          JSON.stringify({ ...journal, entries: journal.entries.slice(0, 5) }),
         );
         await migrate(owner.db, { migrationsFolder: directory });
         await migrate(owner.db, { migrationsFolder: directory });

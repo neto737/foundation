@@ -36,6 +36,20 @@
       "when": 1792845673481,
       "tag": "0004_interface-e-edicao",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793028161806,
+      "tag": "0005_administracao-global",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793028204694,
+      "tag": "0006_recibo-bootstrap-permanente",
+      "breakpoints": true
     }
   ]
 }

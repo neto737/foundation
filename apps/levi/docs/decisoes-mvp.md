@@ -35,6 +35,15 @@ validados em bancos descartáveis. Migration 0004 e ACLs incrementais permanecem
 pendentes de autorização operacional. Exclusão, alteração posterior de situação
 e transferências continuam pendentes.
 
+## Administração global interna
+
+A Etapa 1 de [administração global](administracao-global.md) implementa apenas
+persistência e operações internas, separadas das roles organizacionais. O primeiro
+admin depende de bootstrap explícito e assistido, consumido uma única vez; demais
+concessões exigem administrador global atual. Não há rotas/UI, ativação real ou
+troca do avaliador de membros nesta etapa. A política de flags não concede
+membership nem autoriza dados de outras organizações.
+
 ## Organização, acesso e identidade
 
 - Organização é o tenant e pode conter várias igrejas. Não há tenant por igreja

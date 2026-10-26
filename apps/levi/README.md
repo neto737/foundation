@@ -40,6 +40,14 @@ Replays de migrations em containers sintéticos isolados continuam permitidos.
 A documentação histórica de DEV não atesta o schema/ACLs ou o recorte organizacional
 remoto atual; conferi-los antes de qualquer transferência operacional.
 
+## Administração global
+
+A [Etapa 1 de infraestrutura administrativa](docs/administracao-global.md) adiciona
+concessões globais por UUID, bootstrap explícito de uso único, auditoria global e
+base persistida de Feature Flags. Não há painel/rotas administrativas ou mudança
+na disponibilidade de membros; migrations, ACLs e bootstrap reais dependem de
+operações independentes e autorizadas.
+
 ## Workspace e validação
 
 Node `>=22.22.0`, pnpm `10.15.1` e lockfile único na raiz do Foundation.
