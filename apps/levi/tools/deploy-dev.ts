@@ -122,8 +122,11 @@ try {
       1,
     );
     for (const domain of domains) {
-      if (domain.hostname === new URL(deployOrigin).hostname)
+      if (domain.hostname === new URL(deployOrigin).hostname) {
         assert.equal(domain.service, deployWorker);
+        assert.equal(domain.enabled, true);
+        assert.equal(domain.previews_enabled, false);
+      }
       if (domain.service === deployWorker)
         assert.equal(domain.hostname, new URL(deployOrigin).hostname);
     }

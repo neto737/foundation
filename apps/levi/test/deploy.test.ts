@@ -242,6 +242,8 @@ async function simulatedDeploy(
           hostname: "levi.t00ls.dev",
           service: "levi-dev",
           zone_id: valid.CLOUDFLARE_ZONE_ID,
+          enabled: true,
+          previews_enabled: false,
         },
       ]);
     if (url.pathname.endsWith("/workers/routes")) return cloudflare([]);
@@ -1171,6 +1173,47 @@ test("smokes administrativos exigem 404 e no-store sem expor respostas", async (
       assert.equal(result.exitCode, 1);
       assert.equal(result.uploads, 1);
       assert.ok(!result.output.includes("private-"));
+    }
+  }
+});
+
+test("domínio exige roteamento público ativo e previews fechados antes e depois do upload", async () => {
+  for (const published of [false, true]) {
+    for (const state of [
+      { enabled: false, previews_enabled: true },
+      { enabled: true, previews_enabled: true },
+      { enabled: true },
+      { previews_enabled: false },
+      { enabled: "true", previews_enabled: false },
+      { enabled: true, previews_enabled: "false" },
+    ]) {
+      const result = await simulatedDeploy({
+        respond: (url, uploaded) =>
+          uploaded === published &&
+          new URL(url).pathname.endsWith("/workers/domains")
+            ? Response.json({
+                success: true,
+                result: [
+                  {
+                    hostname: "levi.t00ls.dev",
+                    service: "levi-dev",
+                    zone_id: valid.CLOUDFLARE_ZONE_ID,
+                    ...state,
+                  },
+                ],
+              })
+            : undefined,
+      });
+      assert.equal(result.exitCode, 1, JSON.stringify({ published, state }));
+      assert.equal(result.uploads, published ? 1 : 0);
+      assert.equal(result.writes.length, published ? 1 : 0);
+      assert.equal(result.cleanups, published ? 1 : 0);
+      assert.ok(result.output.includes("custom domains exclusivos do Levi"));
+      assert.ok(
+        !result.requests.some((url) =>
+          url.startsWith("https://levi.t00ls.dev"),
+        ),
+      );
     }
   }
 });

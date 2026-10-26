@@ -43,7 +43,8 @@ consulta run/tentativa/jobs e reconsulta run mais recente e master para recusar
 mudanças durante a consulta. [deploy-dev](../tools/deploy-dev.ts) reconfirma
 master remota, HEAD limpo e a mesma evidência imediatamente antes do upload.
 Antes de gravar configuração ou chamar Wrangler, exige Worker e domínio existentes,
-workers.dev/previews desabilitados, Hyperdrive/cache/TLS corretos, uma versão com
+domínio público habilitado e sem previews, workers.dev/previews desabilitados,
+Hyperdrive/cache/TLS corretos, uma versão com
 100% do tráfego e tag SHA identificável. Confere Assets, presença dos dois secrets,
 origem pública, remetente e recorte de membros da versão ativa. Ausência, 403 ou
 divergência bloqueiam antes do upload; o executor não provisiona esses recursos.
@@ -53,7 +54,11 @@ Wrangler usa a última versão enviada. O executor registra SHA/UUID anteriores 
 reconfere versão/bindings imediatamente antes do upload. Isso detecta mudanças
 entre consultas, mas não constitui lock com outro repositório nem impede uma
 escrita externa após a última consulta. A contenção operacional é obrigatória.
-Há uma única chamada de upload, sem retry automático.
+O executor chama Wrangler uma vez e não repete automaticamente o comando/job.
+O Wrangler 4.149.0 pode repetir internamente requisições de API em falhas
+transitórias (`retryOnAPIFailure`); não há garantia de um único POST de versão.
+Falha ou timeout exige conferir deployments e versões enviadas antes de decidir
+qualquer nova tentativa, inclusive se houver versão enviada sem tráfego.
 
 As permissões GITHUB_TOKEN são apenas contents: read/actions: read. Secrets ficam
 somente no step publish, após readiness, instalação e build, no Environment exclusivo
@@ -295,7 +300,7 @@ interrompe antes da etapa seguinte. Não executar o workflow para testar o gate.
 | 4. Candidato            | Preparação integrada por revisão, master limpa, SHA completo escolhido e CI push/master mais recente aprovada, incluindo checks e Version Packages. Confirmar compatibilidade de rollback e matriz de validação.                                                                                                                                                                                                                                     | Houver avanço da master, nova tentativa/run pendente, falha, skip obrigatório ou candidato não revisado.                                                                                                                          |
 | 5. Conter original      | Com autorização para o original, fechar `LEVI_DEV_DEPLOY_ENABLED`, fechar `LEVI_DEV_READY` e suspender `.github/workflows/deploy-dev.yml`. Inventariar gatilhos, dispatch/rerun, execuções e filas; aguardar término natural das já iniciadas. Retirar a capacidade de publicação antiga sob custódia, somente após comprovar token exclusivo, sem afetar o novo ou outros consumidores.                                                             | Restar execução/ator/automação capaz de escrever, ou os tokens forem compartilhados/escopo incerto. Não cancelar upload em curso para simular exclusão. Grupos concurrency entre repositórios não são lock.                       |
 | 6. Habilitar Foundation | Com autorização do corte e exclusividade comprovada, abrir `DEPLOY_READY` somente no Environment levi-dev; preservar execução manual, revisão e proteções. Registrar responsável e janela.                                                                                                                                                                                                                                                           | O original ainda puder publicar ou qualquer condição anterior tiver expirado. Não abrir gates como investigação.                                                                                                                  |
-| 7. Publicar             | Dispatch manual do SHA exato da master aprovada, no Worker levi-dev e domínio existentes. Preflight deve confirmar última versão enviada igual à ativa e configurações preservadas. Uma chamada de upload, sem retry.                                                                                                                                                                                                                                | Houver qualquer divergência remota ou mudança de versão. Após upload, falha do job não prova que a versão anterior continua ativa: consultar antes de decidir.                                                                    |
+| 7. Publicar             | Dispatch manual do SHA exato da master aprovada, no Worker levi-dev e domínio existentes. Preflight deve confirmar última versão enviada igual à ativa e configurações preservadas. Uma invocação Wrangler, sem retry do executor; observar os retries internos descritos acima.                                                                                                                                                                     | Houver qualquer divergência remota ou mudança de versão. Após upload, falha do job não prova que a versão anterior continua ativa: consultar antes de decidir.                                                                    |
 | 8. Validar              | Confirmar SHA/UUID/100% tráfego, bindings e smokes; depois, com conta sintética aprovada, sessão anterior, login/logout, onboarding, organizações, permissões/isolamento e mesma disponibilidade de membros. `/admin` e `/api/admin` devem manter 404 anônimo/comum; usar admin existente somente se disponível. Conferir logs sanitizados, quotas e saúde.                                                                                          | Houver regressão, perda de sessão não aceita, ampliação de membros ou exposição administrativa. Sem primeiro admin, declarar painel publicado tecnicamente e não ativado. Não fazer bootstrap como correção.                      |
 | 9. Consolidar           | Registrar versão ativa, CI/run de publicação, publicador único Foundation e original contido, incluindo custódia e canais manuais. Manter evidência privada de configurações sem secrets em logs.                                                                                                                                                                                                                                                    | Existir segundo escritor ou versão sem comprovação. Aguardar estabilidade antes de encerrar a janela.                                                                                                                             |
 | 10. Falha               | Aplicar somente recuperação previamente validada e autorizada, conforme os limites abaixo; interromper novas publicações e revalidar estado.                                                                                                                                                                                                                                                                                                         | A ação necessária exceder a autorização ou não houver evidência de recuperação segura. Não improvisar DDL reverso nem alternar publicadores concorrentes.                                                                         |
@@ -345,6 +350,13 @@ para recuperar privilégios.
   schema aditivo. O publicador normal exige master atual; não aceita SHA histórico
   arbitrário para recuperação. Um rollback Cloudflare não desfaz Neon ou recursos
   conectados. Registrar a nova versão/deployment ativo e repetir validações.
+  Um rollback pode deixar a última versão enviada diferente da ativa. Nesse caso,
+  o publicador normal permanece bloqueado: uma operação de recuperação separada,
+  previamente validada e autorizada, precisa restabelecer essa linha de base com
+  código, Assets, configuração e secrets comprovados. Um novo PR, isoladamente,
+  não resolve essa divergência. Não retirar a guarda ou reutilizar o deploy
+  normal para contorná-la. Sem esse procedimento, a recuperação segue pendente
+  e o corte não pode prosseguir.
 - **Banco:** PITR/backup precisa de ponto/branch, janela e procedimento comprovados;
   timestamp/LSN não criam backup nem reservam retenção. Restauração pode perder
   gravações legítimas posteriores e afetar recibos permanentes. Exige decisão
