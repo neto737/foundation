@@ -27,11 +27,7 @@ export function deploySettings(env: NodeJS.ProcessEnv) {
   );
   assert.ok(!env.LEVI_DEV_DATABASE_HOST!.split(".")[0]!.includes("-pooler"));
   assert.match(env.LEVI_DEV_DATABASE_NAME ?? "", /^levi_dev(?:_[a-z0-9_]+)?$/);
-  for (const name of [
-    "GITHUB_TOKEN",
-    "CLOUDFLARE_API_TOKEN",
-    "CLOUDFLARE_READ_TOKEN",
-  ])
+  for (const name of ["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN"])
     assert.ok(env[name]?.trim());
   // Reutiliza a validação real do runtime, sem enviar e-mail.
   workerOptions({

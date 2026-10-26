@@ -6,9 +6,9 @@ Este documento descreve o publicador manual preparado no Foundation para
 seu deploy automático. A cópia histórica em `apps/levi/.github` não é executada
 como workflow raiz.
 
-O [workflow Deploy Levi DEV](../../../.github/workflows/deploy-levi-dev.yml) ainda
-não possui Environment `levi-dev`, credenciais nem interruptor de repositório
-provisionados. Não executar dispatch/rerun, criar configuração operacional ou
+O [workflow Deploy Levi DEV](../../../.github/workflows/deploy-levi-dev.yml) utiliza
+os cadastros do Environment `levi-dev`, já preparado administrativamente, mas
+permanece bloqueado por `DEPLOY_READY=false`. Não executar dispatch/rerun ou
 publicar para testar essa preparação. O estado atual de Cloudflare/Neon,
 0004/ACLs e recuperação precisa ser confirmado em leitura autorizada antes do corte.
 
@@ -46,21 +46,24 @@ As verificações de Hyperdrive/cache/TLS, domínio, versão ativa/tag e gate de
 permanecem preservadas. Há uma única chamada de upload, sem retry automático.
 
 As permissões GITHUB_TOKEN são apenas contents: read/actions: read. Secrets ficam
-somente no step publish, após instalação e build, no Environment exclusivo
-`levi-dev`, futuramente restrito à master. A fila `levi-dev` usa
+somente no step publish, após readiness, instalação e build, no Environment exclusivo
+`levi-dev`, restrito à master. A fila `levi-dev` usa
 cancel-in-progress: false e é distinta de `foundation-dev-d1`; não coordena
 publicadores de repositórios diferentes.
 
-**LEVI_DEV_DEPLOY_ENABLED ausente ou diferente de true bloqueia validate antes
-mesmo de entrar no Environment.** O segundo job repete a guarda e exige sucesso/SHA
-válido do primeiro. Sem configuração/credenciais completas, o operador também
-falha antes de publicar. `LEVI_DEV_READY=true` é uma confirmação administrativa,
-não prova automática de schema/ACLs nem autorização de transferência.
+**`DEPLOY_READY` é o único interruptor administrativo, no Environment `levi-dev`.**
+A primeira etapa do job deploy exige literalmente `true`; ausente, false ou
+qualquer outro valor falha explicitamente antes de checkout, instalação, build,
+consultas operacionais e acesso aos secrets pelo step publish. Não depende de
+variables de Environment no if do job. Validate continua sem Environment e sem
+credenciais operacionais; pode validar CI mesmo com readiness fechado.
 
-Referenciar um Environment ausente pode criá-lo implicitamente no GitHub quando
-um job alcança essa etapa. Por isso não habilitar o interruptor nem fazer dispatch
-antes de preparar o Environment em tarefa autorizada; ausência de Environment não
-é proteção suficiente por si só. Não se criou nenhum Environment nesta preparação.
+O workflow mapeia `DEPLOY_READY` para a entrada interna `LEVI_DEV_READY`, cuja
+assertiva o operador preserva. Não existe dependência do interruptor de repositório.
+Readiness não prova schema/ACLs e não autoriza transferência. Mantê-lo false até
+preparação administrativa, corte e primeiro deploy explicitamente autorizados.
+Referenciar um Environment ausente pode criá-lo implicitamente no GitHub; sua
+existência isolada não é uma barreira de publicação.
 
 ## Recursos e pré-requisitos remotos
 
@@ -101,22 +104,36 @@ Settings → Environments → levi-dev do GitHub Foundation, sem fornecer valore
 versioná-los. Em terminal privado, `gh secret set NOME --repo t00ls-dev/foundation --env levi-dev`
 solicita o valor interativamente.
 
-| Secret do environment levi-dev | Uso                                                                |
-| ------------------------------ | ------------------------------------------------------------------ |
-| `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                      |
-| `CLOUDFLARE_API_TOKEN`         | Publicar Worker/Assets/custom domain, menor escopo disponível      |
-| `CLOUDFLARE_READ_TOKEN`        | Leitura Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas |
-| `LEVI_AUTH_SECRET`             | Aleatório, exclusivo, estável, ao menos 32 caracteres              |
-| `RESEND_API_KEY`               | Somente envio, restrito ao domínio remetente                       |
+| Secret do Environment levi-dev | Uso                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                             |
+| `CLOUDFLARE_API_TOKEN`         | Leitura dos recursos verificados e publicação Worker/Assets/custom domain |
+| `AUTH_SECRET`                  | Mapeado para o binding interno LEVI_AUTH_SECRET; ao menos 32 caracteres   |
+| `RESEND_API_KEY`               | Somente envio, restrito ao domínio remetente                              |
 
-Variables do environment `levi-dev`: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`,
-`LEVI_DEV_DATABASE_HOST`, `LEVI_DEV_DATABASE_NAME`, `LEVI_EMAIL_FROM` e
-`LEVI_DEV_READY`. A variable opcional `LEVI_MEMBERS_DEV_ORGANIZATIONS` controla
-somente o recorte sintético de membros, conforme [Gestão de membros](gestao-membros.md#habilitação-e-limites);
-ausente/vazia/inválida mantém o módulo desabilitado e não altera a chave de deploy.
-Os IDs são obtidos de recursos reais; host direto Neon e banco
-`levi_dev` ou prefixo permitido. A habilitação `LEVI_DEV_DEPLOY_ENABLED` é uma
-variable **do repositório**, avaliada antes de entrar no environment.
+Variables do Environment: `CLOUDFLARE_ZONE_ID`, `HYPERDRIVE_ID`, `DATABASE_HOST`,
+`DATABASE_NAME`, `EMAIL_FROM` e `DEPLOY_READY`. O workflow as mapeia para as entradas
+internas existentes, preservando os bindings do Worker e os alvos esperados.
+Não cadastrar nomes legados em paralelo. Os IDs devem corresponder aos recursos
+existentes; host direto Neon e banco `levi_dev` ou prefixo permitido.
+
+A variable opcional `MEMBERS_DEV_ORGANIZATIONS` é mapeada para o binding
+`LEVI_MEMBERS_DEV_ORGANIZATIONS`: controla somente o recorte sintético de membros,
+conforme [Gestão de membros](gestao-membros.md#habilitação-e-limites).
+Ausente/vazia/inválida desabilita o módulo; reconciliar o binding publicado antes
+do corte para evitar desativação involuntária ou ampliação do rollout.
+
+O token Cloudflare único deve permitir todas as leituras anteriores/posteriores
+(Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas) e o upload. Sua presença
+não comprova os escopos efetivos; falha de permissão bloqueia sem contorno. Esta
+adaptação não concede permissões nem requer Hyperdrive Write ou acesso migrador.
+
+O mantenedor gerou novamente `AUTH_SECRET` intencionalmente. Não recuperar ou
+substituir o cadastro nesta preparação: o primeiro deploy autorizado enviará o
+novo valor ao binding existente `LEVI_AUTH_SECRET`. Antes do corte, avaliar os
+efeitos em sessões/tokens e nos contadores HMAC de abuso, além da compatibilidade
+do rollback com essa mudança. Não prometer continuidade criptográfica do segredo
+anterior nem assumir que rollback de código restaura secrets automaticamente.
 
 `LEVI_ACCESS_APP_ID` e `LEVI_DEV_EMAIL_ALLOWLIST` deixaram de ser consumidos;
 nenhum endereço pessoal deve ser colocado em variables públicas. Chaves de gestão
@@ -171,7 +188,8 @@ esperado e comando `pnpm --filter levi db:migrate:dev`; ver
 O primeiro deploy exige autorização específica, além da integração revisada do
 publicador e da CI de push/master correspondente. Antes disso, reconciliar recursos,
 schema/journal/0004/ACLs e o gate existente; preparar `levi-dev` e credenciais sob
-custódia privada, preservando LEVI_AUTH_SECRET. Não incluir credencial migradora.
+custódia privada, reconhecendo a troca intencional de AUTH_SECRET no primeiro
+deploy autorizado. Não incluir credencial migradora.
 A publicação auth@0.3.2 e seu plano antigo continuam adiados e intactos.
 
 No corte autorizado, fechar/suspender o publicador original e aguardar naturalmente

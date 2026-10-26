@@ -267,8 +267,8 @@ de qualquer uso real.
 O ambiente preparado é DEV público: sem Cloudflare Access ou allowlist de
 endereços. Consultar [Deploy DEV](deploy-dev.md) para recursos, CI automática,
 secrets, habilitação e guardas do SHA/Hyperdrive. O mecanismo de suspensão é
-`LEVI_DEV_DEPLOY_ENABLED=false`; somente pré-requisitos conferidos permitem
-mantê-lo ativo para publicação automática.
+`DEPLOY_READY=false` no Environment `levi-dev`; somente pré-requisitos conferidos
+e autorização específica permitem publicação manual pelo Foundation.
 
 Banco/roles exclusivos, TLS, migrations administrativas explícitas, Hyperdrive
 sem cache, remetente verificado e tracking desabilitado são pré-requisitos.

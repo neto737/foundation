@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { test } from "node:test";
@@ -188,7 +188,7 @@ test("CI do Levi não recebe Environment, secrets ou entrada operacional", () =>
   );
 });
 
-test("publicador Levi manual permanece isolado e fechado antes do Environment", () => {
+test("publicador Levi manual permanece isolado e bloqueia readiness antes de credenciais", () => {
   const workflow = parse(
     readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
   );
@@ -213,7 +213,6 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
   assert.equal(deploy.needs, "validate");
   const sha = "a".repeat(40);
   const trusted = {
-    vars: { LEVI_DEV_DEPLOY_ENABLED: "true" },
     github: {
       repository: "t00ls-dev/foundation",
       event_name: "workflow_dispatch",
@@ -227,8 +226,6 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     const allows = (context) => runInNewContext(job.if, context);
     assert.equal(allows(trusted), true);
     for (const context of [
-      { ...trusted, vars: {} },
-      { ...trusted, vars: { LEVI_DEV_DEPLOY_ENABLED: "false" } },
       { ...trusted, inputs: {} },
       { ...trusted, inputs: { execution_sha: "b".repeat(40) } },
       ...["workflow_run", "pull_request", "push"].map((event_name) => ({
@@ -269,8 +266,35 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     "node .github/scripts/ci-evidence.mjs deploy",
   );
   assert.equal(JSON.stringify(validate).includes("secrets."), false);
-  assert.equal(deploy.steps[0].with.ref, "${{ needs.validate.outputs.sha }}");
-  assert.equal(deploy.steps[0].with["persist-credentials"], false);
+  const readiness = deploy.steps[0];
+  assert.equal(readiness.id, "readiness");
+  assert.deepEqual(readiness.env, { DEPLOY_READY: "${{ vars.DEPLOY_READY }}" });
+  assert.equal(readiness.if, undefined);
+  assert.equal(readiness["continue-on-error"], undefined);
+  for (const value of [
+    undefined,
+    "",
+    "false",
+    "TRUE",
+    "1",
+    " true ",
+    "invalid",
+    "true",
+  ]) {
+    const result = spawnSync(
+      "bash",
+      ["--noprofile", "--norc", "-eo", "pipefail", "-c", readiness.run],
+      {
+        encoding: "utf8",
+        env: value === undefined ? {} : { DEPLOY_READY: value },
+      },
+    );
+    assert.equal(result.status, value === "true" ? 0 : 1);
+    if (value !== "true")
+      assert.match(result.stdout, /::error::Deploy Levi DEV bloqueado/);
+  }
+  assert.equal(deploy.steps[1].with.ref, "${{ needs.validate.outputs.sha }}");
+  assert.equal(deploy.steps[1].with["persist-credentials"], false);
   assert.equal(
     deploy.steps.find((step) => step.id === "install").uses,
     "./.github/actions/setup",
@@ -294,10 +318,10 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     publish.env.LEVI_DEPLOY_SHA,
     "${{ needs.validate.outputs.sha }}",
   );
-  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.LEVI_DEV_READY }}");
+  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.DEPLOY_READY }}");
   assert.equal(
     publish.env.LEVI_MEMBERS_DEV_ORGANIZATIONS,
-    "${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}",
+    "${{ vars.MEMBERS_DEV_ORGANIZATIONS }}",
   );
   assert.deepEqual(
     Object.values(publish.env)
@@ -306,19 +330,34 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     [
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_TOKEN",
-      "CLOUDFLARE_READ_TOKEN",
-      "LEVI_AUTH_SECRET",
+      "AUTH_SECRET",
       "RESEND_API_KEY",
     ]
       .map((name) => "${{ secrets." + name + " }}")
       .sort(),
   );
+  for (const [internal, configured] of Object.entries({
+    LEVI_AUTH_SECRET: "secrets.AUTH_SECRET",
+    LEVI_HYPERDRIVE_ID: "vars.HYPERDRIVE_ID",
+    LEVI_DEV_DATABASE_HOST: "vars.DATABASE_HOST",
+    LEVI_DEV_DATABASE_NAME: "vars.DATABASE_NAME",
+    LEVI_EMAIL_FROM: "vars.EMAIL_FROM",
+  }))
+    assert.equal(publish.env[internal], "${{ " + configured + " }}");
+  assert.equal(publish.if, undefined);
+  assert.equal(publish["continue-on-error"], undefined);
+  for (const step of deploy.steps.slice(1, deploy.steps.indexOf(publish))) {
+    assert.equal(step.if, undefined);
+    assert.equal(step["continue-on-error"], undefined);
+  }
   for (const step of deploy.steps.filter((step) => step !== publish))
     assert.equal(JSON.stringify(step).includes("secrets."), false);
   const operations = JSON.stringify(workflow);
   for (const forbidden of [
     "workflow_run",
     "workflow_call",
+    "LEVI_DEV_DEPLOY_ENABLED",
+    "CLOUDFLARE_READ_TOKEN",
     "download-artifact",
     "npm run",
     "db:migrate",
