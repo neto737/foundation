@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { readMembersDevOrganizations } from "../src/member-access.js";
-import { workerOptions } from "../src/worker-config.js";
 
 export const deployOrigin = "https://levi.t00ls.dev";
 export const deployWorker = "levi-dev";
@@ -29,15 +28,8 @@ export function deploySettings(env: NodeJS.ProcessEnv) {
   assert.match(env.LEVI_DEV_DATABASE_NAME ?? "", /^levi_dev(?:_[a-z0-9_]+)?$/);
   for (const name of ["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN"])
     assert.ok(env[name]?.trim());
-  // Reutiliza a validação real do runtime, sem enviar e-mail.
-  workerOptions({
-    ASSETS: { fetch: async () => new Response() },
-    HYPERDRIVE: { connectionString: "validation-only" },
-    LEVI_PUBLIC_ORIGIN: deployOrigin,
-    LEVI_AUTH_SECRET: env.LEVI_AUTH_SECRET ?? "",
-    RESEND_API_KEY: env.RESEND_API_KEY ?? "",
-    LEVI_EMAIL_FROM: env.LEVI_EMAIL_FROM ?? "",
-  });
+  // Secrets pertencem ao Worker existente, não às entradas do publicador.
+  assert.ok(env.LEVI_EMAIL_FROM?.trim());
   return { sha, account, hyperdrive };
 }
 
@@ -70,6 +62,21 @@ export function verifyWorkerBindings(
   assert.equal(hyperdrives.length, 1);
   assert.equal(hyperdrives[0].name, "HYPERDRIVE");
   assert.equal(hyperdrives[0].id, env.LEVI_HYPERDRIVE_ID);
+  for (const [name, type, text] of [
+    ["ASSETS", "assets"],
+    ["LEVI_AUTH_SECRET", "secret_text"],
+    ["RESEND_API_KEY", "secret_text"],
+    ["LEVI_PUBLIC_ORIGIN", "plain_text", deployOrigin],
+    ["LEVI_EMAIL_FROM", "plain_text", env.LEVI_EMAIL_FROM],
+  ]) {
+    const matches: { type?: unknown; text?: unknown }[] = bindings.filter(
+      (binding) => binding.name === name,
+    );
+    assert.equal(matches.length, 1);
+    assert.ok(matches[0]);
+    assert.equal(matches[0].type, type);
+    if (type === "plain_text") assert.equal(matches[0].text, text);
+  }
   const recortes = bindings.filter(
     (b) => b.name === "LEVI_MEMBERS_DEV_ORGANIZATIONS",
   );
@@ -108,6 +115,7 @@ export function deploymentConfig(
     main: resolve(base.main),
     assets: { ...base.assets, directory: resolve(base.assets.directory) },
     hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdrive }],
+    secrets: { required: ["LEVI_AUTH_SECRET", "RESEND_API_KEY"] },
     routes: [{ pattern: new URL(deployOrigin).hostname, custom_domain: true }],
     vars: {
       ...base.vars,

@@ -327,23 +327,19 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
     Object.values(publish.env)
       .filter((value) => value.includes("secrets."))
       .sort(),
-    [
-      "CLOUDFLARE_ACCOUNT_ID",
-      "CLOUDFLARE_API_TOKEN",
-      "AUTH_SECRET",
-      "RESEND_API_KEY",
-    ]
+    ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"]
       .map((name) => "${{ secrets." + name + " }}")
       .sort(),
   );
   for (const [internal, configured] of Object.entries({
-    LEVI_AUTH_SECRET: "secrets.AUTH_SECRET",
     LEVI_HYPERDRIVE_ID: "vars.HYPERDRIVE_ID",
     LEVI_DEV_DATABASE_HOST: "vars.DATABASE_HOST",
     LEVI_DEV_DATABASE_NAME: "vars.DATABASE_NAME",
     LEVI_EMAIL_FROM: "vars.EMAIL_FROM",
   }))
     assert.equal(publish.env[internal], "${{ " + configured + " }}");
+  assert.equal(publish.env.LEVI_AUTH_SECRET, undefined);
+  assert.equal(publish.env.RESEND_API_KEY, undefined);
   assert.equal(publish.if, undefined);
   assert.equal(publish["continue-on-error"], undefined);
   for (const step of deploy.steps.slice(1, deploy.steps.indexOf(publish))) {

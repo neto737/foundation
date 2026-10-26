@@ -36,6 +36,19 @@ const valid: NodeJS.ProcessEnv = {
   RESEND_API_KEY: "synthetic-only",
 };
 const versionId = "11111111-1111-4111-8111-111111111111";
+const previousVersionId = "33333333-3333-4333-8333-333333333333";
+const baseBindings = [
+  { type: "hyperdrive", name: "HYPERDRIVE", id: valid.LEVI_HYPERDRIVE_ID },
+  { type: "assets", name: "ASSETS" },
+  { type: "secret_text", name: "LEVI_AUTH_SECRET" },
+  { type: "secret_text", name: "RESEND_API_KEY" },
+  {
+    type: "plain_text",
+    name: "LEVI_PUBLIC_ORIGIN",
+    text: "https://levi.t00ls.dev",
+  },
+  { type: "plain_text", name: "LEVI_EMAIL_FROM", text: valid.LEVI_EMAIL_FROM },
+];
 const hyperdrive = {
   id: valid.LEVI_HYPERDRIVE_ID,
   name: "levi-dev",
@@ -75,8 +88,7 @@ test("deploy exige execução confiável manual da master e configuração compl
       LEVI_DEV_DATABASE_HOST:
         "ep-synthetic-only-pooler.us-east-2.aws.neon.tech",
     },
-    { LEVI_AUTH_SECRET: "" },
-    { RESEND_API_KEY: "" },
+    { LEVI_EMAIL_FROM: "" },
   ])
     assert.throws(() => deploySettings({ ...valid, ...changes }));
 });
@@ -114,6 +126,10 @@ test("configuração temporária preserva logs fechados e não altera Wrangler l
   assert.equal(result.workers_dev, false);
   assert.equal(result.preview_urls, false);
   assert.equal(result.hyperdrive[0]?.id, valid.LEVI_HYPERDRIVE_ID);
+  assert.deepEqual(result.secrets.required, [
+    "LEVI_AUTH_SECRET",
+    "RESEND_API_KEY",
+  ]);
   assert.equal(result.observability.enabled, false);
   assert.equal(result.observability.logs.invocation_logs, false);
   assert.equal(result.observability.traces.enabled, false);
@@ -200,6 +216,7 @@ async function simulatedDeploy(
   const headers = {
     "referrer-policy": "no-referrer",
     "content-security-policy": "default-src 'self'",
+    "cache-control": "private, no-store",
   };
   const cloudflare = (result: unknown) =>
     Response.json({ success: true, result });
@@ -218,21 +235,15 @@ async function simulatedDeploy(
     if (url.pathname.includes("/hyperdrive/configs/"))
       return cloudflare(hyperdrive);
     if (url.pathname.endsWith("/subdomain"))
-      return uploads
-        ? cloudflare({ enabled: false, previews_enabled: false })
-        : new Response(null, { status: 404 });
+      return cloudflare({ enabled: false, previews_enabled: false });
     if (url.pathname.endsWith("/workers/domains"))
-      return cloudflare(
-        uploads
-          ? [
-              {
-                hostname: "levi.t00ls.dev",
-                service: "levi-dev",
-                zone_id: valid.CLOUDFLARE_ZONE_ID,
-              },
-            ]
-          : [],
-      );
+      return cloudflare([
+        {
+          hostname: "levi.t00ls.dev",
+          service: "levi-dev",
+          zone_id: valid.CLOUDFLARE_ZONE_ID,
+        },
+      ]);
     if (url.pathname.endsWith("/workers/routes")) return cloudflare([]);
     if (url.pathname.includes("/zones/"))
       return cloudflare({
@@ -242,19 +253,24 @@ async function simulatedDeploy(
     if (url.pathname.endsWith("/deployments"))
       return cloudflare({
         deployments: [
-          { versions: [{ version_id: versionId, percentage: 100 }] },
+          {
+            versions: [
+              {
+                version_id: uploads ? versionId : previousVersionId,
+                percentage: 100,
+              },
+            ],
+          },
         ],
       });
     if (url.pathname.includes("/versions/"))
       return cloudflare({
-        annotations: { "workers/tag": valid.GITHUB_SHA },
+        annotations: {
+          "workers/tag": uploads ? valid.GITHUB_SHA : "e".repeat(40),
+        },
         resources: {
           bindings: [
-            {
-              type: "hyperdrive",
-              name: "HYPERDRIVE",
-              id: valid.LEVI_HYPERDRIVE_ID,
-            },
+            ...baseBindings,
             {
               type: "plain_text",
               name: "LEVI_MEMBERS_DEV_ORGANIZATIONS",
@@ -266,6 +282,10 @@ async function simulatedDeploy(
             },
           ],
         },
+      });
+    if (url.pathname.endsWith("/versions"))
+      return cloudflare({
+        items: [{ id: uploads ? versionId : previousVersionId }],
       });
     if (url.hostname === "levi.t00ls.dev") {
       if (url.pathname === "/")
@@ -283,6 +303,8 @@ async function simulatedDeploy(
             : 404,
           headers,
         });
+      if (["/admin", "/api/admin/session"].includes(url.pathname))
+        return new Response(null, { status: 404, headers });
       if (["/api/organizations", "/api/churches"].includes(url.pathname))
         return new Response(null, { status: 401, headers });
     }
@@ -308,7 +330,7 @@ async function simulatedDeploy(
         args[0] === "rev-parse" ? valid.GITHUB_SHA : "",
       spawnSync: (
         _command: string,
-        _args: string[],
+        args: string[],
         settings: { env: NodeJS.ProcessEnv },
       ) => {
         assert.equal(
@@ -316,6 +338,9 @@ async function simulatedDeploy(
           valid.CLOUDFLARE_API_TOKEN,
         );
         assert.equal("CLOUDFLARE_READ_TOKEN" in settings.env, false);
+        assert.ok(!args.includes("--secrets-file"));
+        assert.equal(settings.env.LEVI_AUTH_SECRET, undefined);
+        assert.equal(settings.env.RESEND_API_KEY, undefined);
         uploads++;
         return { status: 0 };
       },
@@ -329,6 +354,8 @@ async function simulatedDeploy(
         contents: string,
         settings: { mode: number },
       ) => {
+        assert.ok(!contents.includes(valid.LEVI_AUTH_SECRET!));
+        assert.ok(!contents.includes(valid.RESEND_API_KEY!));
         writes.push({ path, mode: settings.mode });
         if (path.endsWith("wrangler.json"))
           writtenMembersDevOrganizations = JSON.parse(contents).vars
@@ -444,7 +471,7 @@ test("diagnóstico: sucesso conserva publicação única, checks, arquivos priva
   assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
   assert.equal(result.cleanups, 1);
-  assert.equal(result.writes.length, 2);
+  assert.equal(result.writes.length, 1);
   assert.ok(result.writes.every((file) => file.mode === 0o600));
   assert.ok(
     result.output.includes(
@@ -453,6 +480,8 @@ test("diagnóstico: sucesso conserva publicação única, checks, arquivos priva
   );
   for (const path of [
     "/",
+    "/admin",
+    "/api/admin/session",
     "/api/onboarding",
     "/api/organizations",
     "/api/churches",
@@ -464,8 +493,8 @@ test("diagnóstico: sucesso conserva publicação única, checks, arquivos priva
 
 test("diagnóstico: HTTP pós-upload identifica operação/status e interrompe sem retry", async () => {
   const result = await simulatedDeploy({
-    respond: (url) =>
-      url.endsWith("/deployments")
+    respond: (url, published) =>
+      published && url.endsWith("/deployments")
         ? new Response(sensitive, { status: 403 })
         : undefined,
   });
@@ -479,13 +508,10 @@ test("diagnóstico: HTTP pós-upload identifica operação/status e interrompe s
   );
   assert.equal(
     result.requests.filter((url) => url.endsWith("/deployments")).length,
-    1,
+    3,
   );
   assert.ok(
-    !result.requests.some(
-      (url) =>
-        url.includes("/versions/") || url.startsWith("https://levi.t00ls.dev"),
-    ),
+    !result.requests.some((url) => url.startsWith("https://levi.t00ls.dev")),
   );
   assert.ok(!result.output.includes("private-"));
 });
@@ -574,7 +600,7 @@ test("diagnóstico: divergências de proteção e tag localizam check sem imprim
             success: true,
             result: { ...hyperdrive, caching: { disabled: false } },
           });
-        if (operation === "tag" && url.includes("/versions/"))
+        if (operation === "tag" && published && url.includes("/versions/"))
           return Response.json({
             success: true,
             result: { annotations: { "workers/tag": sensitive } },
@@ -837,8 +863,8 @@ test("diagnóstico: logger de progresso reprovado não impede sucesso e logger d
       ...(cleanup
         ? { cleanupError: new Error(sensitive) }
         : {
-            respond: (url: string) =>
-              url.endsWith("/deployments")
+            respond: (url: string, published: boolean) =>
+              published && url.endsWith("/deployments")
                 ? new Response(sensitive, { status: 403 })
                 : undefined,
           }),
@@ -923,7 +949,7 @@ test("versão ativa exige binding único, ID esperado e o mesmo recorte de membr
     name: "HYPERDRIVE",
     id: valid.LEVI_HYPERDRIVE_ID,
   };
-  verifyWorkerBindings({ resources: { bindings: [binding] } }, valid);
+  verifyWorkerBindings({ resources: { bindings: baseBindings } }, valid);
   for (const bindings of [
     [],
     [binding, binding],
@@ -955,9 +981,10 @@ test("versão ativa exige binding único, ID esperado e o mesmo recorte de membr
           : undefined,
     });
     assert.equal(result.exitCode, 1);
-    assert.equal(result.uploads, 1);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.writes.length, 0);
     assert.ok(
-      result.output.includes("binding Hyperdrive e recorte da versão ativa"),
+      result.output.includes("bindings, remetente e recorte da versão ativa"),
     );
     assert.ok(
       !result.requests.some((url) => url.startsWith("https://levi.t00ls.dev")),
@@ -1009,5 +1036,141 @@ test("deploy recusa CI substituída imediatamente antes do upload e limpa arquiv
     assert.ok(
       result.output.includes("evidência CI inalterada antes do upload"),
     );
+  }
+});
+
+test("transferência recusa Worker/domínio ausente e 403 antes de arquivos ou upload", async () => {
+  for (const [path, response] of [
+    ["/subdomain", new Response(null, { status: 404 })],
+    ["/workers/domains", Response.json({ success: true, result: [] })],
+    ["/deployments", new Response(null, { status: 403 })],
+    ["/versions", new Response(null, { status: 403 })],
+  ] as const) {
+    const result = await simulatedDeploy({
+      respond: (url) =>
+        new URL(url).pathname.endsWith(path) ? response : undefined,
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.writes.length, 0);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.cleanups, 0);
+  }
+});
+
+test("transferência preserva secrets remotos sem exigir nem encaminhar cópias GitHub", async () => {
+  const result = await simulatedDeploy({
+    env: {
+      LEVI_AUTH_SECRET: undefined,
+      RESEND_API_KEY: undefined,
+    },
+  });
+  assert.equal(result.exitCode, 0, result.output);
+  assert.equal(result.uploads, 1);
+  assert.equal(result.writes.length, 1);
+  assert.ok(result.writes[0]!.path.endsWith("wrangler.json"));
+  assert.ok(result.output.includes(previousVersionId));
+});
+
+test("transferência bloqueia divergência de remetente/recorte e ausência de Assets/secrets", async () => {
+  const id = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
+  for (const bindings of [
+    baseBindings.filter((b) => b.name !== "ASSETS"),
+    baseBindings.filter((b) => b.name !== "LEVI_AUTH_SECRET"),
+    baseBindings.filter((b) => b.name !== "RESEND_API_KEY"),
+    baseBindings.map((b) =>
+      b.name === "LEVI_EMAIL_FROM" ? { ...b, text: sensitive } : b,
+    ),
+    [
+      ...baseBindings,
+      { type: "plain_text", name: "LEVI_MEMBERS_DEV_ORGANIZATIONS", text: id },
+    ],
+    [...baseBindings, { type: "secret_text", name: "LEVI_AUTH_SECRET" }],
+  ]) {
+    const result = await simulatedDeploy({
+      respond: (url) =>
+        url.includes("/versions/")
+          ? Response.json({
+              success: true,
+              result: {
+                annotations: { "workers/tag": "e".repeat(40) },
+                resources: { bindings },
+              },
+            })
+          : undefined,
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.writes.length, 0);
+    assert.ok(!result.output.includes("private-"));
+    assert.ok(!result.output.includes(id));
+  }
+});
+
+test("transferência não herda secrets de versão enviada sem tráfego", async () => {
+  const result = await simulatedDeploy({
+    respond: (url) =>
+      url.endsWith("/versions")
+        ? Response.json({
+            success: true,
+            result: { items: [{ id: versionId }] },
+          })
+        : undefined,
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 0);
+  assert.equal(result.writes.length, 0);
+  assert.ok(
+    result.output.includes("última versão enviada igual à versão ativa"),
+  );
+});
+
+test("transferência interrompe se versão ativa mudar entre preflight e upload", async () => {
+  let reads = 0;
+  const result = await simulatedDeploy({
+    respond: (url) => {
+      if (url.endsWith("/deployments")) reads++;
+      if (reads < 2) return undefined;
+      if (url.endsWith("/deployments"))
+        return Response.json({
+          success: true,
+          result: {
+            deployments: [
+              { versions: [{ version_id: versionId, percentage: 100 }] },
+            ],
+          },
+        });
+      if (url.endsWith("/versions"))
+        return Response.json({
+          success: true,
+          result: { items: [{ id: versionId }] },
+        });
+      return undefined;
+    },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 0);
+  assert.equal(result.cleanups, 1);
+  assert.ok(result.output.includes("versão ativa inalterada antes do upload"));
+});
+
+test("smokes administrativos exigem 404 e no-store sem expor respostas", async () => {
+  for (const path of ["/admin", "/api/admin/session"]) {
+    for (const status of [200, 404]) {
+      const result = await simulatedDeploy({
+        respond: (url) =>
+          url === `https://levi.t00ls.dev${path}`
+            ? new Response(sensitive, {
+                status,
+                headers: {
+                  "referrer-policy": "no-referrer",
+                  "content-security-policy": "default-src 'self'",
+                },
+              })
+            : undefined,
+      });
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.uploads, 1);
+      assert.ok(!result.output.includes("private-"));
+    }
   }
 });
