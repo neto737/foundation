@@ -42,10 +42,11 @@ remoto atual; conferi-los antes de qualquer transferência operacional.
 
 ## Administração global
 
-A [Etapa 1 de infraestrutura administrativa](docs/administracao-global.md) adiciona
-concessões globais por UUID, bootstrap explícito de uso único, auditoria global e
-base persistida de Feature Flags. Não há painel/rotas administrativas ou mudança
-na disponibilidade de membros; migrations, ACLs e bootstrap reais dependem de
+A [administração global](docs/administracao-global.md) inclui concessões por UUID,
+bootstrap explícito de uso único, auditoria global, políticas persistidas de
+Feature Flags e painel interno em `/admin`. O painel usa o login comum e exige
+concessão global ativa, inclusive antes da entrega do HTML. Não altera a
+disponibilidade atual de membros; migrations, ACLs e bootstrap reais dependem de
 operações independentes e autorizadas.
 
 ## Workspace e validação

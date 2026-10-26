@@ -251,3 +251,73 @@ test("429 atrasado anterior ao login não instala espera na identidade nova", as
   await rejection;
   assert.equal(await api.stage(), "concluido");
 });
+
+test("cliente administrativo valida catálogo e não aceita políticas ou identidades inesperadas", async () => {
+  const { adminApi } = await import("../web/src/admin-api.js");
+  const signal = new AbortController().signal;
+  for (const features of [
+    [{ key: "arbitrary", policy: "all", version: 1, organizationIds: [] }],
+    [{ key: "members", policy: "selected", version: 1, organizationIds: [] }],
+    [
+      {
+        key: "members",
+        policy: "disabled",
+        version: 1,
+        organizationIds: ["11111111-1111-4111-8111-111111111111"],
+      },
+    ],
+    [{ key: "members", policy: "all", version: -1, organizationIds: [] }],
+  ]) {
+    globalThis.fetch = async () => Response.json({ features });
+    await assert.rejects(
+      adminApi.features(signal),
+      (error: unknown) => error instanceof ApiError && error.status === 502,
+    );
+  }
+  globalThis.fetch = async () =>
+    Response.json({ userId: "email@example.test", sessionId: "browser-value" });
+  await assert.rejects(
+    adminApi.session(signal),
+    (error: unknown) => error instanceof ApiError && error.status === 502,
+  );
+});
+
+test("cliente administrativo usa corpo de busca e mantém versões, confirmação e erros de recência", async () => {
+  const { adminApi } = await import("../web/src/admin-api.js");
+  const signal = new AbortController().signal;
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  globalThis.fetch = async (path, init) => {
+    calls.push({ path: String(path), init });
+    return Response.json({ account: null });
+  };
+  assert.equal(await adminApi.find("synthetic@example.test", signal), null);
+  assert.equal(calls[0]?.path, "/api/admin/accounts/find");
+  assert.equal(
+    calls[0]?.init?.body,
+    JSON.stringify({ email: "synthetic@example.test" }),
+  );
+  await adminApi.update(
+    { key: "members", policy: "all", version: 3, organizationIds: [] },
+    signal,
+  );
+  assert.equal(calls[1]?.init?.method, "PUT");
+  assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), {
+    expectedVersion: 3,
+    policy: { kind: "all" },
+    confirmAll: true,
+  });
+  globalThis.fetch = async () =>
+    Response.json(
+      { erro: "REAUTENTICACAO_NECESSARIA", mensagem: "Entre novamente." },
+      { status: 403 },
+    );
+  await assert.rejects(
+    adminApi.change(
+      { userId: "11111111-1111-4111-8111-111111111111", version: 1 },
+      true,
+      signal,
+    ),
+    (error: unknown) =>
+      error instanceof ApiError && error.code === "REAUTENTICACAO_NECESSARIA",
+  );
+});

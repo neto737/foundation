@@ -1,8 +1,9 @@
-# Infraestrutura administrativa global — Etapa 1
+# Administração global — infraestrutura e painel
 
-Esta etapa prepara persistência e operações internas do Levi. Não cria `/admin`,
-`/api/admin`, interface, contas reais ou habilitação de módulos. O login Better
-Auth, as roles organizacionais e o recorte atual de membros continuam inalterados.
+A Etapa 1 prepara persistência e operações internas; a Etapa 2 acrescenta o painel
+`/admin` e a API administrativa no próprio Levi. Nenhuma delas cria contas reais
+ou ativa módulos. O login Better Auth, as roles organizacionais e o recorte atual
+de membros continuam inalterados.
 
 ## Autoridade e concorrência
 
@@ -15,7 +16,8 @@ As funções de `src/administrators.ts` recebem identidade previamente resolvida
 Better Auth. Revalidam usuário, credencial, sessão e concessão atuais no banco.
 Não aceitar IDs de request como substitutos dessa identidade. O guard público do
 módulo interno (`requireGlobalAdministrator`) nega com `RequestError` 404 inclusive
-quando não consegue consultar a autoridade. Ainda não existe contrato HTTP novo.
+quando não consegue consultar a autoridade. A camada HTTP aplica esse guard antes
+de validação, CSRF e quotas administrativas.
 
 Concessões e revogações exigem sessão criada há no máximo dez minutos, válida e
 sem data futura; renovar `updated_at` não reautentica. Conta sem autoridade recebe
@@ -127,10 +129,11 @@ O chamador continua responsável por sessão, membership, permissão e isolament
 **Esta função não está ligada ao domínio de membros.** `membersAvailable`,
 `MEMBERS_DEV_ORGANIZATIONS`, origem DEV, booleanos sintéticos e `/api/context`
 continuam com a semântica anterior. Tabelas novas vazias não desabilitam nem
-habilitam o módulo atual. A Etapa 2 deverá planejar/importar o recorte efetivamente
-publicado, proteger escritas de membros com lock/revalidação da política e provar
-equivalência antes de trocar a fonte de autoridade. O código desta etapa não faz
-importação, união DB/ENV ou ativação.
+habilitam o módulo atual. Uma etapa futura, com autorização própria, deverá
+planejar/importar o recorte efetivamente publicado, proteger escritas de membros
+com lock/revalidação da política e provar equivalência antes de trocar a fonte de
+autoridade. O painel altera somente as políticas preparadas; não faz importação,
+união DB/ENV ou ativação.
 
 ## ACLs, operação e validação
 
@@ -151,6 +154,58 @@ cluster, concorrência, falha de auditoria, revogação e negações de ACL. Os 
 anteriores de autenticação, organizações e membros continuam na suíte.
 
 Para validar, seguir [o runbook de testes](../../../docs/runbooks/testing.md) e os
-scripts Levi. A Etapa 2 ainda inclui rotas/404 HTTP uniforme antes de middleware,
-UI/navegação, integração operacional de flags, migração do recorte e qualquer
-ativação real. Nenhuma dessas operações está autorizada por este código.
+scripts Levi. Integração operacional das flags, migração do recorte e qualquer
+ativação real permanecem fora do painel e exigem autorização própria.
+
+## Painel e contrato HTTP — Etapa 2
+
+Acessar `/admin` diretamente após o login comum do Levi. Não existe login separado
+nem link na navegação dos usuários comuns. O painel é resolvido antes do onboarding
+e da seleção de organização; uma conta global elegível pode acessá-lo sem tenant.
+Entradas e saídas usam navegação completa. Não há acesso implícito às igrejas ou
+membros das organizações listadas.
+
+Páginas e APIs administrativas exigem concessão global ativa antes de entregar HTML,
+validar corpo, verificar CSRF ou consumir quotas. Visitantes, contas comuns, sessões
+revogadas e autoridade indisponível recebem 404, inclusive métodos e subcaminhos
+inexistentes. Variações de caixa, encoding e barras não são aliases de `/admin`.
+Node e Worker protegem a entrega do HTML; `/admin` continua fora de `spaPaths`.
+O proxy Vite encaminha `/admin` e os assets compilados ao Node, preservando o status
+e os headers. Por isso, compilar o Levi antes de usar o painel pelo Vite; mudanças
+da interface administrativa requerem novo build nesse modo.
+
+Todas as respostas preservam headers de segurança e `private, no-store`. APIs
+administrativas compartilham quota persistida de 60 requisições por minuto/usuário,
+aplicada somente após autorização, também no Node. Escritas exigem origem confiável
+e corpo JSON limitado a 16 KiB (64 KiB na atualização de `members`, para preservar
+a seleção de até 1000 UUIDs). Não há retry automático de mutation ou bypass de
+recência. O ID de operação da auditoria é gerado no servidor.
+
+| Método e caminho                             | Contrato                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `GET /api/admin/session`                     | UUID de usuário e da sessão atual, sem token                                         |
+| `GET /api/admin/administrators?after=<UUID>` | Concessões, nome/e-mail, versão, revogação; até 100 por página                       |
+| `POST /api/admin/accounts/find`              | E-mail exato no corpo; conta única, elegibilidade e versão; sem busca parcial        |
+| `PATCH /api/admin/administrators/:id`        | `enabled`, `expectedVersion`; confirmações na interface e sessão recente no servidor |
+| `GET /api/admin/organizations?after=<UUID>`  | Somente identificador/nome; até 100 por página                                       |
+| `GET /api/admin/features`                    | Catálogo declarado no código; ausente aparece `disabled`, versão 0                   |
+| `PUT /api/admin/features/:key`               | `policy`, `expectedVersion`; `confirmAll: true` obrigatório para `all`               |
+
+As telas mostram administradores ativos/revogados e permitem localizar conta,
+conceder e revogar com confirmação. A seleção de políticas suporta `all`, `selected`
+e `disabled`, somente para `members`; todas as organizações exige confirmação
+adicional. Conflito 409 recarrega o estado, sem repetir a mutation. Recência vencida
+oferece sair e entrar novamente pelo fluxo comum; idade da sessão continua sem
+comprovar método de autenticação.
+
+Os dados existem somente em memória. Perda de foco, ocultação e saída da página
+limpam dados/rascunhos e abortam requests; retorno/foco revalidam sessão e concessão.
+Gerações invalidam respostas antigas. Leitura e ações da interface conferem novamente
+a mesma identidade/sessão antes de publicar resultados. Falhas não restauram dados
+anteriores. Esta revalidação complementa a autorização transacional do servidor.
+
+Os testes de integração cobrem 404 antes de middleware, ACLs restritas, CSRF/quota,
+concessões/revogações e auditoria, conflitos, seleções, revogação de sessão e isolamento.
+Worker real com Assets e E2E desktop/mobile/Vite exercitam HTML, refresh, histórico,
+logout, confirmações, acessibilidade e resposta atrasada após revogação. Tudo usa
+PostgreSQL sintético descartável; não executa bootstrap ou migrations persistentes.

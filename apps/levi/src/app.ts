@@ -1,3 +1,19 @@
+import { administrativePath } from "./admin-paths.js";
+import {
+  administrativeNotFound,
+  requireGlobalAdministrator,
+} from "./admin-access.js";
+import {
+  administrativeDirectory,
+  findAdministrativeAccount,
+} from "./admin-directory.js";
+import { changeGlobalAdministrator } from "./administrators.js";
+import { listFeatureFlags, updateFeatureFlag } from "./feature-flags.js";
+import {
+  featureKeys,
+  invalidAdministrativeInput,
+  readExpectedVersion,
+} from "./feature-contracts.js";
 import { membersAvailable } from "./member-access.js";
 import { Hono } from "hono";
 import {
@@ -72,6 +88,38 @@ export function createApp(options: AppOptions) {
   });
   // Executa antes na volta do middleware; a política mais restrita fica por último.
   app.use("*", foundationSecurityHeaders());
+  // Guarda antes de CSRF, bodyLimit, quotas e matching dos endpoints/HTML.
+  app.use("*", async (c, next) => {
+    if (!administrativePath(c.req.path)) return next();
+    if (!c.req.header("cookie")) administrativeNotFound();
+    let database: Database | undefined;
+    try {
+      try {
+        database = await createPostgresDatabase(options.databaseUrl);
+        const auth = createAuth(database, options);
+        const resolved = await auth.resolveSession(c.req.raw.headers);
+        await requireGlobalAdministrator(database, resolved.data);
+        c.set("database", database);
+        c.set("auth", auth);
+        c.set("identity", resolved.data);
+        c.set("abuse", createAbuseProtection(database.client, options.secret));
+        for (const cookie of resolved.headers.getSetCookie())
+          c.header("Set-Cookie", cookie, { append: true });
+      } catch {
+        administrativeNotFound();
+      }
+      // Variantes codificadas, caixa diferente e prefixos não são aliases.
+      if (!(
+        c.req.path === "/admin" ||
+        c.req.path === "/api/admin" ||
+        c.req.path.startsWith("/api/admin/")
+      ))
+        return c.notFound();
+      await next();
+    } finally {
+      await database?.client.end().catch(() => {});
+    }
+  });
   const csrf = csrfProtection({ trustedOrigins: [origin] });
   app.use("*", async (c, next) => {
     const denied = await csrf(c, next);
@@ -84,10 +132,13 @@ export function createApp(options: AppOptions) {
         403,
       );
   });
-  app.use(
-    "*",
+  app.use("*", (c, next) =>
     bodyLimit({
-      maxSize: 16_384,
+      // A seleção já admite 1000 UUIDs; os demais contratos mantêm 16 KiB.
+      maxSize:
+        c.req.method === "PUT" && c.req.path === "/api/admin/features/members"
+          ? 65_536
+          : 16_384,
       onError: (c) =>
         c.json(
           {
@@ -96,9 +147,10 @@ export function createApp(options: AppOptions) {
           },
           413,
         ),
-    }),
+    })(c, next),
   );
   app.use("/api/*", async (c, next) => {
+    if (administrativePath(c.req.path)) return next();
     const database = await createPostgresDatabase(options.databaseUrl);
     try {
       c.set("database", database);
@@ -119,12 +171,14 @@ export function createApp(options: AppOptions) {
     }
   });
   app.use("/api/*", async (c, next) => {
+    if (administrativePath(c.req.path)) return next();
     const abuse = c.get("abuse");
     if (abuse) return abuse.beforeSession(c, next);
     await next();
   });
   // Resolve uma vez por request, inclusive para a quota autenticada de logout.
   app.use("/api/*", async (c, next) => {
+    if (administrativePath(c.req.path)) return next();
     c.set("identity", null);
     if (
       (!c.req.path.startsWith("/api/auth/") ||
@@ -144,8 +198,106 @@ export function createApp(options: AppOptions) {
   });
   app.use("/api/*", async (c, next) => {
     const abuse = c.get("abuse");
-    if (abuse) return abuse.middleware(c.get("identity"))(c, next);
+    if (abuse)
+      return administrativePath(c.req.path)
+        ? abuse.administrative(c.get("identity"))(c, next)
+        : abuse.middleware(c.get("identity"))(c, next);
     await next();
+  });
+
+  app.get("/api/admin/session", (c) => {
+    const identity = c.get("identity");
+    if (!identity) administrativeNotFound();
+    return c.json({ userId: identity.user.id, sessionId: identity.session.id });
+  });
+  for (const kind of ["administrators", "organizations"] as const)
+    app.get(`/api/admin/${kind}`, async (c) => {
+      const after = c.req.query("after");
+      const items = await administrativeDirectory({
+        database: c.get("database"),
+        identity: c.get("identity"),
+        kind,
+        ...(after ? { after } : {}),
+      });
+      const last = items.at(-1);
+      return c.json({
+        items,
+        next:
+          items.length === 100 && last
+            ? "userId" in last
+              ? last.userId
+              : last.id
+            : null,
+      });
+    });
+  app.post("/api/admin/accounts/find", async (c) => {
+    const input = await readObject(c.req.raw, ["email"]);
+    return c.json({
+      account: await findAdministrativeAccount({
+        database: c.get("database"),
+        identity: c.get("identity"),
+        email: readString(input, "email", 3, 254),
+      }),
+    });
+  });
+  app.patch("/api/admin/administrators/:id", async (c) => {
+    const input = await readObject(c.req.raw, ["enabled", "expectedVersion"]);
+    if (
+      typeof input.enabled !== "boolean" ||
+      typeof input.expectedVersion !== "number"
+    )
+      invalidAdministrativeInput();
+    const result = await changeGlobalAdministrator({
+      database: c.get("database"),
+      identity: c.get("identity"),
+      userId: requireUuid(c.req.param("id")),
+      enabled: input.enabled,
+      expectedVersion: readExpectedVersion(input.expectedVersion),
+      operationId: crypto.randomUUID(),
+    });
+    return c.json({ administrator: result });
+  });
+  app.get("/api/admin/features", async (c) => {
+    const stored = await listFeatureFlags({
+      database: c.get("database"),
+      identity: c.get("identity"),
+    });
+    return c.json({
+      features: featureKeys.map((key) => {
+        const row = stored.find((flag) => flag.key === key);
+        return {
+          key,
+          policy: row?.policy ?? "disabled",
+          version: row?.version ?? 0,
+          organizationIds: row?.organizationIds ?? [],
+        };
+      }),
+    });
+  });
+  app.put("/api/admin/features/:key", async (c) => {
+    const input = await readObject(c.req.raw, [
+      "policy",
+      "expectedVersion",
+      "confirmAll",
+    ]);
+    if (typeof input.expectedVersion !== "number") invalidAdministrativeInput();
+    if (
+      input.policy &&
+      typeof input.policy === "object" &&
+      "kind" in input.policy &&
+      input.policy.kind === "all" &&
+      input.confirmAll !== true
+    )
+      invalidAdministrativeInput();
+    const result = await updateFeatureFlag({
+      database: c.get("database"),
+      identity: c.get("identity"),
+      key: c.req.param("key"),
+      policy: input.policy,
+      expectedVersion: readExpectedVersion(input.expectedVersion),
+      operationId: crypto.randomUUID(),
+    });
+    return c.json({ feature: result });
   });
 
   app.post("/api/onboarding/email", async (c) => {

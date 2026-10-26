@@ -1303,3 +1303,473 @@ test("bootstrap: recência vencida durante a auditoria não consome recibo nem c
     0,
   );
 });
+
+test("HTTP administrativo oculta HTML, métodos, aliases e validação antes de autorizar", async () => {
+  const common = await account();
+  const provisioned = await app.request(
+    new Request(origin + "/api/organizations", {
+      method: "POST",
+      headers: {
+        cookie: common.cookie,
+        origin,
+        "content-type": "application/json",
+        "Idempotency-Key": randomUUID(),
+      },
+      body: JSON.stringify({
+        organizationName: "Owner sem concessão global",
+        churchName: "Igreja",
+      }),
+    }),
+  );
+  assert.equal(provisioned.status, 201);
+  const protectedApp = createApp(options);
+  const { mountWeb } = await import("../src/web.js");
+  mountWeb(protectedApp);
+  const paths = [
+    "/admin",
+    "/admin/",
+    "/admin/qualquer",
+    "/api/admin",
+    "/api/admin/features",
+    "/api/admin/accounts/find",
+    "/api/admin/administrators/invalido",
+    "/api/admin/nao-existe",
+    "/ADMIN",
+    "/%61dmin",
+    "/api/%61dmin",
+    "/api/admin%2ffeatures",
+    "//admin",
+    "/api//admin/features",
+  ];
+  for (const cookie of [
+    "",
+    "better-auth.session_token=invalida",
+    common.cookie,
+  ])
+    for (const path of paths)
+      for (const method of [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+      ]) {
+        const response = await protectedApp.request(
+          new Request(origin + path, {
+            method,
+            headers: {
+              cookie,
+              origin: "https://hostil.example",
+              "content-type": "text/plain",
+            },
+            ...(!["GET", "HEAD"].includes(method)
+              ? { body: "x".repeat(20_000) }
+              : {}),
+          }),
+        );
+        assert.equal(response.status, 404, `${method} ${path}`);
+        assert.equal(
+          response.headers.get("cache-control"),
+          "private, no-store",
+        );
+        assert.equal(response.headers.get("ratelimit-limit"), null);
+        assert.equal(response.headers.get("x-frame-options"), "DENY");
+      }
+});
+
+test("HTTP administrativo permite conta sem organização e não concede acesso ao tenant", async () => {
+  const actor = await account();
+  await boot(actor);
+  const protectedApp = createApp(options);
+  const { mountWeb } = await import("../src/web.js");
+  mountWeb(protectedApp);
+  const html = await protectedApp.request(
+    new Request(origin + "/admin", { headers: { cookie: actor.cookie } }),
+  );
+  assert.equal(html.status, 200);
+  assert.match(html.headers.get("content-type") ?? "", /text\/html/);
+  assert.equal(html.headers.get("cache-control"), "private, no-store");
+  assert.ok(html.headers.get("content-security-policy"));
+  const sessionResponse = await send(
+    "/api/admin/session",
+    undefined,
+    actor.cookie,
+  );
+  assert.equal(sessionResponse.status, 200);
+  assert.deepEqual(await sessionResponse.json(), {
+    userId: actor.userId,
+    sessionId: actor.sessionId,
+  });
+  const organizations = await send(
+    "/api/admin/organizations",
+    undefined,
+    actor.cookie,
+  );
+  assert.equal(organizations.status, 200);
+  const orgs = (await organizations.json()) as { items: object[] };
+  for (const org of orgs.items)
+    assert.deepEqual(Object.keys(org).sort(), ["id", "name"]);
+  assert.equal(
+    (await send("/api/context", undefined, actor.cookie)).status,
+    403,
+  );
+  assert.equal(
+    (await send("/api/churches", undefined, actor.cookie)).status,
+    403,
+  );
+  const catalog = await send("/api/admin/features", undefined, actor.cookie);
+  assert.deepEqual(await catalog.json(), {
+    features: [
+      { key: "members", policy: "disabled", version: 0, organizationIds: [] },
+    ],
+  });
+  const csrf = await protectedApp.request(
+    new Request(origin + "/api/admin/accounts/find", {
+      method: "POST",
+      headers: {
+        cookie: actor.cookie,
+        origin: "https://hostil.example",
+        "content-type": "application/json",
+      },
+      body: "{}",
+    }),
+  );
+  assert.equal(csrf.status, 403);
+  const oversized = await protectedApp.request(
+    new Request(origin + "/api/admin/accounts/find", {
+      method: "POST",
+      headers: {
+        cookie: actor.cookie,
+        origin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ email: "x".repeat(20_000) }),
+    }),
+  );
+  assert.equal(oversized.status, 413);
+  for (const [path, body] of [
+    ["/api/admin/accounts/find", { email: "x" }],
+    ["/api/admin/accounts/find", { email: actor.email, role: "admin" }],
+  ] as const)
+    assert.equal((await send(path, body, actor.cookie)).status, 400);
+});
+
+async function adminMutation(
+  path: string,
+  method: string,
+  body: object,
+  actor: Account,
+) {
+  return app.request(
+    new Request(origin + path, {
+      method,
+      headers: {
+        cookie: actor.cookie,
+        origin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+test("API concede, conflita e revoga com auditoria, recência e revogação imediata", async () => {
+  const actor = await account();
+  const target = await account();
+  await boot(actor);
+  const lookup = await send(
+    "/api/admin/accounts/find",
+    { email: target.email.toUpperCase() },
+    actor.cookie,
+  );
+  assert.equal(lookup.status, 200);
+  const result = (await lookup.json()) as {
+    account: {
+      userId: string;
+      eligible: boolean;
+      version: number;
+      active: boolean;
+    };
+  };
+  assert.equal(result.account.userId, target.userId);
+  assert.equal(result.account.eligible, true);
+  assert.equal(result.account.version, 0);
+  assert.equal(result.account.active, false);
+  assert.deepEqual(
+    await (
+      await send(
+        "/api/admin/accounts/find",
+        { email: `${randomUUID()}@example.test` },
+        actor.cookie,
+      )
+    ).json(),
+    { account: null },
+  );
+  const path = `/api/admin/administrators/${target.userId}`;
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PATCH",
+        { enabled: true, expectedVersion: 0 },
+        actor,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await send("/api/admin/session", undefined, target.cookie)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PATCH",
+        { enabled: false, expectedVersion: 0 },
+        actor,
+      )
+    ).status,
+    409,
+  );
+  await observer.client.query(
+    "UPDATE session SET created_at=now()-interval '11 minutes' WHERE id=$1",
+    [actor.sessionId],
+  );
+  const stale = await adminMutation(
+    path,
+    "PATCH",
+    { enabled: false, expectedVersion: 1 },
+    actor,
+  );
+  assert.equal(stale.status, 403);
+  assert.equal(
+    ((await stale.json()) as { erro: string }).erro,
+    "REAUTENTICACAO_NECESSARIA",
+  );
+  await observer.client.query(
+    "UPDATE session SET created_at=now() WHERE id=$1",
+    [actor.sessionId],
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PATCH",
+        { enabled: false, expectedVersion: 1 },
+        actor,
+      )
+    ).status,
+    200,
+  );
+  for (const adminPath of [
+    "/admin",
+    "/api/admin/session",
+    "/api/admin/features",
+  ])
+    assert.equal((await send(adminPath, undefined, target.cookie)).status, 404);
+  const events = await observer.client.query<{
+    action: string;
+    tenant: string | null;
+  }>(
+    "SELECT action,tenant FROM audit_events WHERE target=$1 AND action IN ('admin.granted','admin.revoked') ORDER BY timestamp",
+    [target.userId],
+  );
+  assert.deepEqual(
+    events.rows.map((row) => row.action),
+    ["admin.granted", "admin.revoked"],
+  );
+  assert.ok(events.rows.every((row) => row.tenant === null));
+  await observer.client.query("DELETE FROM session WHERE id=$1", [
+    actor.sessionId,
+  ]);
+  assert.equal(
+    (await send("/api/admin/session", undefined, actor.cookie)).status,
+    404,
+  );
+});
+
+test("API de flags valida catálogo, confirmação all, seleções e versão sem mudar membros", async () => {
+  const actor = await account();
+  await boot(actor);
+  const owner = await account();
+  const organization = await send(
+    "/api/organizations",
+    { organizationName: "Organização de seleção", churchName: "Igreja" },
+    owner.cookie,
+  );
+  // Provisionamento exige chave de idempotência; usa o contrato público existente.
+  assert.equal(organization.status, 400);
+  const provision = await app.request(
+    new Request(origin + "/api/organizations", {
+      method: "POST",
+      headers: {
+        cookie: owner.cookie,
+        origin,
+        "content-type": "application/json",
+        "Idempotency-Key": randomUUID(),
+      },
+      body: JSON.stringify({
+        organizationName: "Organização de seleção",
+        churchName: "Igreja",
+      }),
+    }),
+  );
+  assert.equal(provision.status, 201);
+  const { organizationId } = (await provision.json()) as {
+    organizationId: string;
+  };
+  const path = "/api/admin/features/members";
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PUT",
+        { policy: { kind: "all" }, expectedVersion: 0 },
+        actor,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        "/api/admin/features/arbitraria",
+        "PUT",
+        { policy: { kind: "disabled" }, expectedVersion: 0 },
+        actor,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PUT",
+        {
+          policy: { kind: "selected", organizationIds: [randomUUID()] },
+          expectedVersion: 0,
+        },
+        actor,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PUT",
+        {
+          policy: { kind: "selected", organizationIds: [organizationId] },
+          expectedVersion: 0,
+        },
+        actor,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PUT",
+        { policy: { kind: "disabled" }, expectedVersion: 0 },
+        actor,
+      )
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await adminMutation(
+        path,
+        "PUT",
+        { policy: { kind: "all" }, expectedVersion: 1, confirmAll: true },
+        actor,
+      )
+    ).status,
+    200,
+  );
+  const flags = await send("/api/admin/features", undefined, actor.cookie);
+  assert.deepEqual(await flags.json(), {
+    features: [
+      { key: "members", policy: "all", version: 2, organizationIds: [] },
+    ],
+  });
+  assert.equal(
+    (await send("/api/members", undefined, owner.cookie)).status,
+    404,
+  );
+  assert.equal(
+    (await send("/api/churches", undefined, actor.cookie)).status,
+    403,
+  );
+  const delta = await observer.client.query(
+    "SELECT tenant FROM audit_events WHERE action='feature_flag.organization_added' AND tenant=$1",
+    [organizationId],
+  );
+  assert.equal(delta.rowCount, 1);
+});
+
+test("quota administrativa ocorre só após autorização, inclusive quando esgotada", async () => {
+  const actor = await account();
+  await boot(actor);
+  const { createHmac } = await import("node:crypto");
+  const digest = createHmac("sha256", secret)
+    .update(`user:${actor.userId}`)
+    .digest("hex");
+  const start = Math.floor(Date.now() / 60_000) * 60_000;
+  for (const window of [start, start + 60_000])
+    await observer.client.query(
+      "INSERT INTO abuse_counters(key,count,expires_at) VALUES($1,60,$2) ON CONFLICT(key) DO UPDATE SET count=60",
+      [`v2:admin:${digest}:${window}`, new Date(window + 60_000)],
+    );
+  const limited = await send("/api/admin/features", undefined, actor.cookie);
+  assert.equal(limited.status, 429);
+  assert.ok(limited.headers.get("retry-after"));
+  assert.equal((await send("/api/admin/features")).status, 404);
+  assert.equal(
+    (await send("/api/admin/features", undefined, (await account()).cookie))
+      .status,
+    404,
+  );
+});
+
+test("API preserva seleção de 1000 organizações e falha fechada se não pode consultar autoridade", async () => {
+  const actor = await account();
+  await boot(actor);
+  const ids = Array.from({ length: 1000 }, () => randomUUID());
+  await observer.client.query(
+    "INSERT INTO tenants(id,name) SELECT id,'Seleção sintética' FROM unnest($1::uuid[]) AS id",
+    [ids],
+  );
+  const response = await adminMutation(
+    "/api/admin/features/members",
+    "PUT",
+    { policy: { kind: "selected", organizationIds: ids }, expectedVersion: 0 },
+    actor,
+  );
+  assert.equal(response.status, 200);
+  const result = (await response.json()) as {
+    feature: { organizationIds: string[] };
+  };
+  assert.deepEqual(result.feature.organizationIds, [...ids].sort());
+  const unavailableUrl = new URL(runtimeUrl);
+  unavailableUrl.pathname = "/levi_admin_nonexistent_test";
+  const unavailable = createApp({
+    ...options,
+    databaseUrl: unavailableUrl.toString(),
+  });
+  for (const path of ["/admin", "/api/admin/session", "/api/admin/features"])
+    assert.equal(
+      (
+        await unavailable.request(
+          new Request(origin + path, { headers: { cookie: actor.cookie } }),
+        )
+      ).status,
+      404,
+    );
+});

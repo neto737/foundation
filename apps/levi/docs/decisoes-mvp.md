@@ -40,8 +40,10 @@ e transferências continuam pendentes.
 A Etapa 1 de [administração global](administracao-global.md) implementa apenas
 persistência e operações internas, separadas das roles organizacionais. O primeiro
 admin depende de bootstrap explícito e assistido, consumido uma única vez; demais
-concessões exigem administrador global atual. Não há rotas/UI, ativação real ou
-troca do avaliador de membros nesta etapa. A política de flags não concede
+concessões exigem administrador global atual. A Etapa 2 acrescenta `/admin` e
+`/api/admin`, com HTTP 404 antes do HTML e dos middlewares para quem não possui
+concessão global ativa. O painel gerencia concessões e políticas preparadas, sem
+ativação real ou troca do avaliador de membros. A política de flags não concede
 membership nem autoriza dados de outras organizações.
 
 ## Organização, acesso e identidade

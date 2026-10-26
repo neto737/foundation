@@ -1267,3 +1267,81 @@ test("workerd: origem configurada fora de DEV recusa recorte válido sem afetar 
     await runtime.mf.dispose();
   }
 });
+
+test("workerd: guard administrativo protege HTML antes de Assets, API e validação", async () => {
+  const common = await ready();
+  for (const cookie of ["", common.cookie])
+    for (const path of [
+      "/admin",
+      "/admin/",
+      "/admin/outro",
+      "/api/admin",
+      "/api/admin/features",
+      "/%61dmin",
+      "/api/%61dmin",
+      "/api/admin%2ffeatures",
+    ])
+      for (const method of [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+      ]) {
+        const response = await mf.dispatchFetch(workerOrigin + path, {
+          method,
+          headers: {
+            cookie,
+            origin: "https://hostil.example",
+            "content-type": "text/plain",
+          },
+          ...(!["GET", "HEAD"].includes(method)
+            ? { body: "x".repeat(20_000) }
+            : {}),
+        });
+        assert.equal(response.status, 404, `${method} ${path}`);
+        assert.equal(
+          response.headers.get("cache-control"),
+          "private, no-store",
+        );
+        assert.equal(response.headers.get("x-frame-options"), "DENY");
+        assert.equal(response.headers.get("ratelimit-limit"), null);
+        await response.arrayBuffer();
+      }
+  await observer.client.query(
+    "INSERT INTO global_administrators(user_id) VALUES($1)",
+    [common.id],
+  );
+  const html = await send("/admin", undefined, common.cookie);
+  assert.equal(html.status, 200);
+  assert.match(html.headers.get("content-type") ?? "", /text\/html/);
+  assert.ok((await html.text()).includes('id="root"'));
+  const administrative = await send(
+    "/api/admin/session",
+    undefined,
+    common.cookie,
+  );
+  assert.equal(administrative.status, 200);
+  assert.equal(
+    (await send("/api/churches", undefined, common.cookie)).status,
+    403,
+  );
+  const csrf = await send(
+    "/api/admin/accounts/find",
+    { email: common.email },
+    common.cookie,
+    { origin: "https://hostil.example" },
+  );
+  assert.equal(csrf.status, 403);
+  await observer.client.query(
+    "UPDATE global_administrators SET revoked_at=now(),version=version+1 WHERE user_id=$1",
+    [common.id],
+  );
+  assert.equal((await send("/admin", undefined, common.cookie)).status, 404);
+  assert.equal(
+    (await send("/api/admin/session", undefined, common.cookie)).status,
+    404,
+  );
+});

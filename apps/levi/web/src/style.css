@@ -1216,3 +1216,68 @@ footer {
 .optional-details > .hint {
   margin: 0.4rem 0 1.2rem;
 }
+
+.global-admin .topbar {
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.global-admin .topbar > span {
+  flex: 1;
+}
+.global-admin-main {
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.global-admin-section {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+.global-admin-section p,
+.global-admin-section small {
+  overflow-wrap: anywhere;
+}
+.global-admin-section form {
+  border-top: 1px solid var(--line);
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+}
+.global-admin-section .item-list small {
+  display: block;
+}
+.global-admin-section fieldset {
+  min-width: 0;
+  margin: 1rem 0;
+  border: 1px solid var(--line);
+}
+.organization-options {
+  max-height: 24rem;
+  overflow-y: auto;
+}
+.organization-options label,
+.global-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.6rem;
+}
+.organization-options input,
+.global-confirm input {
+  width: auto;
+  min-height: 24px;
+}
+.organization-options small {
+  flex-basis: 100%;
+}
+@media (max-width: 760px) {
+  .global-admin-section {
+    padding: 1rem;
+  }
+  .global-admin .topbar > span {
+    flex-basis: 50%;
+  }
+}

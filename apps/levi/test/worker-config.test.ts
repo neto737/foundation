@@ -220,3 +220,30 @@ test("recorte DEV: CSV válido normaliza UUIDs, sem conceder acesso a outras org
     true,
   );
 });
+
+test("Worker sem configuração preserva 404 administrativo antes de qualquer binding ou validação", async () => {
+  for (const path of [
+    "/admin",
+    "/admin/",
+    "/api/admin",
+    "/api/admin/features",
+    "/api/%61dmin",
+  ])
+    for (const method of ["GET", "POST", "DELETE", "OPTIONS"]) {
+      const response = await worker.fetch(
+        new Request("https://levi.t00ls.dev" + path, {
+          method,
+          headers: { origin: "https://hostil.example" },
+          ...(!["GET"].includes(method) ? { body: "invalid" } : {}),
+        }),
+        { ...env, RESEND_API_KEY: "" },
+      );
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), {
+        erro: "NAO_ENCONTRADO",
+        mensagem: "Recurso não encontrado.",
+      });
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(response.headers.get("x-frame-options"), "DENY");
+    }
+});

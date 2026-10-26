@@ -94,9 +94,7 @@ test("bootstrap exige confirmação assistida e não aceita alvo de conexão amb
     assert.throws(() => bootstrapTarget({ ...env, ...override }));
 });
 
-test("esta etapa mantém rotas, avaliador legado e runner operacional separados", async () => {
-  const app = await readFile("src/app.ts", "utf8");
-  assert.ok(!app.includes("/api/admin"));
+test("painel preserva allowlist pública, avaliador legado e runner operacional separados", async () => {
   for (const path of ["src/app.ts", "src/worker.ts", "src/local.ts"])
     assert.ok(!(await readFile(path, "utf8")).includes("bootstrap-admin"));
   assert.ok(

@@ -242,5 +242,21 @@ export function createAbuseProtection(
       },
     };
   }
-  return { beforeSession, middleware, protectEmail, store };
+  function administrative(
+    identity: FoundationSession | null,
+  ): MiddlewareHandler {
+    return (c, next) =>
+      apply(
+        limiter(
+          "v2:admin",
+          60,
+          () => digest(`user:${identity?.user.id}`),
+          60_000,
+          store,
+        ),
+        c,
+        next,
+      );
+  }
+  return { beforeSession, middleware, administrative, protectEmail, store };
 }
