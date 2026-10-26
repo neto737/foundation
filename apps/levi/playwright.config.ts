@@ -14,12 +14,12 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testMatch: /(?:onboarding|members)\.spec\.ts/,
+      testMatch: /(?:onboarding|members|admin)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:4317" },
     },
     {
       name: "mobile",
-      testMatch: /(?:onboarding|members)\.spec\.ts/,
+      testMatch: /(?:onboarding|members|admin)\.spec\.ts/,
       use: {
         ...devices["iPhone 13 Mini"],
         browserName: "chromium",
@@ -30,7 +30,7 @@ export default defineConfig({
       ? [
           {
             name: "iphone-webkit",
-            testMatch: /(?:onboarding|members)\.spec\.ts/,
+            testMatch: /(?:onboarding|members|admin)\.spec\.ts/,
             use: {
               ...devices["iPhone 13 Mini"],
               browserName: "webkit" as const,
@@ -41,7 +41,7 @@ export default defineConfig({
       : []),
     {
       name: "vite-proxy",
-      testMatch: "proxy.spec.ts",
+      testMatch: /(?:proxy|admin)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:5173" },
     },
   ],
