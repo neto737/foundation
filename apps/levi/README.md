@@ -25,12 +25,14 @@ provisionamento atômico de organização/igreja/membership/auditoria, contexto
 organizacional, gestão de membros e interface React. Os testes usam PostgreSQL
 descartável e runtime workerd local.
 
-O repositório original mantém main, CI e deploy DEV sem alterações. Esta cópia
-possui um [publicador manual preparado](../../.github/workflows/deploy-levi-dev.yml)
-para `t00ls-dev/foundation/master`, bloqueado por `DEPLOY_READY=false` no Environment
-`levi-dev`. Os cadastros utilizam nomes locais ao Environment e token Cloudflare único.
-Os arquivos em [.github](.github/README.md) continuam históricos. Preparar esse
-código não transfere o controle nem autoriza publicação; ver [Deploy DEV](docs/deploy-dev.md).
+O Foundation é o publicador DEV autorizado; o repositório original permanece
+preservado e contido. O [publicador manual](../../.github/workflows/deploy-levi-dev.yml)
+usa `t00ls-dev/foundation/master` e o Environment `levi-dev`, com token Cloudflare
+único. Esta revisão adota cadastros canônicos LEVI_ e o gate `LEVI_DEPLOY_READY`;
+a migração administrativa dos nomes ainda precisa ser realizada antes de qualquer
+execução da nova definição. Os arquivos em [.github](.github/README.md) continuam
+históricos. Esta padronização não altera cadastros reais nem autoriza publicação;
+ver [Deploy DEV](docs/deploy-dev.md).
 Worker, domínio, PostgreSQL/Neon, Hyperdrive, e-mail e credenciais permanecem
 independentes do Links. Produção não está implementada.
 
