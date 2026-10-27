@@ -1482,3 +1482,31 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("entradas internas ausentes bloqueiam mesmo com configurações legadas preenchidas", async () => {
+  const legacy = {
+    EMAIL_FROM: valid.LEVI_EMAIL_FROM,
+    HYPERDRIVE_ID: valid.LEVI_HYPERDRIVE_ID,
+    DATABASE_HOST: valid.LEVI_DEV_DATABASE_HOST,
+    DATABASE_NAME: valid.LEVI_DEV_DATABASE_NAME,
+    DEPLOY_READY: "true",
+  };
+  for (const internal of [
+    "LEVI_EMAIL_FROM",
+    "LEVI_HYPERDRIVE_ID",
+    "LEVI_DEV_DATABASE_HOST",
+    "LEVI_DEV_DATABASE_NAME",
+    "LEVI_DEV_READY",
+  ]) {
+    const result = await simulatedDeploy({
+      env: { ...legacy, [internal]: undefined },
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.requests.length, 0);
+    assert.equal(result.ciCalls, 0);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.writes.length, 0);
+    assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
+    assert.ok(!result.output.includes(valid.RESEND_API_KEY));
+  }
+});

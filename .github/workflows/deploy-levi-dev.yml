@@ -51,11 +51,11 @@ jobs:
         id: readiness
         run: |
           if [ "$DEPLOY_READY" != "true" ]; then
-            echo "::error::Deploy Levi DEV bloqueado: DEPLOY_READY deve ser true."
+            echo "::error::Deploy Levi DEV bloqueado: LEVI_DEPLOY_READY deve ser true."
             exit 1
           fi
         env:
-          DEPLOY_READY: ${{ vars.DEPLOY_READY }}
+          DEPLOY_READY: ${{ vars.LEVI_DEPLOY_READY }}
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.sha }}
@@ -72,15 +72,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           LEVI_DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
-          LEVI_DEV_READY: ${{ vars.DEPLOY_READY }}
+          LEVI_DEV_READY: ${{ vars.LEVI_DEPLOY_READY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # LEVI_AUTH_SECRET é reservado à migração futura; não consumir nem enviar.
+          # O Worker herda o segredo remoto até comprovação de continuidade.
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
-          LEVI_HYPERDRIVE_ID: ${{ vars.HYPERDRIVE_ID }}
-          LEVI_DEV_DATABASE_HOST: ${{ vars.DATABASE_HOST }}
-          LEVI_DEV_DATABASE_NAME: ${{ vars.DATABASE_NAME }}
-          LEVI_EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEVI_HYPERDRIVE_ID: ${{ vars.LEVI_HYPERDRIVE_ID }}
+          LEVI_DEV_DATABASE_HOST: ${{ vars.LEVI_DATABASE_HOST }}
+          LEVI_DEV_DATABASE_NAME: ${{ vars.LEVI_DATABASE_NAME }}
+          LEVI_EMAIL_FROM: ${{ vars.LEVI_EMAIL_FROM }}
       - name: Resumir publicação e verificações
         if: always()
         continue-on-error: true

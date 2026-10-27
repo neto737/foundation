@@ -268,7 +268,9 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
   assert.equal(JSON.stringify(validate).includes("secrets."), false);
   const readiness = deploy.steps[0];
   assert.equal(readiness.id, "readiness");
-  assert.deepEqual(readiness.env, { DEPLOY_READY: "${{ vars.DEPLOY_READY }}" });
+  assert.deepEqual(readiness.env, {
+    DEPLOY_READY: "${{ vars.LEVI_DEPLOY_READY }}",
+  });
   assert.equal(readiness.if, undefined);
   assert.equal(readiness["continue-on-error"], undefined);
   for (const value of [
@@ -318,7 +320,7 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
     publish.env.LEVI_DEPLOY_SHA,
     "${{ needs.validate.outputs.sha }}",
   );
-  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.DEPLOY_READY }}");
+  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.LEVI_DEPLOY_READY }}");
   assert.equal("LEVI_MEMBERS_DEV_ORGANIZATIONS" in publish.env, false);
   assert.deepEqual(
     Object.values(publish.env)
@@ -329,10 +331,10 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
       .sort(),
   );
   for (const [internal, configured] of Object.entries({
-    LEVI_HYPERDRIVE_ID: "vars.HYPERDRIVE_ID",
-    LEVI_DEV_DATABASE_HOST: "vars.DATABASE_HOST",
-    LEVI_DEV_DATABASE_NAME: "vars.DATABASE_NAME",
-    LEVI_EMAIL_FROM: "vars.EMAIL_FROM",
+    LEVI_HYPERDRIVE_ID: "vars.LEVI_HYPERDRIVE_ID",
+    LEVI_DEV_DATABASE_HOST: "vars.LEVI_DATABASE_HOST",
+    LEVI_DEV_DATABASE_NAME: "vars.LEVI_DATABASE_NAME",
+    LEVI_EMAIL_FROM: "vars.LEVI_EMAIL_FROM",
   }))
     assert.equal(publish.env[internal], "${{ " + configured + " }}");
   assert.equal(publish.env.LEVI_AUTH_SECRET, undefined);
@@ -364,4 +366,56 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
   ])
     assert.equal(operations.includes(forbidden), false, forbidden);
   assert.equal(deploy.steps.filter((step) => step.id === "publish").length, 1);
+});
+
+test("publicador lê apenas variables canônicas e não aproveita gate ou aliases legados", () => {
+  const workflow = parse(
+    readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
+  );
+  const deploy = workflow.jobs.deploy;
+  const publish = deploy.steps.find((step) => step.id === "publish");
+  const mappings = {
+    LEVI_EMAIL_FROM: "LEVI_EMAIL_FROM",
+    LEVI_HYPERDRIVE_ID: "LEVI_HYPERDRIVE_ID",
+    LEVI_DEV_DATABASE_HOST: "LEVI_DATABASE_HOST",
+    LEVI_DEV_DATABASE_NAME: "LEVI_DATABASE_NAME",
+    LEVI_DEV_READY: "LEVI_DEPLOY_READY",
+  };
+  const variables = {
+    LEVI_EMAIL_FROM: "Levi <hi@levi.t00ls.dev>",
+    LEVI_HYPERDRIVE_ID: "c".repeat(32),
+    LEVI_DATABASE_HOST: "ep-synthetic.us-east-2.aws.neon.tech",
+    LEVI_DATABASE_NAME: "levi_dev",
+    LEVI_DEPLOY_READY: "true",
+    EMAIL_FROM: "legacy-not-consumed",
+    HYPERDRIVE_ID: "legacy-not-consumed",
+    DATABASE_HOST: "legacy-not-consumed",
+    DATABASE_NAME: "legacy-not-consumed",
+    DEPLOY_READY: "true",
+  };
+  const evaluate = (expression, vars) =>
+    runInNewContext(expression.slice(3, -2), { vars }) ?? "";
+  for (const [internal, canonical] of Object.entries(mappings)) {
+    assert.equal(
+      evaluate(publish.env[internal], variables),
+      variables[canonical],
+    );
+    const missing = { ...variables, [canonical]: undefined };
+    assert.equal(evaluate(publish.env[internal], missing), "");
+  }
+  const readiness = deploy.steps[0];
+  for (const canonical of [undefined, "false", "true"]) {
+    const resolved = evaluate(readiness.env.DEPLOY_READY, {
+      ...variables,
+      LEVI_DEPLOY_READY: canonical,
+    });
+    const result = spawnSync(
+      "bash",
+      ["--noprofile", "--norc", "-eo", "pipefail", "-c", readiness.run],
+      { encoding: "utf8", env: { DEPLOY_READY: resolved } },
+    );
+    assert.equal(result.status, canonical === "true" ? 0 : 1);
+    if (canonical !== "true")
+      assert.ok(result.stdout.includes("LEVI_DEPLOY_READY"));
+  }
 });

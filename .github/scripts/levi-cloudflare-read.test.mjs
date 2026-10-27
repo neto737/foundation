@@ -423,6 +423,12 @@ test("workflow manual só usa código integrado da master e secrets do Environme
     with: { "node-version": "22.23.3" },
   });
   const diagnostic = job.steps[2];
+  for (const [internal, canonical] of Object.entries({
+    LEVI_HYPERDRIVE_ID: "LEVI_HYPERDRIVE_ID",
+    LEVI_DEV_DATABASE_HOST: "LEVI_DATABASE_HOST",
+    LEVI_DEV_DATABASE_NAME: "LEVI_DATABASE_NAME",
+  }))
+    assert.equal(diagnostic.env[internal], "${{ vars." + canonical + " }}");
   assert.equal(diagnostic.run, "node .github/scripts/levi-cloudflare-read.mjs");
   assert.deepEqual(
     Object.values(diagnostic.env).filter((value) => value.includes("secrets.")),
@@ -509,4 +515,52 @@ test("metadados incompletos não são confundidos com configuração comprovada"
   });
   assert.equal(check(report, "hyperdrive").metadata.cacheDisabled, null);
   assert.equal(check(report, "hyperdrive").metadata.tlsVerifyFull, null);
+});
+
+test("diagnóstico rejeita variable canônica ausente mesmo com aliases legados e sem consultar API", async () => {
+  const workflow = parse(
+    readFileSync(
+      new URL("../workflows/diagnose-levi-cloudflare.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  const configured = workflow.jobs.diagnose.steps[2].env;
+  const variables = {
+    CLOUDFLARE_ZONE_ID: env.CLOUDFLARE_ZONE_ID,
+    LEVI_HYPERDRIVE_ID: env.LEVI_HYPERDRIVE_ID,
+    LEVI_DATABASE_HOST: env.LEVI_DEV_DATABASE_HOST,
+    LEVI_DATABASE_NAME: env.LEVI_DEV_DATABASE_NAME,
+    HYPERDRIVE_ID: env.LEVI_HYPERDRIVE_ID,
+    DATABASE_HOST: env.LEVI_DEV_DATABASE_HOST,
+    DATABASE_NAME: env.LEVI_DEV_DATABASE_NAME,
+  };
+  for (const missing of [
+    undefined,
+    "LEVI_HYPERDRIVE_ID",
+    "LEVI_DATABASE_HOST",
+    "LEVI_DATABASE_NAME",
+  ]) {
+    const vars = { ...variables };
+    if (missing) delete vars[missing];
+    const context = {
+      vars,
+      secrets: {
+        CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
+        CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN,
+      },
+      inputs: { execution_sha: env.GITHUB_SHA, token_type: "user" },
+    };
+    const changes = Object.fromEntries(
+      Object.entries(configured).map(([key, expression]) => [
+        key,
+        runInNewContext(expression.slice(3, -2), context) ?? "",
+      ]),
+    );
+    const { report, requests } = await simulate({ changes });
+    assert.equal(report.ok, !missing);
+    if (missing) {
+      assert.equal(report.checks[0].outcome, "invalid_configuration");
+      assert.equal(requests.length, 0);
+    }
+  }
 });
