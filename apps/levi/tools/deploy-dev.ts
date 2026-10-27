@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import ts from "typescript";
+import { administrativeEmail } from "../src/admin-config.js";
 import {
   deploySettings,
   verifyHyperdrive,
@@ -188,6 +189,14 @@ try {
       if (phase === "previous")
         return verifyPreviousWorkerBindings(version, env, { versionId, sha });
       verifyWorkerBindings(version, env);
+      if (phase === "published") {
+        const matches = version.resources?.bindings?.filter(
+          (binding: { name?: string; type?: string }) =>
+            binding.name === "LEVI_ADMIN_EMAIL",
+        );
+        assert.equal(matches?.length, 1);
+        assert.equal(matches[0].type, "secret_text");
+      }
       return "current";
     });
     return { versionId, sha, sender };
@@ -232,6 +241,7 @@ try {
     JSON.stringify({
       RESEND_API_KEY: env.RESEND_API_KEY,
       LEVI_AUTH_SECRET: env.LEVI_AUTH_SECRET,
+      LEVI_ADMIN_EMAIL: administrativeEmail(env.LEVI_ADMIN_EMAIL) ?? "",
     }),
     { mode: 0o600, flag: "wx" },
   );

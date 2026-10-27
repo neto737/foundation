@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { administrativeEmail } from "../src/admin-config.js";
 import { knownFeature, readFeaturePolicy } from "../src/feature-contracts.js";
 import { readBootstrapInput } from "../tools/bootstrap-admin-operation.js";
 import { bootstrapTarget } from "../tools/bootstrap-admin-config.js";
@@ -102,4 +103,31 @@ test("painel preserva allowlist pública e runner operacional sem avaliar flags 
   );
   const paths = await readFile("src/web-paths.ts", "utf8");
   assert.ok(!paths.includes('"/admin"'));
+});
+
+test("e-mail administrativo único: normalização, ausência e entradas inválidas", () => {
+  assert.equal(
+    administrativeEmail("  Owner@Example.test  "),
+    "owner@example.test",
+  );
+  assert.equal(
+    administrativeEmail("owner+tag@example.test"),
+    "owner+tag@example.test",
+  );
+  for (const input of [
+    undefined,
+    null,
+    [],
+    {},
+    "",
+    "  ",
+    "*",
+    "invalid",
+    "a@example.test,b@example.test",
+    "a@example.test;b@example.test",
+    "Name <a@example.test>",
+    "a b@example.test",
+    "x".repeat(255) + "@example.test",
+  ])
+    assert.equal(administrativeEmail(input), null);
 });

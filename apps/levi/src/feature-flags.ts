@@ -19,6 +19,7 @@ import {
 type AdministratorInput = {
   database: Database;
   identity: FoundationSession | null;
+  adminEmail?: string | undefined;
 };
 
 export async function listFeatureFlags(input: AdministratorInput) {

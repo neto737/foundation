@@ -44,12 +44,13 @@ remota atual; conferi-los antes de qualquer transferência operacional.
 
 ## Administração global
 
-A [administração global](docs/administracao-global.md) inclui concessões por UUID,
-bootstrap explícito de uso único, auditoria global, políticas persistidas de
-Feature Flags e painel interno em `/admin`. O painel usa o login comum e exige
-concessão global ativa, inclusive antes da entrega do HTML. Não altera a
-disponibilidade atual de membros; migrations, ACLs e bootstrap reais dependem de
-operações independentes e autorizadas.
+A [administração global](docs/administracao-global.md) usa sessão autenticada,
+e-mail verificado e correspondência com o secret LEVI_ADMIN_EMAIL. O backend
+protege `/admin` e suas APIs antes da entrega de HTML. Concessões históricas não
+concedem acesso e não há gestão de administradores pelo painel. Tabelas e dados
+existentes são preservados, assim como auditoria, flags, permissões e isolamento.
+A configuração exige sincronização privada em publicação posteriormente autorizada.
+Não altera a disponibilidade atual de membros.
 
 ## Workspace e validação
 

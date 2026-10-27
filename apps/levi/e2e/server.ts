@@ -17,6 +17,7 @@ const app = createApp({
   baseURL: `http://localhost:${proxy ? 5173 : port}`,
   onboardingReturnPath: "/onboarding",
   secret: "synthetic-test-secret-with-more-than-32-characters",
+  adminEmail: "admin-configured@example.test",
   email: {
     send: async (input) => {
       await writeFile(

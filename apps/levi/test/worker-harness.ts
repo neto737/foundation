@@ -21,7 +21,7 @@ export interface CapturedEmail {
 
 export async function workerHarness(
   databaseUrl: string,
-  options: { publicOrigin?: string } = {},
+  options: { publicOrigin?: string; adminEmail?: string } = {},
 ) {
   const origin = options.publicOrigin ?? workerOrigin;
   const url = new URL(databaseUrl);
@@ -66,6 +66,7 @@ export async function workerHarness(
         LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
         RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
         LEVI_EMAIL_FROM: "Levi <levi@example.test>",
+        LEVI_ADMIN_EMAIL: options.adminEmail ?? "",
       },
       hyperdrives: {
         HYPERDRIVE:

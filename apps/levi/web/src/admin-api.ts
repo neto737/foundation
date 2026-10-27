@@ -1,16 +1,5 @@
 import { ApiError } from "./api.js";
 
-export type Administrator = {
-  userId: string;
-  name: string;
-  email: string;
-  version: number;
-  revokedAt: string | null;
-};
-export type AdministrativeAccount = Omit<Administrator, "revokedAt"> & {
-  eligible: boolean;
-  active: boolean;
-};
 export type Organization = { id: string; name: string };
 export type Feature = {
   key: "members";
@@ -47,29 +36,9 @@ function version(value: unknown): number {
     return invalid();
   return value;
 }
-function boolean(value: unknown): boolean {
-  if (typeof value !== "boolean") return invalid();
-  return value;
-}
 function list<T>(value: unknown, parse: (item: unknown) => T): T[] {
   if (!Array.isArray(value)) return invalid();
   return value.map(parse);
-}
-function administrator(value: unknown): Administrator {
-  const row = record(value);
-  if (
-    row.revokedAt !== null &&
-    (typeof row.revokedAt !== "string" ||
-      !Number.isFinite(Date.parse(row.revokedAt)))
-  )
-    return invalid();
-  return {
-    userId: id(row.userId),
-    name: text(row.name),
-    email: text(row.email),
-    version: version(row.version),
-    revokedAt: row.revokedAt,
-  };
 }
 function feature(value: unknown): Feature {
   const row = record(value);
@@ -138,16 +107,6 @@ export const adminApi = {
     const row = await request("session", signal);
     return { userId: id(row.userId), sessionId: id(row.sessionId) };
   },
-  async administrators(signal: AbortSignal, after: string | null = null) {
-    const row = await request(
-      `administrators${after ? `?after=${encodeURIComponent(after)}` : ""}`,
-      signal,
-    );
-    return {
-      items: list(row.items, administrator),
-      next: row.next === null ? null : id(row.next),
-    };
-  },
   async organizations(signal: AbortSignal, after: string | null = null) {
     const row = await request(
       `organizations${after ? `?after=${encodeURIComponent(after)}` : ""}`,
@@ -161,36 +120,8 @@ export const adminApi = {
       next: row.next === null ? null : id(row.next),
     };
   },
-  async find(
-    email: string,
-    signal: AbortSignal,
-  ): Promise<AdministrativeAccount | null> {
-    const row = (await request("accounts/find", signal, { email })).account;
-    if (row === null) return null;
-    const account = record(row);
-    return {
-      userId: id(account.userId),
-      name: text(account.name),
-      email: text(account.email),
-      version: version(account.version),
-      active: boolean(account.active),
-      eligible: boolean(account.eligible),
-    };
-  },
   async features(signal: AbortSignal) {
     return list((await request("features", signal)).features, feature);
-  },
-  async change(
-    account: { userId: string; version: number },
-    enabled: boolean,
-    signal: AbortSignal,
-  ) {
-    await request(
-      `administrators/${account.userId}`,
-      signal,
-      { enabled, expectedVersion: account.version },
-      "PATCH",
-    );
   },
   async update(flag: Feature, signal: AbortSignal) {
     await request(

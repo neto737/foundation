@@ -15,6 +15,8 @@ export interface AppOptions {
   baseURL: string;
   databaseUrl: string;
   secret: string;
+  /** Configuração privada; nunca derivada da requisição ou da concessão histórica. */
+  adminEmail?: string | undefined;
   email: FoundationEmail;
   /** Destino fixo de apresentação; não vem da requisição do usuário. */
   onboardingReturnPath?: "/onboarding";

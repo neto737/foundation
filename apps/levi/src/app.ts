@@ -3,11 +3,8 @@ import {
   administrativeNotFound,
   requireGlobalAdministrator,
 } from "./admin-access.js";
-import {
-  administrativeDirectory,
-  findAdministrativeAccount,
-} from "./admin-directory.js";
-import { changeGlobalAdministrator } from "./administrators.js";
+import { administrativeDirectory } from "./admin-directory.js";
+import { administrativeEmail } from "./admin-config.js";
 import { listFeatureFlags, updateFeatureFlag } from "./feature-flags.js";
 import {
   featureKeys,
@@ -90,14 +87,19 @@ export function createApp(options: AppOptions) {
   // Guarda antes de CSRF, bodyLimit, quotas e matching dos endpoints/HTML.
   app.use("*", async (c, next) => {
     if (!administrativePath(c.req.path)) return next();
-    if (!c.req.header("cookie")) administrativeNotFound();
+    if (!administrativeEmail(options.adminEmail) || !c.req.header("cookie"))
+      administrativeNotFound();
     let database: Database | undefined;
     try {
       try {
         database = await createPostgresDatabase(options.databaseUrl);
         const auth = createAuth(database, options);
         const resolved = await auth.resolveSession(c.req.raw.headers);
-        await requireGlobalAdministrator(database, resolved.data);
+        await requireGlobalAdministrator(
+          database,
+          resolved.data,
+          options.adminEmail,
+        );
         c.set("database", database);
         c.set("auth", auth);
         c.set("identity", resolved.data);
@@ -209,57 +211,24 @@ export function createApp(options: AppOptions) {
     if (!identity) administrativeNotFound();
     return c.json({ userId: identity.user.id, sessionId: identity.session.id });
   });
-  for (const kind of ["administrators", "organizations"] as const)
-    app.get(`/api/admin/${kind}`, async (c) => {
-      const after = c.req.query("after");
-      const items = await administrativeDirectory({
-        database: c.get("database"),
-        identity: c.get("identity"),
-        kind,
-        ...(after ? { after } : {}),
-      });
-      const last = items.at(-1);
-      return c.json({
-        items,
-        next:
-          items.length === 100 && last
-            ? "userId" in last
-              ? last.userId
-              : last.id
-            : null,
-      });
-    });
-  app.post("/api/admin/accounts/find", async (c) => {
-    const input = await readObject(c.req.raw, ["email"]);
-    return c.json({
-      account: await findAdministrativeAccount({
-        database: c.get("database"),
-        identity: c.get("identity"),
-        email: readString(input, "email", 3, 254),
-      }),
-    });
-  });
-  app.patch("/api/admin/administrators/:id", async (c) => {
-    const input = await readObject(c.req.raw, ["enabled", "expectedVersion"]);
-    if (
-      typeof input.enabled !== "boolean" ||
-      typeof input.expectedVersion !== "number"
-    )
-      invalidAdministrativeInput();
-    const result = await changeGlobalAdministrator({
+  app.get("/api/admin/organizations", async (c) => {
+    const after = c.req.query("after");
+    const items = await administrativeDirectory({
       database: c.get("database"),
       identity: c.get("identity"),
-      userId: requireUuid(c.req.param("id")),
-      enabled: input.enabled,
-      expectedVersion: readExpectedVersion(input.expectedVersion),
-      operationId: crypto.randomUUID(),
+      adminEmail: options.adminEmail,
+      ...(after ? { after } : {}),
     });
-    return c.json({ administrator: result });
+    return c.json({
+      items,
+      next: items.length === 100 ? (items.at(-1)?.id ?? null) : null,
+    });
   });
   app.get("/api/admin/features", async (c) => {
     const stored = await listFeatureFlags({
       database: c.get("database"),
       identity: c.get("identity"),
+      adminEmail: options.adminEmail,
     });
     return c.json({
       features: featureKeys.map((key) => {
@@ -291,6 +260,7 @@ export function createApp(options: AppOptions) {
     const result = await updateFeatureFlag({
       database: c.get("database"),
       identity: c.get("identity"),
+      adminEmail: options.adminEmail,
       key: c.req.param("key"),
       policy: input.policy,
       expectedVersion: readExpectedVersion(input.expectedVersion),

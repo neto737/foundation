@@ -331,6 +331,7 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
       "CLOUDFLARE_API_TOKEN",
       "RESEND_API_KEY",
       "LEVI_AUTH_SECRET",
+      "LEVI_ADMIN_EMAIL",
     ]
       .map((name) => "${{ secrets." + name + " }}")
       .sort(),

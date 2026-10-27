@@ -12,10 +12,6 @@ import { createApp } from "../src/app.js";
 import { createAuth, type Database } from "../src/auth.js";
 import { requireGlobalAdministrator } from "../src/admin-access.js";
 import {
-  changeGlobalAdministrator,
-  listGlobalAdministrators,
-} from "../src/administrators.js";
-import {
   featureAvailable,
   listFeatureFlags,
   updateFeatureFlag,
@@ -68,7 +64,10 @@ async function resetAdministrativeFixtures() {
     );
   }
 }
-beforeEach(resetAdministrativeFixtures);
+beforeEach(async () => {
+  await resetAdministrativeFixtures();
+  options.adminEmail = owner.email;
+});
 after(async () => {
   await resetAdministrativeFixtures();
   await Promise.all([runtime.client.end(), bootstrap.client.end()]);
@@ -86,6 +85,7 @@ const options = {
   databaseUrl: runtimeUrl,
   baseURL: origin,
   secret,
+  adminEmail: "",
   email: {
     send: async (message: { to: string; text: string }) => {
       messages.push(message);
@@ -162,22 +162,6 @@ async function boot(candidate: Account) {
     confirmation: confirmation(candidate),
   });
 }
-function change(
-  actor: Account,
-  target: Account,
-  enabled: boolean,
-  expectedVersion: number,
-  database = runtime,
-) {
-  return changeGlobalAdministrator({
-    database,
-    identity: actor.identity,
-    userId: target.userId,
-    enabled,
-    expectedVersion,
-    operationId: randomUUID(),
-  });
-}
 function denied(status = 404, code?: string) {
   return (error: unknown) =>
     error instanceof RequestError &&
@@ -212,7 +196,6 @@ async function restoreAudit() {
 const owner = await account();
 const second = await account();
 const third = await account();
-const fourth = await account();
 
 test("bootstrap: identidade inválida, ambiguidade, senha e sessão inadequadas não concedem", async () => {
   const base = confirmation(owner);
@@ -355,103 +338,6 @@ test("bootstrap concorrente é único, auditado e nunca restaura acesso pelo e-m
   }
 });
 
-test("autoridade atual por UUID, recência, concessões versionadas e revogação", async () => {
-  await boot(owner);
-  assert.equal(
-    await requireGlobalAdministrator(runtime, owner.identity),
-    owner.userId,
-  );
-  await assert.rejects(requireGlobalAdministrator(runtime, null), denied());
-  await assert.rejects(
-    requireGlobalAdministrator(runtime, second.identity),
-    denied(),
-  );
-  await assert.rejects(
-    change(owner, owner, false, 1),
-    denied(409, "ULTIMO_ADMINISTRADOR"),
-  );
-  await assert.rejects(change(second, third, true, 0), denied());
-  const granted = await change(owner, second, true, 0);
-  assert.equal(granted?.version, 1);
-  assert.equal((await change(owner, second, true, 1))?.version, 1);
-  await assert.rejects(change(owner, second, true, 0), denied(409));
-  await assert.rejects(
-    change(owner, owner, false, 1),
-    denied(409, "AUTORREVOGACAO_NEGADA"),
-  );
-  await observer.client.query(
-    "UPDATE session SET created_at=now()-interval '11 minutes',updated_at=now() WHERE id=$1",
-    [owner.sessionId],
-  );
-  try {
-    assert.equal(
-      await requireGlobalAdministrator(runtime, owner.identity),
-      owner.userId,
-    );
-    await assert.rejects(
-      change(owner, third, true, 0),
-      denied(403, "REAUTENTICACAO_NECESSARIA"),
-    );
-  } finally {
-    await observer.client.query(
-      "UPDATE session SET created_at=now() WHERE id=$1",
-      [owner.sessionId],
-    );
-  }
-  assert.equal((await change(owner, second, false, 1))?.version, 2);
-  await assert.rejects(
-    requireGlobalAdministrator(runtime, second.identity),
-    denied(),
-  );
-  assert.equal((await change(owner, second, false, 2))?.version, 2);
-  assert.equal((await boot(second)).kind, "already-completed");
-  assert.equal((await change(owner, second, true, 2))?.version, 3);
-  const listed = await listGlobalAdministrators({
-    database: runtime,
-    identity: owner.identity,
-  });
-  assert.equal(listed.length, 2);
-  await observer.client.query('UPDATE "user" SET email=$2 WHERE id=$1', [
-    second.userId,
-    `${randomUUID()}@example.test`,
-  ]);
-  try {
-    assert.equal(
-      await requireGlobalAdministrator(runtime, second.identity),
-      second.userId,
-    );
-  } finally {
-    await observer.client.query('UPDATE "user" SET email=$2 WHERE id=$1', [
-      second.userId,
-      second.email,
-    ]);
-  }
-});
-
-test("concorrência real: duas concessões têm uma versão vencedora; revogações preservam um admin", async () => {
-  await boot(owner);
-  await otherConnections(async (a, b) => {
-    const grants = await Promise.allSettled([
-      change(owner, second, true, 0, a),
-      change(owner, second, true, 0, b),
-    ]);
-    assert.equal(grants.filter((r) => r.status === "fulfilled").length, 1);
-    const revoked = await Promise.allSettled([
-      change(owner, second, false, 1, a),
-      change(second, owner, false, 1, b),
-    ]);
-    assert.equal(revoked.filter((r) => r.status === "fulfilled").length, 1);
-    assert.equal(
-      (
-        await observer.client.query(
-          "SELECT count(*)::int AS n FROM global_administrators WHERE revoked_at IS NULL",
-        )
-      ).rows[0].n,
-      1,
-    );
-  });
-});
-
 async function waitBlocked(pid: number) {
   for (let attempt = 0; attempt < 200; attempt++) {
     if (
@@ -467,53 +353,6 @@ async function waitBlocked(pid: number) {
   }
   assert.fail("A operação não aguardou o lock esperado.");
 }
-
-test("revogação de sessão/concessão enquanto mutation aguarda o mutex é revalidada", async () => {
-  await boot(owner);
-  await change(owner, second, true, 0);
-  await otherConnections(async (a, b) => {
-    for (const kind of ["session", "grant"] as const) {
-      const pid = Number(
-        (await a.client.query("SELECT pg_backend_pid() AS pid")).rows[0].pid,
-      );
-      await b.client.query("BEGIN");
-      await b.client.query("SELECT pg_advisory_xact_lock(715463,2)");
-      const outcome = assert.rejects(
-        change(second, third, true, 0, a),
-        denied(),
-      );
-      try {
-        await waitBlocked(pid);
-        if (kind === "session")
-          await observer.client.query(
-            "UPDATE session SET expires_at=now()-interval '1 second' WHERE id=$1",
-            [second.sessionId],
-          );
-        else
-          await observer.client.query(
-            "UPDATE global_administrators SET revoked_at=now() WHERE user_id=$1",
-            [second.userId],
-          );
-      } finally {
-        await b.client.query("COMMIT");
-      }
-      await outcome;
-      await observer.client.query(
-        "UPDATE session SET expires_at=now()+interval '1 day' WHERE id=$1",
-        [second.sessionId],
-      );
-    }
-  });
-  assert.equal(
-    (
-      await observer.client.query(
-        "SELECT 1 FROM global_administrators WHERE user_id=$1",
-        [third.userId],
-      )
-    ).rowCount,
-    0,
-  );
-});
 
 test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e versões conflitam", async () => {
   await boot(owner);
@@ -548,6 +387,7 @@ test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e v
     updateFeatureFlag({
       database,
       identity: owner.identity,
+      adminEmail: options.adminEmail,
       key: "members",
       policy,
       expectedVersion,
@@ -630,6 +470,7 @@ test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e v
   const listed = await listFeatureFlags({
     database: runtime,
     identity: owner.identity,
+    adminEmail: options.adminEmail,
   });
   assert.equal(listed[0]?.version, disabled.version);
   assert.deepEqual(listed[0]?.organizationIds, []);
@@ -645,6 +486,7 @@ test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e v
     updateFeatureFlag({
       database: runtime,
       identity: second.identity,
+      adminEmail: options.adminEmail,
       key: "members",
       policy: { kind: "all" },
       expectedVersion: disabled.version,
@@ -688,6 +530,7 @@ test("auditoria e persistência: rollback conjunto e negação diante de banco i
   const selected = await updateFeatureFlag({
     database: runtime,
     identity: owner.identity,
+    adminEmail: options.adminEmail,
     key: "members",
     policy: { kind: "selected", organizationIds: [org] },
     expectedVersion: 0,
@@ -695,25 +538,16 @@ test("auditoria e persistência: rollback conjunto e negação diante de banco i
   });
   await rejectAudit();
   try {
-    await assert.rejects(change(owner, fourth, true, 0));
     await assert.rejects(
       updateFeatureFlag({
         database: runtime,
         identity: owner.identity,
+        adminEmail: options.adminEmail,
         key: "members",
         policy: { kind: "disabled" },
         expectedVersion: 1,
         operationId: randomUUID(),
       }),
-    );
-    assert.equal(
-      (
-        await observer.client.query(
-          "SELECT 1 FROM global_administrators WHERE user_id=$1",
-          [fourth.userId],
-        )
-      ).rowCount,
-      0,
     );
     assert.equal(
       (
@@ -739,9 +573,13 @@ test("auditoria e persistência: rollback conjunto e negação diante de banco i
     "ALTER TABLE global_administrators RENAME TO unavailable_global_administrators",
   );
   try {
-    await assert.rejects(
-      requireGlobalAdministrator(runtime, owner.identity),
-      denied(),
+    assert.equal(
+      await requireGlobalAdministrator(
+        runtime,
+        owner.identity,
+        options.adminEmail,
+      ),
+      owner.userId,
     );
   } finally {
     await observer.client.query(
@@ -862,83 +700,8 @@ test("ACL bootstrap separa privilégios; runtime restrita não altera recibo, ch
       "UPDATE feature_flags SET id=id",
     ])
       await assert.rejects(runtime.client.query(statement), { code: "42501" });
-    assert.equal((await change(owner, second, true, 0))?.version, 1);
-  }
-});
-
-test("conta recriada com o e-mail inicial não herda UUID ou concessão", async () => {
-  await boot(owner);
-  await change(owner, second, true, 0);
-  await change(second, owner, false, 1);
-  await observer.client.query('UPDATE "user" SET email=$2 WHERE id=$1', [
-    owner.userId,
-    `${randomUUID()}@example.test`,
-  ]);
-  let recreated: Account | undefined;
-  try {
-    recreated = await account(owner.email);
-    assert.notEqual(recreated.userId, owner.userId);
-    await assert.rejects(
-      requireGlobalAdministrator(runtime, recreated.identity),
-      denied(),
-    );
-    assert.equal((await boot(recreated)).kind, "already-completed");
-    assert.equal(
-      (
-        await observer.client.query(
-          "SELECT 1 FROM global_administrators WHERE user_id=$1",
-          [recreated.userId],
-        )
-      ).rowCount,
-      0,
-    );
-  } finally {
-    if (recreated)
-      await observer.client.query('DELETE FROM "user" WHERE id=$1', [
-        recreated.userId,
-      ]);
-    await observer.client.query('UPDATE "user" SET email=$2 WHERE id=$1', [
-      owner.userId,
-      owner.email,
-    ]);
-  }
-});
-
-test("membership organizacional não concede autoridade global; alvo não pronto não recebe concessão", async () => {
-  await boot(owner);
-  const tenant = String(
-    (
-      await observer.client.query(
-        "INSERT INTO tenants(name) VALUES('Admin somente organizacional') RETURNING id",
-      )
-    ).rows[0].id,
-  );
-  await observer.client.query(
-    "INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES($1,$2,'admin')",
-    [tenant, second.userId],
-  );
-  await assert.rejects(
-    requireGlobalAdministrator(runtime, second.identity),
-    denied(),
-  );
-  await observer.client.query(
-    'UPDATE "user" SET email_verified=false WHERE id=$1',
-    [second.userId],
-  );
-  try {
-    await assert.rejects(change(owner, second, true, 0), denied());
-    // Concessão ativa sem identidade elegível não conta como substituta do último admin.
-    await observer.client.query(
-      "INSERT INTO global_administrators(user_id,granted_by) VALUES($1,$2)",
-      [second.userId, owner.userId],
-    );
-    await assert.rejects(
-      change(owner, owner, false, 1),
-      denied(409, "ULTIMO_ADMINISTRADOR"),
-    );
-  } finally {
-    await observer.client.query(
-      'UPDATE "user" SET email_verified=true WHERE id=$1',
+    await runtime.client.query(
+      "INSERT INTO global_administrators(user_id) VALUES($1)",
       [second.userId],
     );
   }
@@ -1198,44 +961,6 @@ async function denyAfterAuditWait(input: {
   }
 }
 
-test("concessão: recência vencida após autorização e antes do commit desfaz estado e auditoria", async (t) => {
-  await boot(owner);
-  const operationId = randomUUID();
-  await denyAfterAuditWait({
-    context: t,
-    database: runtime,
-    advanceTo: Date.now() + 11 * 60_000,
-    status: 403,
-    operation: () =>
-      changeGlobalAdministrator({
-        database: runtime,
-        identity: owner.identity,
-        userId: second.userId,
-        enabled: true,
-        expectedVersion: 0,
-        operationId,
-      }),
-  });
-  assert.equal(
-    (
-      await observer.client.query(
-        "SELECT 1 FROM global_administrators WHERE user_id=$1",
-        [second.userId],
-      )
-    ).rowCount,
-    0,
-  );
-  assert.equal(
-    (
-      await observer.client.query(
-        "SELECT 1 FROM audit_events WHERE request_id=$1",
-        [operationId],
-      )
-    ).rowCount,
-    0,
-  );
-});
-
 test("flag: sessão expirada após autorização e antes do commit desfaz política e auditoria", async (t) => {
   await boot(owner);
   const operationId = randomUUID();
@@ -1253,6 +978,7 @@ test("flag: sessão expirada após autorização e antes do commit desfaz polít
       updateFeatureFlag({
         database: runtime,
         identity: owner.identity,
+        adminEmail: options.adminEmail,
         key: "members",
         policy: { kind: "all" },
         expectedVersion: 0,
@@ -1381,7 +1107,7 @@ test("HTTP administrativo oculta HTML, métodos, aliases e validação antes de 
 
 test("HTTP administrativo permite conta sem organização e não concede acesso ao tenant", async () => {
   const actor = await account();
-  await boot(actor);
+  options.adminEmail = actor.email;
   const protectedApp = createApp(options);
   const { mountWeb } = await import("../src/web.js");
   mountWeb(protectedApp);
@@ -1449,11 +1175,6 @@ test("HTTP administrativo permite conta sem organização e não concede acesso 
     }),
   );
   assert.equal(oversized.status, 413);
-  for (const [path, body] of [
-    ["/api/admin/accounts/find", { email: "x" }],
-    ["/api/admin/accounts/find", { email: actor.email, role: "admin" }],
-  ] as const)
-    assert.equal((await send(path, body, actor.cookie)).status, 400);
 });
 
 async function adminMutation(
@@ -1474,125 +1195,10 @@ async function adminMutation(
     }),
   );
 }
-test("API concede, conflita e revoga com auditoria, recência e revogação imediata", async () => {
-  const actor = await account();
-  const target = await account();
-  await boot(actor);
-  const lookup = await send(
-    "/api/admin/accounts/find",
-    { email: target.email.toUpperCase() },
-    actor.cookie,
-  );
-  assert.equal(lookup.status, 200);
-  const result = (await lookup.json()) as {
-    account: {
-      userId: string;
-      eligible: boolean;
-      version: number;
-      active: boolean;
-    };
-  };
-  assert.equal(result.account.userId, target.userId);
-  assert.equal(result.account.eligible, true);
-  assert.equal(result.account.version, 0);
-  assert.equal(result.account.active, false);
-  assert.deepEqual(
-    await (
-      await send(
-        "/api/admin/accounts/find",
-        { email: `${randomUUID()}@example.test` },
-        actor.cookie,
-      )
-    ).json(),
-    { account: null },
-  );
-  const path = `/api/admin/administrators/${target.userId}`;
-  assert.equal(
-    (
-      await adminMutation(
-        path,
-        "PATCH",
-        { enabled: true, expectedVersion: 0 },
-        actor,
-      )
-    ).status,
-    200,
-  );
-  assert.equal(
-    (await send("/api/admin/session", undefined, target.cookie)).status,
-    200,
-  );
-  assert.equal(
-    (
-      await adminMutation(
-        path,
-        "PATCH",
-        { enabled: false, expectedVersion: 0 },
-        actor,
-      )
-    ).status,
-    409,
-  );
-  await observer.client.query(
-    "UPDATE session SET created_at=now()-interval '11 minutes' WHERE id=$1",
-    [actor.sessionId],
-  );
-  const stale = await adminMutation(
-    path,
-    "PATCH",
-    { enabled: false, expectedVersion: 1 },
-    actor,
-  );
-  assert.equal(stale.status, 403);
-  assert.equal(
-    ((await stale.json()) as { erro: string }).erro,
-    "REAUTENTICACAO_NECESSARIA",
-  );
-  await observer.client.query(
-    "UPDATE session SET created_at=now() WHERE id=$1",
-    [actor.sessionId],
-  );
-  assert.equal(
-    (
-      await adminMutation(
-        path,
-        "PATCH",
-        { enabled: false, expectedVersion: 1 },
-        actor,
-      )
-    ).status,
-    200,
-  );
-  for (const adminPath of [
-    "/admin",
-    "/api/admin/session",
-    "/api/admin/features",
-  ])
-    assert.equal((await send(adminPath, undefined, target.cookie)).status, 404);
-  const events = await observer.client.query<{
-    action: string;
-    tenant: string | null;
-  }>(
-    "SELECT action,tenant FROM audit_events WHERE target=$1 AND action IN ('admin.granted','admin.revoked') ORDER BY timestamp",
-    [target.userId],
-  );
-  assert.deepEqual(
-    events.rows.map((row) => row.action),
-    ["admin.granted", "admin.revoked"],
-  );
-  assert.ok(events.rows.every((row) => row.tenant === null));
-  await observer.client.query("DELETE FROM session WHERE id=$1", [
-    actor.sessionId,
-  ]);
-  assert.equal(
-    (await send("/api/admin/session", undefined, actor.cookie)).status,
-    404,
-  );
-});
 
 test("API de flags valida catálogo, confirmação all, seleções e versão sem mudar membros", async () => {
   const actor = await account();
-  await boot(actor);
+  options.adminEmail = actor.email;
   const owner = await account();
   const organization = await send(
     "/api/organizations",
@@ -1716,7 +1322,7 @@ test("API de flags valida catálogo, confirmação all, seleções e versão sem
 
 test("quota administrativa ocorre só após autorização, inclusive quando esgotada", async () => {
   const actor = await account();
-  await boot(actor);
+  options.adminEmail = actor.email;
   const { createHmac } = await import("node:crypto");
   const digest = createHmac("sha256", secret)
     .update(`user:${actor.userId}`)
@@ -1740,7 +1346,7 @@ test("quota administrativa ocorre só após autorização, inclusive quando esgo
 
 test("API preserva seleção de 1000 organizações e falha fechada se não pode consultar autoridade", async () => {
   const actor = await account();
-  await boot(actor);
+  options.adminEmail = actor.email;
   const ids = Array.from({ length: 1000 }, () => randomUUID());
   await observer.client.query(
     "INSERT INTO tenants(id,name) SELECT id,'Seleção sintética' FROM unnest($1::uuid[]) AS id",
@@ -1772,4 +1378,229 @@ test("API preserva seleção de 1000 organizações e falha fechada se não pode
       ).status,
       404,
     );
+});
+
+test("e-mail configurado é a única autoridade; sessão e identidade atuais são obrigatórias", async () => {
+  assert.equal(
+    await requireGlobalAdministrator(
+      runtime,
+      owner.identity,
+      `  ${owner.email.toUpperCase()}  `,
+    ),
+    owner.userId,
+  );
+  await observer.client.query(
+    "INSERT INTO global_administrators(user_id) VALUES($1)",
+    [second.userId],
+  );
+  for (const configuration of [
+    undefined,
+    "",
+    "  ",
+    "inválido",
+    `${owner.email},${second.email}`,
+    second.email,
+  ]) {
+    await assert.rejects(
+      requireGlobalAdministrator(runtime, owner.identity, configuration),
+      denied(),
+    );
+  }
+  await assert.rejects(
+    requireGlobalAdministrator(runtime, second.identity, owner.email),
+    denied(),
+  );
+  await assert.rejects(
+    requireGlobalAdministrator(runtime, null, owner.email),
+    denied(),
+  );
+  for (const statement of [
+    `UPDATE "user" SET email_verified=false WHERE id=$1`,
+    `UPDATE "user" SET email='changed@example.test' WHERE id=$1`,
+    `UPDATE session SET expires_at=now()-interval '1 second' WHERE user_id=$1`,
+    `UPDATE session SET created_at=now()+interval '1 day' WHERE user_id=$1`,
+    `UPDATE account SET password='' WHERE user_id=$1`,
+  ]) {
+    const table = statement.includes('UPDATE "user"')
+      ? "user"
+      : statement.includes("UPDATE session")
+        ? "session"
+        : "account";
+    const previous = await observer.client.query(
+      `SELECT * FROM "${table}" WHERE ${table === "user" ? "id" : "user_id"}=$1`,
+      [owner.userId],
+    );
+    await observer.client.query(statement, [owner.userId]);
+    try {
+      await assert.rejects(
+        requireGlobalAdministrator(runtime, owner.identity, owner.email),
+        denied(),
+      );
+    } finally {
+      if (table === "user")
+        await observer.client.query(
+          'UPDATE "user" SET email=$2,email_verified=$3 WHERE id=$1',
+          [
+            owner.userId,
+            previous.rows[0].email,
+            previous.rows[0].email_verified,
+          ],
+        );
+      if (table === "session")
+        for (const row of previous.rows)
+          await observer.client.query(
+            "UPDATE session SET expires_at=$2,created_at=$3 WHERE id=$1",
+            [row.id, row.expires_at, row.created_at],
+          );
+      if (table === "account")
+        for (const row of previous.rows)
+          await observer.client.query(
+            "UPDATE account SET password=$2 WHERE id=$1",
+            [row.id, row.password],
+          );
+    }
+  }
+  for (const configured of [undefined, "", "invalid", second.email]) {
+    const deniedApp = createApp({ ...options, adminEmail: configured });
+    for (const path of ["/admin", "/api/admin/session", "/api/admin/features"])
+      assert.equal(
+        (
+          await deniedApp.request(
+            new Request(origin + path, { headers: { cookie: owner.cookie } }),
+          )
+        ).status,
+        404,
+      );
+  }
+  const response = await send("/api/admin/session", undefined, owner.cookie);
+  assert.equal(response.status, 200);
+  assert.ok(!(await response.text()).includes(owner.email));
+  for (const [method, path] of [
+    ["GET", "/api/admin/administrators"],
+    ["POST", "/api/admin/accounts/find"],
+    ["PATCH", `/api/admin/administrators/${second.userId}`],
+  ] as const) {
+    const response = await app.request(
+      new Request(origin + path, {
+        method,
+        headers: { origin, cookie: owner.cookie },
+      }),
+    );
+    assert.equal(response.status, 404);
+  }
+});
+
+test("mudança de identidade enquanto a política aguarda lock nega a mutation sem auditoria", async () => {
+  await otherConnections(async (a, b) => {
+    const pid = Number(
+      (await a.client.query("SELECT pg_backend_pid() AS pid")).rows[0].pid,
+    );
+    await b.client.query("BEGIN");
+    await b.client.query("SELECT pg_advisory_xact_lock(715463,2)");
+    const pending = assert.rejects(
+      updateFeatureFlag({
+        database: a,
+        identity: owner.identity,
+        adminEmail: owner.email,
+        key: "members",
+        policy: { kind: "all" },
+        expectedVersion: 0,
+        operationId: randomUUID(),
+      }),
+      denied(),
+    );
+    try {
+      await waitBlocked(pid);
+      await observer.client.query(
+        'UPDATE "user" SET email_verified=false WHERE id=$1',
+        [owner.userId],
+      );
+    } finally {
+      await b.client.query("COMMIT");
+    }
+    try {
+      await pending;
+    } finally {
+      await observer.client.query(
+        'UPDATE "user" SET email_verified=true WHERE id=$1',
+        [owner.userId],
+      );
+    }
+    assert.equal(
+      (await observer.client.query("SELECT 1 FROM feature_flags")).rowCount,
+      0,
+    );
+  });
+});
+
+test("identidade ambígua, aliases, sessão removida e identidade forjada não concedem acesso", async () => {
+  const duplicate = randomUUID();
+  await observer.client.query(
+    'INSERT INTO "user"(id,name,email,email_verified,created_at,updated_at) VALUES($1,$2,$3,true,now(),now())',
+    [duplicate, "Conta sintética ambígua", owner.email.toUpperCase()],
+  );
+  try {
+    await assert.rejects(
+      requireGlobalAdministrator(runtime, owner.identity, owner.email),
+      denied(),
+    );
+  } finally {
+    await observer.client.query('DELETE FROM "user" WHERE id=$1', [duplicate]);
+  }
+  await assert.rejects(
+    requireGlobalAdministrator(
+      runtime,
+      {
+        ...owner.identity,
+        user: { ...owner.identity.user, emailVerified: false },
+      },
+      owner.email,
+    ),
+    denied(),
+  );
+  await assert.rejects(
+    requireGlobalAdministrator(
+      runtime,
+      {
+        ...owner.identity,
+        session: { ...owner.identity.session, id: second.sessionId },
+      },
+      owner.email,
+    ),
+    denied(),
+  );
+  await assert.rejects(
+    requireGlobalAdministrator(
+      runtime,
+      owner.identity,
+      owner.email.replace("@", "+tag@"),
+    ),
+    denied(),
+  );
+  const actor = await account();
+  const configured = createApp({ ...options, adminEmail: actor.email });
+  const path = origin + "/api/admin/session";
+  assert.equal(
+    (
+      await configured.request(
+        new Request(path, { headers: { cookie: actor.cookie } }),
+      )
+    ).status,
+    200,
+  );
+  await observer.client.query("DELETE FROM session WHERE id=$1", [
+    actor.sessionId,
+  ]);
+  assert.equal(
+    (
+      await configured.request(
+        new Request(path, { headers: { cookie: actor.cookie } }),
+      )
+    ).status,
+    404,
+  );
+  await assert.rejects(
+    requireGlobalAdministrator(runtime, actor.identity, actor.email),
+    denied(),
+  );
 });

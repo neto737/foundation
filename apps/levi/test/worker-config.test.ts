@@ -156,3 +156,18 @@ test("Worker sem configuração preserva 404 administrativo antes de qualquer bi
       assert.equal(response.headers.get("x-frame-options"), "DENY");
     }
 });
+
+test("ausência ou e-mail administrativo inválido não libera APIs nem impede páginas comuns", async () => {
+  for (const email of [undefined, "", "invalid"]) {
+    const configured = { ...env, LEVI_ADMIN_EMAIL: email };
+    assert.equal(workerOptions(configured).adminEmail, email);
+    const response = await worker.fetch(
+      new Request("https://levi.t00ls.dev/admin", {
+        headers: { cookie: "synthetic" },
+      }),
+      configured,
+    );
+    assert.equal(response.status, 404);
+    assert.ok(!(await response.text()).includes("synthetic"));
+  }
+});
