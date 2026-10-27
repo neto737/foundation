@@ -6,8 +6,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { parse } from "yaml";
-import { workspaceManifests } from "./release-planning.mjs";
-import { names } from "./release-core.mjs";
+import { workspaceManifests } from "./workspace.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const application = join(root, "apps/levi");
@@ -22,14 +21,14 @@ const files = (directory) =>
     return entry.isDirectory() ? files(file) : [file];
   });
 
-test("Levi privado resolve os sete pacotes locais sem ampliar o plano npm", () => {
+test("Levi privado resolve os sete pacotes locais com todos os workspaces privados", () => {
   const manifests = workspaceManifests(root);
   assert.deepEqual(
     manifests
       .filter(({ pkg }) => !pkg.private)
       .map(({ pkg }) => pkg.name)
       .sort(),
-    [...names].sort(),
+    [],
   );
   const { pkg } = manifests.find(({ path }) => path === "apps/levi");
   assert.equal(pkg.name, "levi");
@@ -57,10 +56,6 @@ test("Levi privado resolve os sete pacotes locais sem ampliar o plano npm", () =
     json(join(root, "packages/auth/node_modules/better-auth/package.json"))
       .version,
   );
-  assert.deepEqual(json(join(root, ".changeset/config.json")).privatePackages, {
-    tag: false,
-    version: false,
-  });
 });
 
 test("build do Levi depende dos exports compilados dos sete pacotes", () => {

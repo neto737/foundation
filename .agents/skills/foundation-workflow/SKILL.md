@@ -67,14 +67,9 @@ permanecem vigentes.
 
 - Merge, publicação/release e deploy manual exigem autorização explícita.
 - Avançar master pode acionar deploy DEV: leia `docs/runbooks/deployment.md`.
-- Não desenvolva em `changeset-release/master` nem faça commits manuais no
-  Version Packages.
-- Para mudanças publicáveis, siga `docs/runbooks/packages.md` e use Changesets;
-  não edite versões manualmente.
-- Antes de releases ou de avançar master durante publicação/recuperação,
-  consulte as restrições do runbook de pacotes e coordene a operação autorizada.
-- Não contorne gates, reescreva branches protegidas pelo fluxo ou improvise
-  recuperação de release.
+- Pacotes Foundation são internos e privados; use `workspace:*` e consulte
+  `docs/runbooks/packages.md`. Não há distribuição npm ou Changesets.
+- Não contorne gates nem reescreva branches protegidas.
 
 ## Contexto e relatório
 

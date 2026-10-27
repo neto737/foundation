@@ -59,7 +59,7 @@ isolamento; ver [Gestão de membros](gestao-membros.md#habilitação-e-limites).
 ignorados. Configuração incompleta resulta em 503 sanitizado antes de acessar
 banco/provider.
 
-O contrato publicado `@t00ls-dev/email@0.1.2` fornece `createResendEmail`, usando
+O contrato local `@t00ls-dev/email` fornece `createResendEmail`, usando
 fetch HTTPS. Não há SDK adicional. Mantêm-se os dois e-mails, callbacks fixos e
 validação de tokens no Better Auth. Não há envio na transação de provisionamento.
 Um aceite HTTP do Resend não comprova entrega ao destinatário.

@@ -150,7 +150,7 @@ O [Foundation](https://github.com/t00ls-dev/foundation) fornece mecanismos
 genéricos; organização/igrejas, membros, histórico e políticas do produto ficam no
 Levi. Reutilizar os contratos públicos necessários dos nove pacotes oficiais:
 `config`, `db`, `auth`, `tenant`, `access`, `security`, `email`, `observability` e
-`audit`, no scope `@t00ls-dev` do npmjs.com.
+`audit`, no scope `@t00ls-dev`, com dependências locais `workspace:*`.
 
 **Fatos técnicos da referência examinada:** Foundation em
 `22a4aa0dd4a560f86aaa4e3272138799c922e76e`. Seu exemplo Links usa D1 e não demonstra

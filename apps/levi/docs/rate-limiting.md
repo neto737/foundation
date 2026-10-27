@@ -54,7 +54,7 @@ prefixos e quotas de credenciais/envio existentes foram preservados.
 
 ## Persistência e custo
 
-Reutiliza `fixedWindowRateLimit` de `@t00ls-dev/security@0.2.0` e a tabela
+Reutiliza `fixedWindowRateLimit` de `@t00ls-dev/security` e a tabela
 `abuse_counters`, sem dependência, schema ou migration novos. Cada incremento
 executa um único statement. A guarda usa CTE de limpeza e UPSERT atômico; a
 categoria seguinte usa somente o UPSERT, evitando limpar duas vezes. A limpeza usa o
