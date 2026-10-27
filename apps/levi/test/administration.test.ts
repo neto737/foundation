@@ -94,14 +94,9 @@ test("bootstrap exige confirmação assistida e não aceita alvo de conexão amb
     assert.throws(() => bootstrapTarget({ ...env, ...override }));
 });
 
-test("painel preserva allowlist pública, avaliador legado e runner operacional separados", async () => {
+test("painel preserva allowlist pública e runner operacional sem avaliar flags nos membros", async () => {
   for (const path of ["src/app.ts", "src/worker.ts", "src/local.ts"])
     assert.ok(!(await readFile(path, "utf8")).includes("bootstrap-admin"));
-  assert.ok(
-    (await readFile("src/member-access.ts", "utf8")).includes(
-      "membersDevOrganizations",
-    ),
-  );
   assert.ok(
     !(await readFile("src/members.ts", "utf8")).includes("featureAvailable"),
   );

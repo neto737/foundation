@@ -13,7 +13,6 @@ if (!databaseUrl || !directory || process.env.LEVI_LOCAL_DATABASE !== "1")
 const proxy = process.argv.includes("--proxy-api");
 const port = proxy ? 4318 : 4317;
 const app = createApp({
-  membersEnabled: true,
   databaseUrl: applicationDatabaseUrl(databaseUrl),
   baseURL: `http://localhost:${proxy ? 5173 : port}`,
   onboardingReturnPath: "/onboarding",

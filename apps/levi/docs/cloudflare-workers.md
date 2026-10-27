@@ -52,9 +52,9 @@ O processo automático após CI, com guardas e mecanismo de suspensão, está em
 | `RESEND_API_KEY`     | Secret exclusivo DEV, somente envio e com domínio restrito quando disponível  |
 | `LEVI_EMAIL_FROM`    | Remetente de domínio/subdomínio verificado                                    |
 
-Não há allowlist de destinatários no DEV público. A allowlist de organizações
-sintéticas de membros é independente e permanece vazia até autorização específica;
-ver [Gestão de membros](gestao-membros.md#habilitação-e-limites).
+Não há allowlist de destinatários no DEV público. O módulo de membros está
+disponível para todas as organizações, preservando autorização por usuário e
+isolamento; ver [Gestão de membros](gestao-membros.md#habilitação-e-limites).
 `.dev.vars.example` contém somente nomes vazios; arquivos locais com valores são
 ignorados. Configuração incompleta resulta em 503 sanitizado antes de acessar
 banco/provider.

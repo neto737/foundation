@@ -1,6 +1,5 @@
 import type { Hyperdrive } from "@cloudflare/workers-types";
 import { createResendEmail } from "@t00ls-dev/email";
-import { readMembersDevOrganizations } from "./member-access.js";
 import type { AppOptions } from "./auth.js";
 
 export interface WorkerEnv {
@@ -10,13 +9,9 @@ export interface WorkerEnv {
   LEVI_AUTH_SECRET: string;
   LEVI_EMAIL_FROM: string;
   RESEND_API_KEY: string;
-  LEVI_MEMBERS_DEV_ORGANIZATIONS?: string;
 }
 
-export function workerOptions(
-  env: WorkerEnv,
-  requestOrigin = env.LEVI_PUBLIC_ORIGIN,
-): AppOptions {
+export function workerOptions(env: WorkerEnv): AppOptions {
   const origin = new URL(env.LEVI_PUBLIC_ORIGIN);
   if (
     origin.protocol !== "https:" ||
@@ -40,10 +35,5 @@ export function workerOptions(
     secret: env.LEVI_AUTH_SECRET,
     email,
     publicAbuseProtection: true,
-    membersDevOrganizations:
-      origin.origin === "https://levi.t00ls.dev" &&
-      requestOrigin === origin.origin
-        ? readMembersDevOrganizations(env.LEVI_MEMBERS_DEV_ORGANIZATIONS)
-        : [],
   };
 }

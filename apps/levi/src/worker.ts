@@ -7,7 +7,7 @@ export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     try {
       // Uma composição por invocação: nenhum Client/auth compartilhado entre requests.
-      const app = createApp(workerOptions(env, new URL(request.url).origin));
+      const app = createApp(workerOptions(env));
       app.get("/assets/*", async (c) => {
         const response = await env.ASSETS.fetch(c.req.raw);
         return new Response(response.body, response);

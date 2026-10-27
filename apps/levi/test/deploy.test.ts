@@ -187,7 +187,6 @@ async function simulatedDeploy(
     cleanupError?: Error;
     failProgress?: boolean;
     failReport?: boolean;
-    membersDevOrganizations?: string;
     ciEvidence?: (call: number) => {
       sha: string;
       runId: number;
@@ -200,14 +199,13 @@ async function simulatedDeploy(
   const output: string[] = [];
   const requests: string[] = [];
   const writes: { path: string; mode: number }[] = [];
-  let writtenMembersDevOrganizations: string | undefined;
+  let writtenVars: unknown;
   let uploads = 0;
   let ciCalls = 0;
   let cleanups = 0;
   const fakeProcess = {
     env: {
       ...valid,
-      LEVI_MEMBERS_DEV_ORGANIZATIONS: options.membersDevOrganizations,
       ...options.env,
     },
     execPath: process.execPath,
@@ -271,18 +269,7 @@ async function simulatedDeploy(
           "workers/tag": uploads ? valid.GITHUB_SHA : "e".repeat(40),
         },
         resources: {
-          bindings: [
-            ...baseBindings,
-            {
-              type: "plain_text",
-              name: "LEVI_MEMBERS_DEV_ORGANIZATIONS",
-              text: /^[a-f0-9-]{36}$/i.test(
-                options.membersDevOrganizations?.trim() ?? "",
-              )
-                ? options.membersDevOrganizations!.trim().toLowerCase()
-                : "",
-            },
-          ],
+          bindings: baseBindings,
         },
       });
     if (url.pathname.endsWith("/versions"))
@@ -298,11 +285,7 @@ async function simulatedDeploy(
         return Response.json({ etapa: "email" }, { headers });
       if (url.pathname === "/api/members")
         return new Response(null, {
-          status: /^[a-f0-9-]{36}$/i.test(
-            options.membersDevOrganizations?.trim() ?? "",
-          )
-            ? 401
-            : 404,
+          status: 401,
           headers,
         });
       if (["/admin", "/api/admin/session"].includes(url.pathname))
@@ -360,8 +343,7 @@ async function simulatedDeploy(
         assert.ok(!contents.includes(valid.RESEND_API_KEY!));
         writes.push({ path, mode: settings.mode });
         if (path.endsWith("wrangler.json"))
-          writtenMembersDevOrganizations = JSON.parse(contents).vars
-            .LEVI_MEMBERS_DEV_ORGANIZATIONS as string;
+          writtenVars = JSON.parse(contents).vars;
       },
       rm: async () => {
         cleanups++;
@@ -426,7 +408,7 @@ async function simulatedDeploy(
     uploads,
     cleanups,
     writes,
-    writtenMembersDevOrganizations,
+    writtenVars,
     ciCalls,
     exitCode: fakeProcess.exitCode,
   };
@@ -894,58 +876,54 @@ test("diagnóstico: status público reprovado é HTTP mesmo se cabeçalhos falta
   assert.ok(!failure.output.includes("private-"));
 });
 
-test("deploy propaga apenas o recorte explícito e limpa configuração herdada quando ausente/inválida", async () => {
+test("deploy não configura recorte de membros e aceita binding legado sem compará-lo", async () => {
   const parsed = ts.parseConfigFileTextToJson(
     "wrangler.jsonc",
     await readFile("wrangler.jsonc", "utf8"),
   );
-  const id = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
-  const base = {
-    ...parsed.config,
-    vars: { ...parsed.config.vars, LEVI_MEMBERS_DEV_ORGANIZATIONS: id },
-  };
-  for (const value of [undefined, "", "invalid", id + ",invalid"]) {
-    assert.equal(
-      deploymentConfig(base, valid.LEVI_HYPERDRIVE_ID!, value).vars
-        .LEVI_MEMBERS_DEV_ORGANIZATIONS,
-      "",
-    );
-  }
-  assert.equal(
-    deploymentConfig(
-      base,
-      valid.LEVI_HYPERDRIVE_ID!,
-      " " + id.toUpperCase() + " ",
-    ).vars.LEVI_MEMBERS_DEV_ORGANIZATIONS,
-    id,
-  );
+  const config = deploymentConfig(parsed.config, valid.LEVI_HYPERDRIVE_ID!);
+  assert.equal("LEVI_MEMBERS_DEV_ORGANIZATIONS" in config.vars, false);
   const workflow = await readFile(
     "../../.github/workflows/deploy-levi-dev.yml",
     "utf8",
   );
-  assert.match(
-    workflow,
-    /LEVI_MEMBERS_DEV_ORGANIZATIONS:\s*\$\{\{ vars\.MEMBERS_DEV_ORGANIZATIONS \}\}/,
-  );
-  assert.ok(workflow.includes("environment: levi-dev"));
-});
-
-test("script de deploy transmite o recorte à configuração temporária sem publicar no harness", async () => {
-  const id = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
-  for (const value of [undefined, "invalid", " " + id.toUpperCase() + " "]) {
-    const result = await simulatedDeploy(
-      value === undefined ? {} : { membersDevOrganizations: value },
-    );
+  assert.ok(!workflow.includes("MEMBERS_DEV_ORGANIZATIONS"));
+  for (const text of ["", "invalid", "8a61d0dd-ea54-4f23-9550-d8ca4b353b71"]) {
+    const result = await simulatedDeploy({
+      respond: (url) =>
+        url.includes("/versions/")
+          ? Response.json({
+              success: true,
+              result: {
+                annotations: {
+                  "workers/tag": url.includes(versionId)
+                    ? valid.GITHUB_SHA
+                    : "e".repeat(40),
+                },
+                resources: {
+                  bindings: [
+                    ...baseBindings,
+                    {
+                      type: "plain_text",
+                      name: "LEVI_MEMBERS_DEV_ORGANIZATIONS",
+                      text,
+                    },
+                  ],
+                },
+              },
+            })
+          : undefined,
+    });
     assert.equal(result.exitCode, 0, result.output);
-    assert.equal(
-      result.writtenMembersDevOrganizations,
-      value?.trim().toLowerCase() === id ? id : "",
-    );
-    assert.ok(!result.output.includes(id));
+    assert.equal(result.uploads, 1);
+    assert.deepEqual(result.writtenVars, {
+      ...parsed.config.vars,
+      LEVI_EMAIL_FROM: valid.LEVI_EMAIL_FROM,
+    });
   }
 });
 
-test("versão ativa exige binding único, ID esperado e o mesmo recorte de membros", async () => {
+test("versão ativa exige binding único e ID esperado", async () => {
   const binding = {
     type: "hyperdrive",
     name: "HYPERDRIVE",
@@ -957,15 +935,6 @@ test("versão ativa exige binding único, ID esperado e o mesmo recorte de membr
     [binding, binding],
     [{ ...binding, id: "d".repeat(32) }],
     [{ ...binding, name: "OTHER" }],
-    [
-      binding,
-      {
-        type: "plain_text",
-        name: "LEVI_MEMBERS_DEV_ORGANIZATIONS",
-        text: "unexpected",
-      },
-    ],
-    [binding, { type: "secret_text", name: "LEVI_MEMBERS_DEV_ORGANIZATIONS" }],
   ]) {
     assert.throws(() =>
       verifyWorkerBindings({ resources: { bindings } }, valid),
@@ -1073,8 +1042,7 @@ test("transferência preserva secrets remotos sem exigir nem encaminhar cópias 
   assert.ok(result.output.includes(previousVersionId));
 });
 
-test("transferência bloqueia divergência de remetente/recorte e ausência de Assets/secrets", async () => {
-  const id = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
+test("transferência bloqueia divergência de remetente e ausência de Assets/secrets", async () => {
   for (const bindings of [
     baseBindings.filter((b) => b.name !== "ASSETS"),
     baseBindings.filter((b) => b.name !== "LEVI_AUTH_SECRET"),
@@ -1082,10 +1050,6 @@ test("transferência bloqueia divergência de remetente/recorte e ausência de A
     baseBindings.map((b) =>
       b.name === "LEVI_EMAIL_FROM" ? { ...b, text: sensitive } : b,
     ),
-    [
-      ...baseBindings,
-      { type: "plain_text", name: "LEVI_MEMBERS_DEV_ORGANIZATIONS", text: id },
-    ],
     [...baseBindings, { type: "secret_text", name: "LEVI_AUTH_SECRET" }],
   ]) {
     const result = await simulatedDeploy({
@@ -1104,7 +1068,6 @@ test("transferência bloqueia divergência de remetente/recorte e ausência de A
     assert.equal(result.uploads, 0);
     assert.equal(result.writes.length, 0);
     assert.ok(!result.output.includes("private-"));
-    assert.ok(!result.output.includes(id));
   }
 });
 

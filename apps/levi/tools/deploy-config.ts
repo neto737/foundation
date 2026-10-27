@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { readMembersDevOrganizations } from "../src/member-access.js";
 
 export const deployOrigin = "https://levi.t00ls.dev";
 export const deployWorker = "levi-dev";
@@ -77,24 +76,11 @@ export function verifyWorkerBindings(
     assert.equal(matches[0].type, type);
     if (type === "plain_text") assert.equal(matches[0].text, text);
   }
-  const recortes = bindings.filter(
-    (b) => b.name === "LEVI_MEMBERS_DEV_ORGANIZATIONS",
-  );
-  assert.ok(recortes.length <= 1);
-  if (recortes[0]) {
-    assert.equal(recortes[0].type, "plain_text");
-    assert.equal(typeof recortes[0].text, "string");
-  }
-  assert.equal(
-    recortes[0]?.text ?? "",
-    readMembersDevOrganizations(env.LEVI_MEMBERS_DEV_ORGANIZATIONS).join(","),
-  );
 }
 
 export function deploymentConfig(
   base: Record<string, any>,
   hyperdrive: string,
-  membersDevOrganizations?: string,
 ) {
   assert.equal(base.name, deployWorker);
   assert.equal(base.workers_dev, false);
@@ -120,9 +106,6 @@ export function deploymentConfig(
     vars: {
       ...base.vars,
       LEVI_PUBLIC_ORIGIN: deployOrigin,
-      LEVI_MEMBERS_DEV_ORGANIZATIONS: readMembersDevOrganizations(
-        membersDevOrganizations,
-      ).join(","),
     },
   };
 }

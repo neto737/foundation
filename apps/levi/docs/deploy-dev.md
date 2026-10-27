@@ -102,7 +102,7 @@ Antes de gravar configuração ou chamar Wrangler, exige Worker e domínio exist
 domínio público habilitado e sem previews, workers.dev/previews desabilitados,
 Hyperdrive/cache/TLS corretos, uma versão com
 100% do tráfego e tag SHA identificável. Confere Assets, presença dos dois secrets,
-origem pública, remetente e recorte de membros da versão ativa. Ausência, 403 ou
+origem pública e remetente da versão ativa. Ausência, 403 ou
 divergência bloqueiam antes do upload; o executor não provisiona esses recursos.
 
 A última versão enviada deve ser a versão ativa, pois a herança de secrets do
@@ -186,14 +186,12 @@ internas existentes, preservando os bindings do Worker e os alvos esperados.
 Não cadastrar nomes legados em paralelo. Os IDs devem corresponder aos recursos
 existentes; host direto Neon e banco `levi_dev` ou prefixo permitido.
 
-A variable opcional `MEMBERS_DEV_ORGANIZATIONS` é mapeada para o binding
-`LEVI_MEMBERS_DEV_ORGANIZATIONS`: controla somente o recorte sintético de membros,
-conforme [Gestão de membros](gestao-membros.md#habilitação-e-limites).
-Ausente/vazia/inválida desabilita o módulo no runtime. O publicador exige que a
-seleção canônica calculada seja igual ao binding ativo; um cadastro ausente não
-pode apagar um recorte existente. Antes do corte, reconciliar privadamente a
-seleção exata atual, sem acrescentar organizações. Não substitui o avaliador por
-Feature Flags nem altera sua disponibilidade.
+O módulo de membros é disponibilizado a todas as organizações, conforme
+[Gestão de membros](gestao-membros.md#habilitação-e-limites), mantendo sessão,
+permissões e isolamento. Não há variable ou binding de recorte a provisionar,
+propagar ou comparar com versões anteriores. Um binding legado na versão ativa
+não altera o comportamento do novo runtime nem impede o preflight. O smoke de
+`/api/members` exige `401` para visitante deslogado. Feature Flags não são avaliadas.
 
 O token Cloudflare único deve permitir todas as leituras anteriores/posteriores
 (Hyperdrive, Worker/versões/subdomínio/domínios, zona/rotas) e o upload. Sua presença
@@ -306,7 +304,7 @@ depende das verificações do runner, não do resumo.
    TLS `verify-full` e identificador da CA. Não comprova consulta SQL.
 2. **Binding ativo:** consultar deployments do Worker, exigir versão única com
    100% do tráfego, consultar essa versão e conferir tag SHA, binding `HYPERDRIVE`,
-   ID do recurso, Assets, presença dos secrets, origem, remetente e recorte efetivo. A configuração enviada não basta.
+   ID do recurso, Assets, presença dos secrets, origem e remetente. A configuração enviada não basta.
    O runner registra somente SHA, UUID da versão, tráfego e resultados sanitizados,
    sem expor outros bindings ou valores de secrets. As permissões de leitura
    existentes do workflow são necessárias; 403 bloqueia confirmação, sem contorno.
@@ -321,8 +319,7 @@ depende das verificações do runner, não do resumo.
    Não consultam identidade SQL do projeto/branch/servidor nem fazem homologação
    funcional autenticada. Conexão direta administrativa não substitui esse caminho.
 4. **Rotas:** HTML público, onboarding anônimo `{ etapa: "email" }`,
-   `401` em organizações/igrejas e `404` em membros sem recorte
-   (`401` quando o recorte atual estiver preservado), além de `404` anônimo em
+   `401` em organizações/igrejas/membros, além de `404` anônimo em
    `/admin` e `/api/admin/session` com `no-store`, headers
    de segurança e sem redirects. Nenhuma chamada de criação de negócio ou
    envio de e-mail é feita. O smoke de membros não habilita o módulo.
@@ -352,7 +349,7 @@ interrompe antes da etapa seguinte. Não executar o workflow para testar o gate.
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Recuperação          | Custodiante identifica conta/Worker/domínio/Hyperdrive e projeto/branch/banco Neon. Registrar UUID, SHA, Assets/configuração da versão ativa e versão anterior recuperável; comprovar leitura de deployments/versions/domains e capacidade autorizada de republicar essa versão. No Neon comprovar janela PITR/backup, retenção que cubra a operação, ponto recuperável, RPO/RTO aceitos e procedimento de restauração validado em ambiente isolado. | Houver 403, versão sem identificação, perda de histórico durante a janela, restauração não comprovada ou versão anterior incompatível com schema/configuração previstos. Não criar backup/branch/restore sem autorização própria. |
 | 2. Banco e ACLs         | Autorizar explicitamente 0005 e 0006 e aplicação independente de [administracao-runtime-acls.sql](../ops/administracao-runtime-acls.sql), após os preflights abaixo. Reconsultar journal e permissões em conexão nova.                                                                                                                                                                                                                               | Aparecer outra migration pendente, hash/objeto/owner divergente, colisão, evento incompatível com CHECK, espera de lock ou falha de commit. Não iniciar upload com schema/ACLs incompletos.                                       |
-| 3. Continuidade         | Sob autorização específica para configurações, reconciliar `EMAIL_FROM` e `MEMBERS_DEV_ORGANIZATIONS` com o remetente e seleção exata ativos. Confirmar Resend/domínio, origin, Assets, Hyperdrive, cache/TLS e nomes dos secrets existentes; manter seus valores remotos. Validar escopos reais do token exclusivo Foundation e restrição do Environment à master.                                                                                  | Não for possível conferir o binding ativo, a seleção mudar ou for necessária rotação de secrets. Nenhuma dessas divergências é corrigida automaticamente pelo executor.                                                           |
+| 3. Continuidade         | Sob autorização específica para configurações, reconciliar o remetente ativo com o pretendido `Levi <hi@levi.t00ls.dev>` e a variable `EMAIL_FROM`, sem rotação de secrets. Confirmar Resend/domínio, origin, Assets, Hyperdrive, cache/TLS e nomes dos secrets existentes; manter seus valores remotos. Validar escopos reais do token exclusivo Foundation e restrição do Environment à master.                                                    | Não for possível conferir o binding ativo ou for necessária rotação de secrets. Nenhuma dessas divergências é corrigida automaticamente pelo executor.                                                                            |
 | 4. Candidato            | Preparação integrada por revisão, master limpa, SHA completo escolhido e CI push/master mais recente aprovada, incluindo checks e Version Packages. Confirmar compatibilidade de rollback e matriz de validação.                                                                                                                                                                                                                                     | Houver avanço da master, nova tentativa/run pendente, falha, skip obrigatório ou candidato não revisado.                                                                                                                          |
 | 5. Conter original      | Com autorização para o original, fechar `LEVI_DEV_DEPLOY_ENABLED`, fechar `LEVI_DEV_READY` e suspender `.github/workflows/deploy-dev.yml`. Inventariar gatilhos, dispatch/rerun, execuções e filas; aguardar término natural das já iniciadas. Retirar a capacidade de publicação antiga sob custódia, somente após comprovar token exclusivo, sem afetar o novo ou outros consumidores.                                                             | Restar execução/ator/automação capaz de escrever, ou os tokens forem compartilhados/escopo incerto. Não cancelar upload em curso para simular exclusão. Grupos concurrency entre repositórios não são lock.                       |
 | 6. Habilitar Foundation | Com autorização do corte e exclusividade comprovada, abrir `DEPLOY_READY` somente no Environment levi-dev; preservar execução manual, revisão e proteções. Registrar responsável e janela.                                                                                                                                                                                                                                                           | O original ainda puder publicar ou qualquer condição anterior tiver expirado. Não abrir gates como investigação.                                                                                                                  |

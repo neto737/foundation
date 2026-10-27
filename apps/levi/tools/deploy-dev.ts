@@ -200,11 +200,7 @@ try {
   const parsed = ts.parseConfigFileTextToJson("wrangler.jsonc", baseConfig);
   assert.ok(!parsed.error);
   const config = diagnostics.verify("bundle-config", () =>
-    deploymentConfig(
-      parsed.config,
-      settings.hyperdrive,
-      env.LEVI_MEMBERS_DEV_ORGANIZATIONS,
-    ),
+    deploymentConfig(parsed.config, settings.hyperdrive),
   );
   config.vars.LEVI_EMAIL_FROM = env.LEVI_EMAIL_FROM;
   diagnostics.start("bundle-directory", "falha de operação local");
@@ -275,12 +271,7 @@ try {
     ["/api/onboarding", "onboarding-read", "onboarding-response", 200],
     ["/api/organizations", "organizations-read", "organizations-response", 401],
     ["/api/churches", "churches-read", "churches-response", 401],
-    [
-      "/api/members",
-      "members-read",
-      "members-response",
-      config.vars.LEVI_MEMBERS_DEV_ORGANIZATIONS ? 401 : 404,
-    ],
+    ["/api/members", "members-read", "members-response", 401],
   ] as const) {
     const response = await diagnostics.request(
       requestCheck,

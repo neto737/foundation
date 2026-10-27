@@ -319,10 +319,7 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
     "${{ needs.validate.outputs.sha }}",
   );
   assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.DEPLOY_READY }}");
-  assert.equal(
-    publish.env.LEVI_MEMBERS_DEV_ORGANIZATIONS,
-    "${{ vars.MEMBERS_DEV_ORGANIZATIONS }}",
-  );
+  assert.equal("LEVI_MEMBERS_DEV_ORGANIZATIONS" in publish.env, false);
   assert.deepEqual(
     Object.values(publish.env)
       .filter((value) => value.includes("secrets."))
