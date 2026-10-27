@@ -2,10 +2,11 @@
 
 Cada produto possui deploy independente. O Foundation valida somente o fluxo DEV
 usando `examples/links`. O
-[publicador manual Levi preparado](../../.github/workflows/deploy-levi-dev.yml)
-é independente, usa o Environment `levi-dev` e não chama o coordenador D1. Seu
-único interruptor administrativo `DEPLOY_READY` permanece false. Não há
-transferência operacional nem autorização de dispatch; ver
+[publicador manual Levi](../../.github/workflows/deploy-levi-dev.yml) é
+independente, usa o Environment `levi-dev` e não chama o coordenador D1. A
+transferência DEV já foi concluída. O gate canônico `LEVI_DEPLOY_READY` exige
+migração administrativa do cadastro legado antes de usar esta revisão. Esta
+alteração não muda gates reais nem autoriza dispatch; ver
 [Deploy Levi DEV](../../apps/levi/docs/deploy-dev.md).
 
 A política aprovada exige migrations persistentes em operação independente e
