@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { authenticatedJson, repository, shaPattern } from "./release-core.mjs";
+import { authenticatedJson, repository, shaPattern } from "./github-api.mjs";
 
 import {
   createDeployDiagnostics,

@@ -28,20 +28,8 @@ Distribuir dependências ou binários exige respeitar seus avisos e obrigações
 incluindo componentes MPL e LGPL presentes nas ferramentas. A licença raiz não
 relicencia esses componentes.
 
-## Publicação e versões
+## Pacotes internos
 
-Licença do código, visibilidade do repositório e publicação de pacotes são
-decisões distintas. Workspaces com `private: true` continuam sem publicação npm,
-embora seu código próprio esteja no escopo da licença raiz. O destino oficial
-dos nove nomes é npmjs.com público no scope do usuário `t00ls-dev`. Preparação
-local não significa publicação: o histórico privado GitHub permanece intacto.
-
-Versões antigas publicadas como `UNLICENSED` não são reempacotadas ou alteradas
-retroativamente. Os alvos MIT planejados no #30 permanecem preservados para
-bootstrap, sujeito a audit e nova aprovação integral do snapshot/destino/bytes.
-O record histórico conserva sua proveniência; artifacts e autorizações antigas
-GitHub não autorizam npm. Mudanças seguintes usam Changesets após revisão/CI.
-
-Consulte [Pacotes e Release](packages.md) para identidade, integridade,
-provenance, preflight e autorização do publisher em repositório público ou
-privado.
+Todos os workspaces são privados para publicação; o código próprio permanece sob
+a licença raiz. A distribuição npm foi encerrada. Versões antigas não são
+alteradas retroativamente. Veja [Pacotes internos](packages.md).

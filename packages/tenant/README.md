@@ -11,9 +11,8 @@ durável nos adaptadores.
 
 ## Instalação
 
-Destino oficial: npmjs.com público no scope do usuário `t00ls-dev`. No
-Foundation use `workspace:*`; consumidores externos usam uma versão publicada
-com a API desejada. A migração para `pg` exige uma nova release autorizada.
+Consumo interno no monorepo com `workspace:*`. Compile os pacotes locais com
+`pnpm build` antes de usar seus exports.
 
 ```sh
 pnpm --filter <app> add '@t00ls-dev/tenant@workspace:*'

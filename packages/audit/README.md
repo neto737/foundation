@@ -3,9 +3,8 @@
 Contrato append-only para eventos de auditoria e adaptadores D1/PostgreSQL. O
 pacote não expõe operações de atualização ou exclusão.
 
-Destino oficial: npmjs.com público no scope do usuário `t00ls-dev`. No
-Foundation use `workspace:*`; fora dele, use uma versão publicada com a API
-desejada. A migração para `pg` exige uma nova release autorizada.
+Consumo interno no monorepo com `workspace:*`. Compile com `pnpm build` antes de
+usar os exports locais.
 
 Use `createAuditEvent` para validar metadados e `AuditStore.append` para
 persisti-los. Chaves sensíveis como `password`, `token`, `cookie` e `secret` são

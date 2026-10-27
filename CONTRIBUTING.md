@@ -13,9 +13,8 @@ precisam de credenciais de deploy.
 - Preserve os padrões existentes e escreva documentação em pt-BR.
 - Execute primeiro os testes afetados, lint e typecheck. Antes de enviar,
   execute `pnpm check`; registre claramente checks pendentes ou falhas.
-- Para mudanças nos nove pacotes distribuídos, adicione um changeset com
-  `pnpm exec changeset`. Não altere versões manualmente. Veja
-  [Pacotes e Release](docs/runbooks/packages.md).
+- Dependências Foundation usam `workspace:*`. Veja
+  [Pacotes internos](docs/runbooks/packages.md).
 - Mudanças em workflows, scripts operacionais, manifests e lockfile precisam de
   revisão cuidadosa dos gates e permissões. Não inclua secrets, dados reais ou
   arquivos de ambiente locais.
@@ -24,7 +23,7 @@ A CI de PR roda em runners GitHub hospedados. Contribuições externas não rece
 secrets operacionais nem autorizam deploy, migrations ou publicação. O
 mantenedor revisa o PR e os checks antes de integrar. Avançar `master` pode
 acionar deploy DEV e fases de migration após CI; a consolidação precisa levar
-esse efeito operacional em conta. Release de pacotes exige autorização separada.
+esse efeito operacional em conta. A distribuição npm foi encerrada.
 
 O código próprio é licenciado sob MIT; consulte
 [licenças e distribuição](docs/runbooks/licensing.md) para o aviso de copyright

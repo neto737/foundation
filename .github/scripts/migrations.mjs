@@ -15,7 +15,7 @@ import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { migrationSummary, writeDeploySummary } from "./deploy-summary.mjs";
 import { approvedCi, validateDeployEvent } from "./ci-evidence.mjs";
-import { authenticatedJson, repository, shaPattern } from "./release-core.mjs";
+import { authenticatedJson, repository, shaPattern } from "./github-api.mjs";
 import {
   hash,
   inspectState,

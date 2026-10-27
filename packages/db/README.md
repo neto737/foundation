@@ -11,10 +11,8 @@ migrações.
 
 ## Instalação
 
-Destino oficial: npmjs.com público no scope do usuário `t00ls-dev`. No
-Foundation use `workspace:*`; fora dele, use uma versão publicada que ofereça a
-API desejada. A migração descrita abaixo exige uma nova release explicitamente
-autorizada.
+Consumo interno no monorepo com `workspace:*`. Compile os pacotes locais com
+`pnpm build` antes de usar seus exports.
 
 ```sh
 pnpm --filter <app> add '@t00ls-dev/db@workspace:*'
@@ -91,11 +89,10 @@ não são reproduzidos pela conexão local do Miniflare.
 
 ## Perfil TypeScript de D1
 
-`@t00ls-dev/db/d1` é específico de **Cloudflare Workers/D1**. A distribuição
-corretiva declara os tipos oficiais necessários e preserva sua referência global
-nesse entrypoint porque `drizzle-orm/d1` usa `D1Database`,
-`D1PreparedStatement`, `D1Result` e `D1Response` como globais. Nenhum import
-JavaScript de Workers Types é emitido.
+`@t00ls-dev/db/d1` é específico de **Cloudflare Workers/D1**. O pacote declara
+os tipos oficiais necessários e preserva sua referência global nesse entrypoint
+porque `drizzle-orm/d1` usa `D1Database`, `D1PreparedStatement`, `D1Result` e
+`D1Response` como globais. Nenhum import JavaScript de Workers Types é emitido.
 
 Um consumidor mínimo desse entrypoint usa libs ES e não carrega os globais de
 Node ou `lib.dom`, por exemplo:
@@ -116,13 +113,12 @@ Node ou `lib.dom`, por exemplo:
 
 Misturar esse ambiente com DOM/Node não é um perfil suportado: a referência
 Workers introduz conflitos globais. O tipo de `process.env` depende da ordem de
-carregamento: a referência Node de `pg` preserva `ProcessEnv` no controle atual
-de distribuição, mas outras ordens podem produzir `any`. Isso não remove os
-conflitos nem torna o perfil misto suportado. É um efeito da integração, não
-apenas um defeito independente de terceiros. As entradas raiz e `/postgres` não
-carregam esses globais. A biblioteca Drizzle ainda possui erros estritos de suas
-próprias declarações; os testes de distribuição distinguem esses erros dos novos
-diagnósticos Foundation.
+carregamento: a referência Node de `pg` preserva `ProcessEnv` no perfil de
+referência, mas outras ordens podem produzir `any`. Isso não remove os conflitos
+nem torna o perfil misto suportado. É um efeito da integração, não apenas um
+defeito independente de terceiros. As entradas raiz e `/postgres` não carregam
+esses globais. A biblioteca Drizzle ainda possui erros estritos em suas próprias
+declarações.
 
 ## Limitações, segurança e migrações
 

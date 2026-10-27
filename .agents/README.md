@@ -85,15 +85,15 @@ complementares omitidos pelo instalador e as licenças aplicáveis.
 Todas as Skills solicitadas foram localizadas nas fontes examinadas. As
 seguintes não foram aprovadas nesta revisão:
 
-| Seleção                               | Justificativa                                                                                                                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hono`                                | A revisão atual orienta Hono v5 e exige adicionar `@hono/cli@next`; o Foundation usa Hono v4 e harnesses próprios.                                                              |
-| `pnpm`                                | A revisão atual descreve pnpm 12/v11+, desconsidera configuração em `package.json` e inclui release/orquestração nativa; o projeto usa pnpm 10.15.1, Turborepo e Changesets.    |
-| `neon`                                | Sem integração Neon atual; inclui provisionamento, instalação global de CLI/MCP, atualização por sessão e backend Next.js/Vercel/Neon Functions.                                |
-| `neon-postgres`                       | Depende de carregar `neon` primeiro e orienta operações específicas desse provider; não há consumidor Neon no Foundation. PostgreSQL genérico é coberto por `postgres-drizzle`. |
-| `better-auth-best-practices`          | A fonte examinada não fornece licença de redistribuição para versionar a cópia. Além disso, exemplos genéricos `push`/migrate precisam respeitar os históricos por dialeto.     |
-| `better-auth-security-best-practices` | Mesma ausência de licença na fonte; exemplos de cookie cache, proxy headers e auditoria não são configuração canônica do Foundation.                                            |
-| `security-guidance`                   | Impõe todos os requisitos ASVS L1, citações inline obrigatórias e interrupção em lacunas, convertendo orientação auxiliar em política global de implementação.                  |
+| Seleção                               | Justificativa                                                                                                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hono`                                | A revisão atual orienta Hono v5 e exige adicionar `@hono/cli@next`; o Foundation usa Hono v4 e harnesses próprios.                                                                               |
+| `pnpm`                                | A revisão atual descreve pnpm 12/v11+, desconsidera configuração em `package.json` e inclui release/orquestração nativa; o projeto usa pnpm 10.15.1, Turborepo e consumo interno pelo workspace. |
+| `neon`                                | Sem integração Neon atual; inclui provisionamento, instalação global de CLI/MCP, atualização por sessão e backend Next.js/Vercel/Neon Functions.                                                 |
+| `neon-postgres`                       | Depende de carregar `neon` primeiro e orienta operações específicas desse provider; não há consumidor Neon no Foundation. PostgreSQL genérico é coberto por `postgres-drizzle`.                  |
+| `better-auth-best-practices`          | A fonte examinada não fornece licença de redistribuição para versionar a cópia. Além disso, exemplos genéricos `push`/migrate precisam respeitar os históricos por dialeto.                      |
+| `better-auth-security-best-practices` | Mesma ausência de licença na fonte; exemplos de cookie cache, proxy headers e auditoria não são configuração canônica do Foundation.                                                             |
+| `security-guidance`                   | Impõe todos os requisitos ASVS L1, citações inline obrigatórias e interrupção em lacunas, convertendo orientação auxiliar em política global de implementação.                                   |
 
 Da coleção `cloudflare/skills`, foram aprovadas `cloudflare`,
 `workers-best-practices`, `wrangler`, `workers-profiling` e `web-perf`. Não

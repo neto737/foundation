@@ -6,8 +6,9 @@ deliberadamente adiado. Ele descreve o código atual, não uma arquitetura
 hipotética.
 
 Última revisão de código: incorporação do Levi e CI conjunta em 25 de outubro de
-2026; publicação npm em 22 de outubro de 2026. Registros operacionais históricos
-permanecem identificados nas respectivas seções e runbooks.
+2026; distribuição npm encerrada em 27 de outubro de 2026. Registros
+operacionais históricos permanecem identificados nas respectivas seções e
+runbooks.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
@@ -62,18 +63,14 @@ da primeira entrega.
 - ESLint compartilhado em `@t00ls-dev/eslint-config`.
 - Formatação com Prettier.
 - Builds ordenados pelos limites de dependência do workspace.
-- Descoberta de `apps/*` nos validadores de manifests e planejamento de release,
-  preservando a leitura das bases históricas e a allowlist npm de nove pacotes.
-- Planejamento de versões privadas separado do plano npm, sem ativação de
-  `privatePackages`, criação de tags ou mudanças nas versões atuais. O fluxo
-  público continua bloqueando planos privados até sua ativação futura revisada.
+- Todos os consumidores Foundation usam `workspace:*`; os pacotes são privados.
 - Correções locais de dependências: Zod `4.6.7` somente nas cadeias Better Auth
   e Core `1.7.10`, e Undici `7.30.1` na cadeia Miniflare. Overrides de raiz não
   corrigem lockfiles de consumidores externos; a cópia Levi incorporada usa os
   overrides raiz, preservando o lockfile do repositório original.
 - CI integral e gates existentes preservados; testes de contrato exercitam
   aplicativos sintéticos, componentes privados e dependências transitivas com
-  `^build`, sem seleção agressiva ou mudança de publicador.
+  `^build`, sem seleção agressiva ou publicação npm.
 
 O desacoplamento operacional das migrations persistentes permanece bloqueado
 nesta preparação. O coordenador atual ainda executa fases D1 no ciclo de deploy;
@@ -105,29 +102,11 @@ a política aprovada e o motivo para não alterar parcialmente esse ciclo estão
 | `@t00ls-dev/observability` | Logging JSON estruturado com contexto de request, usuário e tenant.                                                                                                 |
 | `@t00ls-dev/audit`         | Eventos append-only para D1/PostgreSQL, com validação recursiva que rejeita chaves sensíveis na metadata.                                                           |
 
-Os nove pacotes tiveram as versões históricas `0.1.0` e `0.1.1` privadas no
-GitHub Packages; esses pacotes duplicados foram excluídos em **15/10/2026**.
-Internamente são consumidos com `workspace:*`. Os nove pacotes oficiais têm
-acesso público no npmjs.com, no scope do usuário `t00ls-dev`, sem
-organização/publicação dupla: audit/db/tenant `1.0.1`, auth `0.3.1`, config
-`0.1.3`, security `0.2.0` e access/email/observability `0.1.2`.
-
-Em **22/10/2026**, a recuperação do PR #136 concluiu os cinco alvos com OIDC,
-bytes, assinaturas e proveniência verificados; o freeze operacional dessa
-recuperação foi encerrado por autorização do mantenedor. O
-[runbook de pacotes](runbooks/packages.md#roteiro-operacional-para-próximas-releases)
-registra o fluxo normal e as evidências históricas. Isso não autoriza novo envio
-nem dispensa a conferência atual dos Trusted Publishers de cada alvo. Release
-permanece manual e explicitamente autorizado. Os demais workspaces com
-`private: true` não são publicados no registry, embora seu código esteja
-público.
-
-Os nove registros adicionais `0.0.0-stage` são placeholders de staging do npm,
-sem a API operacional Foundation. A decisão de 16/10/2026 é mantê-los, sem
-impacto operacional demonstrado no consumo normal ou no inventário atual;
-`latest` continua nas versões oficiais. A operação exata que os criou não foi
-determinada. Veja a decisão e seus limites no
-[runbook de pacotes](runbooks/packages.md#audit-não-autoriza-publicação).
+Os pacotes Foundation são privados e consumidos exclusivamente no monorepo por
+dependências `workspace:*`, resolvidas como links locais pelo pnpm. A
+distribuição npm foi encerrada; não há automação de publicação ou versionamento
+por Changesets. Versões e changelogs existentes são históricos. Builds, APIs,
+testes e deploys das aplicações permanecem independentes.
 
 ### Aplicação de referência
 
@@ -228,9 +207,8 @@ O comando `pnpm check` executa, nesta ordem:
 5. testes de integração;
 6. builds;
 7. testes E2E;
-8. testes de distribuição dos packages;
-9. testes de release;
-10. contratos de migrations e execução D1 descartável.
+8. contratos de consumo local do workspace;
+9. contratos de migrations e execução D1 descartável.
 
 A cobertura atual inclui:
 
@@ -255,12 +233,6 @@ normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
 
 - `CI`: executa o gate completo em PRs e pushes para `master`; execuções antigas
   da mesma ref são canceladas.
-- Version Packages é um job isolado da CI de push/master, dependente de
-  `checks`, sem repetir o gate. Compartilha a serialização global com Release
-  manual.
-- `Release`: somente manual; audit/approve/preflight/publisher verificam pela
-  API a CI aprovada do SHA exato, preservando autorização, provenance e checks
-  de registry.
 - `Deploy DEV`: aceita somente `workflow_dispatch`, com SHA atual de master e CI
   push/master aprovada; não recebe mais eventos `workflow_run`. Permanece
   `disabled_manually` até autorização posterior. A reativação não autoriza um
@@ -355,22 +327,13 @@ Não serão implementados sem consumidor real:
 - design system completo;
 - staging, GraphQL, microservices, Kubernetes, SMS e Web Push.
 
-## Publicação e releases
+## Pacotes internos
 
-Changesets prepara releases independentes dos nove pacotes reutilizáveis em
-`packages/*` para npmjs.com público no scope do usuário `t00ls-dev`. O job
-Version Packages da CI de push/master cria ou atualiza o PR de versionamento;
-não publica pacotes. Release é manual e requer CI aprovada do SHA exato, audit,
-aprovação do owner por identidade/permissão verificadas na API, preflight e
-autorização explícita. As versões `0.1.0` e `0.1.1` pertencem ao histórico dos
-pacotes privados excluídos do GitHub Packages; abertura do código não autoriza
-uma nova publicação. Veja o [runbook de pacotes](runbooks/packages.md). Nesse
-fluxo:
-
-- APIs podem amadurecer sem releases artificiais;
-- cada pacote mantém versão própria;
-- consumidores de teste usam exports públicos;
-- breaking changes futuras exigirão major version.
+Os pacotes Foundation são privados e consumidos exclusivamente no monorepo por
+dependências `workspace:*`, resolvidas como links locais pelo pnpm. A
+distribuição npm foi encerrada; não há automação de publicação ou versionamento
+por Changesets. Versões e changelogs existentes são históricos. Builds, APIs,
+testes e deploys das aplicações permanecem independentes.
 
 ## Decisões vigentes
 
@@ -380,7 +343,7 @@ As decisões arquiteturais permanecem registradas em `docs/decisions`:
 - [tenancy, access e convites](decisions/002-tenancy-access-invitations.md);
 - [Better Auth](decisions/003-better-auth.md);
 - [bancos e testes de integração](decisions/004-databases-and-integration-tests.md);
-- [publicação workspace-first](decisions/005-workspace-first-publication.md);
+- [consumo interno pelo workspace](decisions/005-workspace-first-publication.md);
 - [Foundation DEV-only](decisions/006-deployment-environments.md);
 - [escopo da v0.1](decisions/007-v01-scope.md).
 

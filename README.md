@@ -24,23 +24,22 @@ O Foundation reúne infraestrutura de aplicação sem regras de negócio de um
 produto específico. Combina **React SPA e API Hono no mesmo Cloudflare Worker**,
 com D1 como preset inicial e suporte a PostgreSQL via Drizzle.
 
-Os **nove pacotes oficiais estão publicados no npm**. O repositório inclui
-[Links](examples/links/README.md), uma biblioteca privada de bookmarks que
-demonstra a integração dos pacotes. Inclui também o [Levi](apps/levi/README.md),
-aplicação privada de gestão de igrejas com domínio e banco próprios. O projeto
-está em evolução; consulte o [estado atual](docs/project-status.md) para
-entregas e pendências. O exemplo possui fluxo de deploy manual somente em DEV;
-cada execução exige autorização específica, conforme o
-[runbook](docs/runbooks/deployment.md). Aplicações consumidoras definem seus
-próprios ambientes e controladores de deploy.
+Os **pacotes são internos ao monorepo**, consumidos com `workspace:*`. O
+repositório inclui [Links](examples/links/README.md), uma biblioteca privada de
+bookmarks que demonstra a integração dos pacotes. Inclui também o
+[Levi](apps/levi/README.md), aplicação privada de gestão de igrejas com domínio
+e banco próprios. O projeto está em evolução; consulte o
+[estado atual](docs/project-status.md) para entregas e pendências. O exemplo
+possui fluxo de deploy manual somente em DEV; cada execução exige autorização
+específica, conforme o [runbook](docs/runbooks/deployment.md). Aplicações
+consumidoras definem seus próprios ambientes e controladores de deploy.
 
 O Foundation é a base principal da consolidação em monorepo. O workspace já
 aceita `apps/*`; o Levi está incorporado em `apps/levi` com histórico
 preservado, sem transferência operacional. Links permanece em `examples/links`.
 Aplicações consomem pacotes com `workspace:*`, mantendo versões, deploys e
-recursos próprios. Publicar no npm continua sendo uma operação opcional e
-separada do consumo interno; consulte
-[versionamento e publicação](docs/runbooks/packages.md#planos-de-componentes-e-publicação).
+recursos próprios. O consumo e a validação seguem o
+[runbook de pacotes](docs/runbooks/packages.md).
 
 ## Principais funcionalidades
 
@@ -61,33 +60,29 @@ separada do consumo interno; consulte
 
 ## Pacotes oficiais
 
-Disponíveis publicamente no [npm](https://www.npmjs.com/~t00ls-dev), no scope
-`@t00ls-dev`, com versões independentes:
+Pacotes locais privados em `packages/*`:
 
-- [**@t00ls-dev/config**](https://www.npmjs.com/package/@t00ls-dev/config) —
-  configuração tipada de ambiente, bancos e capabilities.
-- [**@t00ls-dev/db**](https://www.npmjs.com/package/@t00ls-dev/db) — factories
-  Drizzle para D1 e PostgreSQL e consulta do journal PostgreSQL.
-- [**@t00ls-dev/auth**](https://www.npmjs.com/package/@t00ls-dev/auth) —
-  integração Better Auth e resolução tipada de sessão no servidor.
-- [**@t00ls-dev/tenant**](https://www.npmjs.com/package/@t00ls-dev/tenant) —
-  isolamento por tenant, memberships, troca de tenant ativo e convites.
-- [**@t00ls-dev/access**](https://www.npmjs.com/package/@t00ls-dev/access) —
-  autorização por permissões e roles configuráveis.
-- [**@t00ls-dev/security**](https://www.npmjs.com/package/@t00ls-dev/security) —
-  proteções HTTP, Turnstile e rate limiting com storage injetável.
-- [**@t00ls-dev/email**](https://www.npmjs.com/package/@t00ls-dev/email) —
-  contrato substituível de envio de e-mail com implementação Resend.
-- [**@t00ls-dev/observability**](https://www.npmjs.com/package/@t00ls-dev/observability)
-  — logs JSON estruturados com contexto de request, usuário e tenant.
-- [**@t00ls-dev/audit**](https://www.npmjs.com/package/@t00ls-dev/audit) —
-  eventos append-only em D1/PostgreSQL, com rejeição de chaves sensíveis na
-  metadata.
+- [**@t00ls-dev/config**](packages/config) — configuração tipada de ambiente,
+  bancos e capabilities.
+- [**@t00ls-dev/db**](packages/db) — factories Drizzle para D1 e PostgreSQL e
+  consulta do journal PostgreSQL.
+- [**@t00ls-dev/auth**](packages/auth) — integração Better Auth e resolução
+  tipada de sessão no servidor.
+- [**@t00ls-dev/tenant**](packages/tenant) — isolamento por tenant, memberships,
+  troca de tenant ativo e convites.
+- [**@t00ls-dev/access**](packages/access) — autorização por permissões e roles
+  configuráveis.
+- [**@t00ls-dev/security**](packages/security) — proteções HTTP, Turnstile e
+  rate limiting com storage injetável.
+- [**@t00ls-dev/email**](packages/email) — contrato substituível de envio de
+  e-mail com implementação Resend.
+- [**@t00ls-dev/observability**](packages/observability) — logs JSON
+  estruturados com contexto de request, usuário e tenant.
+- [**@t00ls-dev/audit**](packages/audit) — eventos append-only em D1/PostgreSQL,
+  com rejeição de chaves sensíveis na metadata.
 
-Os antigos pacotes privados do GitHub Packages foram removidos; **npmjs.com é o
-registry oficial**, sem publicação dupla. UI, create-app, Doctor e demais
-workspaces privados não são publicados. Detalhes de consumo e publicação estão
-no [runbook de pacotes](docs/runbooks/packages.md).
+Todos os workspaces são privados. Veja o
+[consumo interno](docs/runbooks/packages.md).
 
 ## Requisitos
 
@@ -103,10 +98,10 @@ Para desenvolver neste repositório:
 
 ### Consumir um pacote
 
-Em uma aplicação existente, instale os pacotes necessários. Por exemplo:
+Dentro de um consumidor do workspace, adicione a dependência local:
 
 ```bash
-pnpm add @t00ls-dev/config
+pnpm --filter <app> add '@t00ls-dev/config@workspace:*'
 ```
 
 Consulte os READMEs em [`packages/`](packages) para as APIs e requisitos de cada
@@ -169,7 +164,7 @@ as suítes e os checks focados.
   [decisões técnicas](docs/decisions) e [estado atual](docs/project-status.md).
 - **Construir aplicações:** [criação de apps](docs/runbooks/creating-an-app.md),
   [exemplo Links](examples/links/README.md) e
-  [pacotes e releases](docs/runbooks/packages.md).
+  [pacotes internos](docs/runbooks/packages.md).
 - **Desenvolver e operar:** [testes](docs/runbooks/testing.md),
   [ambientes](docs/runbooks/environments.md),
   [deploy](docs/runbooks/deployment.md) e
@@ -182,7 +177,7 @@ as suítes e os checks focados.
 
 Issues e pull requests focados são bem-vindos. Leia
 [CONTRIBUTING.md](CONTRIBUTING.md) para os padrões de contribuição, validação e
-integração. Mudanças em pacotes distribuídos seguem o fluxo de Changesets.
+integração. Mudanças nos pacotes são validadas junto aos consumidores locais.
 
 ## Segurança
 

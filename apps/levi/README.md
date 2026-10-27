@@ -91,16 +91,13 @@ executar outro aplicativo simultaneamente.
 ## Versões, licença e separação futura
 
 A versão própria permanece no manifest; deploy não implica nova release.
-Versionamento privado automático e tags continuam desabilitados no Changesets.
-O plano npm continua restrito aos nove pacotes públicos. A publicação de
-`auth@0.3.2` foi adiada; a futura integração desta incorporação altera entradas
-protegidas e pode exigir revisão posterior do plano antigo, sem dispensar gates
-ou editar seu record para acomodar a importação.
+Todos os pacotes Foundation são privados e consumidos com `workspace:*`.
+A distribuição npm e o versionamento por Changesets foram encerrados.
 
 O código próprio adota [MIT](LICENSE). [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
 preservam as licenças de ícones e dependências. A licença do repositório original
 não foi alterada. Extração futura leva a aplicação com seu histórico/proveniência
-e seu fecho de dependências, ou consome versões públicas realmente disponíveis;
+e seu fecho de dependências;
 não exige banco, sessão ou deploy compartilhado com outro aplicativo.
 
 ## Documentação
