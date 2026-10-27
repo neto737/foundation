@@ -51,6 +51,8 @@ const checks = {
   "bundle-read": "leitura da configuração Wrangler",
   "bundle-parse": "formato da configuração Wrangler",
   "bundle-config": "proteções da configuração de publicação",
+  "secrets-memory": "armazenamento de secrets em memória volátil",
+  "secrets-file": "preparação privada do secret Resend",
   "bundle-directory": "preparação do diretório privado",
   "bundle-files": "gravação dos arquivos privados de publicação",
   wrangler: "publicação pelo Wrangler",

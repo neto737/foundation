@@ -188,6 +188,8 @@ solicita o valor interativamente.
 | ------------------------------ | ------------------------------------------------------------------------- |
 | `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                             |
 | `CLOUDFLARE_API_TOKEN`         | Leitura dos recursos verificados e publicação Worker/Assets/custom domain |
+| `RESEND_API_KEY`               | Fonte da chave de envio, sincronizada no mesmo upload do Worker           |
+| `AUTH_SECRET`                  | Origem pretendida de LEVI_AUTH_SECRET; migração pendente, não consumido   |
 
 Variables do Environment: `CLOUDFLARE_ZONE_ID`, `HYPERDRIVE_ID`, `DATABASE_HOST`,
 `DATABASE_NAME`, `EMAIL_FROM` e `DEPLOY_READY`. O workflow as mapeia para as entradas
@@ -207,19 +209,38 @@ O token Cloudflare único deve permitir todas as leituras anteriores/posteriores
 não comprova os escopos efetivos; falha de permissão bloqueia sem contorno. Esta
 adaptação não concede permissões nem requer Hyperdrive Write ou acesso migrador.
 
-O publicador **não recebe nem envia** `AUTH_SECRET`, `LEVI_AUTH_SECRET` ou
-`RESEND_API_KEY`. A configuração temporária declara os nomes remotos obrigatórios
-`LEVI_AUTH_SECRET` e `RESEND_API_KEY`; não há `--secrets-file`. O Wrangler 4.149.0
-fixado no lockfile conserva secrets remotos e exige a herança dos nomes declarados.
-Ver [Secrets](https://developers.cloudflare.com/workers/configuration/secrets/).
-Essa estratégia evita substituir o secret ativo pelo cadastro divergente do
-Foundation. Não copiar, exibir, comparar em logs ou rotacionar valores para o corte.
-Os cadastros GitHub preexistentes não são apagados ou alterados nesta preparação;
-esses dois valores deixam de ser consumidos pelo workflow.
+O Environment **foundation/levi-dev** é a fonte de verdade de `RESEND_API_KEY`.
+O workflow recebe esse secret somente no step `publish`; ausência ou valor vazio
+bloqueia a execução antes de consultar recursos ou fazer upload, sem fallback
+para a chave remota. Atualizar o cadastro GitHub exige depois uma publicação
+manual da master com CI aprovada; a alteração do secret não dispara deploy.
+
+O Wrangler **4.149.0** fixado envia a chave junto ao código por `deploy
+--secrets-file`, sem `secret put/bulk` nem versão adicional. O runner verifica que
+`/dev/shm` é tmpfs, cria diretório privado 0700 e arquivo JSON exclusivo 0600 com
+**somente RESEND_API_KEY**, sem valor em argv, config, logs, artifacts ou caches.
+A configuração não secreta também fica nesse diretório volátil, removido no
+`finally` em sucesso ou falha. Sem tmpfs ou com falha de escrita, não publica.
+Interrupção abrupta pode impedir o finally; nenhum arquivo é gravado em disco
+persistente e o runner hospedado é descartado ao encerrar o job.
+Ver [upload de secrets com código](https://developers.cloudflare.com/workers/configuration/secrets/#upload-secrets-alongside-code).
+
+`AUTH_SECRET` do GitHub é a origem **pretendida** para `LEVI_AUTH_SECRET`, mas sua
+equivalência ao valor ativo **não está comprovada**. A migração continua pendente:
+o workflow não recebe AUTH_SECRET/LEVI_AUTH_SECRET e o JSON nunca os inclui. Os
+nomes remotos obrigatórios continuam em `secrets.required`; Wrangler conserva os
+secrets omitidos da última versão enviada, cuja igualdade à ativa é revalidada.
+Não extrair valores para comparar nem rotacionar autenticação implicitamente.
+Centralização integral só poderá ser declarada após comprovação privada suficiente
+de continuidade ou autorização específica de rotação, em etapa separada.
+
+A presença do binding Resend após upload comprova seu nome/tipo, não entrega de
+mensagem nem correção funcional de login por link. O sucesso do upload e os smokes
+não substituem validação de envio real separadamente autorizada.
 
 Presença/nome/data de atualização não provam equivalência de secrets. O custodiante
 precisa confirmar, sem exportar valores, que a versão ativa é a origem autorizada
-dos secrets e que não há versão pendente ou publicador alternativo. Sem essa
+do secret de autenticação e que não há versão pendente ou publicador alternativo. Sem essa
 comprovação, interromper. Preservar o secret evita rotação pelo publicador, mas não
 certifica continuidade de todas as sessões após a atualização Better Auth: testar
 uma sessão sintética anterior e um novo login no corte autorizado. E-mail real
@@ -300,7 +321,7 @@ caminho normal. Reverter conteúdo usa commit revisável compatível com o schem
 sem reescrever Git ou desfazer migrations. Retirar domínio ou restaurar banco são
 operações excepcionais, autorizadas separadamente; não são rollback automático.
 
-A publicação gera somente configuração temporária privada e a remove ao terminar.
+A publicação gera configuração e arquivo de secrets privados em tmpfs e os remove ao terminar.
 A saída bruta Wrangler e seus logs em disco ficam desabilitados/sanitizados.
 Não habilitar request logs ou traces com URLs de autenticação. O resumo do job
 registra SHA e conclusões em vocabulário fechado, em melhor esforço; o sucesso

@@ -27,9 +27,9 @@ export function deploySettings(env: NodeJS.ProcessEnv) {
   );
   assert.ok(!env.LEVI_DEV_DATABASE_HOST!.split(".")[0]!.includes("-pooler"));
   assert.match(env.LEVI_DEV_DATABASE_NAME ?? "", /^levi_dev(?:_[a-z0-9_]+)?$/);
-  for (const name of ["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN"])
+  for (const name of ["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN", "RESEND_API_KEY"])
     assert.ok(env[name]?.trim());
-  // Secrets pertencem ao Worker existente, não às entradas do publicador.
+  // Só Resend é sincronizado do Environment; autenticação permanece remota.
   assert.equal(env.LEVI_EMAIL_FROM, emailFrom);
   return { sha, account, hyperdrive };
 }
