@@ -30,7 +30,7 @@ const options = {
     },
   },
 };
-const app = createApp({ ...options, membersEnabled: true });
+const app = createApp(options);
 function request(path: string, body?: object, cookie = "", key?: string) {
   return app.request(
     new Request(new URL(path, origin), {
@@ -536,27 +536,28 @@ test("membros PostgreSQL: datas DATE não mudam com fuso da sessão e histórico
   });
 });
 
-test("membros PostgreSQL: habilitação é opt-in local e não muda o onboarding padrão", async () => {
-  const disabled = createApp(options);
+test("membros PostgreSQL: disponibilidade padrão exige sessão e permite cadastro autorizado", async () => {
+  const defaultApp = createApp(options);
   for (const path of [
     "/api/members",
     `/api/members/${randomUUID()}`,
     `/api/members/requests/${randomUUID()}`,
   ])
     assert.equal(
-      (await disabled.request(new Request(new URL(path, origin)))).status,
-      404,
+      (await defaultApp.request(new Request(new URL(path, origin)))).status,
+      401,
     );
   const who = await account();
   assert.equal(
     (
-      await disabled.request(
+      await defaultApp.request(
         new Request(new URL("/api/members", origin), {
           method: "POST",
           headers: {
             Origin: origin,
             Cookie: who.cookie,
             "Content-Type": "application/json",
+            "Idempotency-Key": randomUUID(),
           },
           body: JSON.stringify({
             name: "Sintética",
@@ -566,7 +567,7 @@ test("membros PostgreSQL: habilitação é opt-in local e não muda o onboarding
         }),
       )
     ).status,
-    404,
+    201,
   );
 });
 
@@ -587,7 +588,6 @@ test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes 
     const zonedApp = createApp({
       ...options,
       databaseUrl: zonedUrl.toString(),
-      membersEnabled: true,
     });
     const send = (path: string, body?: object) =>
       zonedApp.request(

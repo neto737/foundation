@@ -1701,7 +1701,7 @@ test("API de flags valida catálogo, confirmação all, seleções e versão sem
   });
   assert.equal(
     (await send("/api/members", undefined, owner.cookie)).status,
-    404,
+    200,
   );
   assert.equal(
     (await send("/api/churches", undefined, actor.cookie)).status,

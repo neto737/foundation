@@ -2,8 +2,8 @@
 
 A Etapa 1 prepara persistência e operações internas; a Etapa 2 acrescenta o painel
 `/admin` e a API administrativa no próprio Levi. Nenhuma delas cria contas reais
-ou ativa módulos. O login Better Auth, as roles organizacionais e o recorte atual
-de membros continuam inalterados.
+ou ativa módulos. O login Better Auth e as roles organizacionais continuam
+inalterados. A disponibilidade de membros não depende das políticas do painel.
 
 ## Autoridade e concorrência
 
@@ -126,14 +126,11 @@ no mesmo snapshot. Funcionalidade desconhecida/ausente ou tenant inexistente
 retorna false; falha de banco propaga erro, sem fallback permissivo ou cache.
 O chamador continua responsável por sessão, membership, permissão e isolamento.
 
-**Esta função não está ligada ao domínio de membros.** `membersAvailable`,
-`MEMBERS_DEV_ORGANIZATIONS`, origem DEV, booleanos sintéticos e `/api/context`
-continuam com a semântica anterior. Tabelas novas vazias não desabilitam nem
-habilitam o módulo atual. Uma etapa futura, com autorização própria, deverá
-planejar/importar o recorte efetivamente publicado, proteger escritas de membros
-com lock/revalidação da política e provar equivalência antes de trocar a fonte de
-autoridade. O painel altera somente as políticas preparadas; não faz importação,
-união DB/ENV ou ativação.
+**Esta função não está ligada ao domínio de membros.** O módulo de membros está
+disponível para todas as organizações, sob as verificações existentes de sessão,
+vínculo, permissão e isolamento. Tabelas de flags vazias e alterações no painel
+não interferem nessa disponibilidade. Uma etapa futura, com autorização própria,
+tratará a integração do avaliador persistido; o painel não ativa esse avaliador.
 
 ## ACLs, operação e validação
 
@@ -154,8 +151,8 @@ cluster, concorrência, falha de auditoria, revogação e negações de ACL. Os 
 anteriores de autenticação, organizações e membros continuam na suíte.
 
 Para validar, seguir [o runbook de testes](../../../docs/runbooks/testing.md) e os
-scripts Levi. Integração operacional das flags, migração do recorte e qualquer
-ativação real permanecem fora do painel e exigem autorização própria.
+scripts Levi. Integração operacional das flags e qualquer ativação real
+permanecem fora do painel e exigem autorização própria.
 
 ## Painel e contrato HTTP — Etapa 2
 

@@ -37,8 +37,8 @@ independentes do Links. Produção não está implementada.
 Migrations persistentes exigem operação independente e autorizada. Importar,
 instalar, compilar ou iniciar a aplicação não aplica migrations persistentes.
 Replays de migrations em containers sintéticos isolados continuam permitidos.
-A documentação histórica de DEV não atesta o schema/ACLs ou o recorte organizacional
-remoto atual; conferi-los antes de qualquer transferência operacional.
+A documentação histórica de DEV não atesta o schema/ACLs ou a configuração
+remota atual; conferi-los antes de qualquer transferência operacional.
 
 ## Administração global
 

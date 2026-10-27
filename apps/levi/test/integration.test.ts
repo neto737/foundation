@@ -260,7 +260,6 @@ test("rate limiting contextual: sessões reais, mesmo IP, tenant, revogação e 
     baseURL: origin,
     secret,
     publicAbuseProtection: true,
-    membersEnabled: true,
     email: { send: async () => {} },
   });
   const send = (
@@ -958,7 +957,7 @@ test("duas organizações ficam isoladas e administrador acessa múltiplas igrej
     {
       organizationId: first.organizationId,
       role: "admin",
-      membersEnabled: false,
+      membersEnabled: true,
     },
   );
   // Contexto adulterado no banco também não concede autoridade sem vínculo.

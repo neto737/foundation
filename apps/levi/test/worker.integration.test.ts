@@ -771,35 +771,24 @@ test("workerd público: recuperação de senha compartilha limite de e-mails; lo
   assert.equal(new Set(bodies).size, 1);
 });
 
-test("workerd: gestão de membros permanece desabilitada mesmo com administrador pronto", async () => {
+test("workerd: módulo disponível por padrão para administrador pronto sem binding de rollout", async () => {
   const account = await provisioned();
   const context = await send("/api/context", undefined, account.cookie);
-  assert.equal((await context.json()).membersEnabled, false);
-  for (const path of [
-    "/api/members",
-    `/api/members/${crypto.randomUUID()}`,
-    `/api/members/requests/${crypto.randomUUID()}`,
-  ])
-    assert.equal((await send(path, undefined, account.cookie)).status, 404);
+  assert.equal((await context.json()).membersEnabled, true);
+  assert.equal(
+    (await send("/api/members", undefined, account.cookie)).status,
+    200,
+  );
   const response = await send(
     "/api/members",
     { name: "Pessoa sintética", status: "Ativo", churchId: account.churchId },
     account.cookie,
-    { "Idempotency-Key": crypto.randomUUID() },
+    { "Idempotency-Key": randomUUID() },
   );
-  assert.equal(response.status, 404);
-  assert.equal(
-    (
-      await observer.client.query(
-        "SELECT count(*)::int AS count FROM members WHERE tenant_id=$1",
-        [account.organizationId],
-      )
-    ).rows[0].count,
-    0,
-  );
+  assert.equal(response.status, 201);
 });
 
-test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membros ou aplicar migration", async () => {
+test("workerd: schema anterior preserva onboarding e igrejas e falha fechado em membros sem aplicar migration", async () => {
   await observer.client.query("CREATE DATABASE levi_worker_previous");
   const url = new URL(databaseUrl!);
   url.pathname = "/levi_worker_previous";
@@ -856,7 +845,7 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
     assert.deepEqual(await context.json(), {
       organizationId,
       role: "admin",
-      membersEnabled: false,
+      membersEnabled: true,
     });
     assert.equal(
       (await runtime.send("/api/churches", undefined, cookie)).status,
@@ -867,7 +856,7 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
       `/api/members/${randomUUID()}`,
       `/api/members/requests/${randomUUID()}`,
     ])
-      assert.equal((await runtime.send(path, undefined, cookie)).status, 404);
+      assert.equal((await runtime.send(path, undefined, cookie)).status, 503);
     assert.equal(
       (
         await runtime.send(
@@ -877,7 +866,7 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
           { "Idempotency-Key": randomUUID() },
         )
       ).status,
-      404,
+      503,
     );
     const html = await runtime.send("/membros");
     assert.equal(html.status, 200);
@@ -914,47 +903,6 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
         },
       ],
     });
-    // Configuração malformada ou recorte de outra organização não toca as tabelas pendentes.
-    for (const membersDevOrganizations of [
-      "",
-      organizationId + ",invalid",
-      randomUUID(),
-    ]) {
-      const restricted = await workerHarness(url.toString(), {
-        membersDevOrganizations,
-      });
-      try {
-        const response = await restricted.send(
-          "/api/context",
-          undefined,
-          loginCookie,
-        );
-        assert.equal(response.status, 200);
-        assert.equal((await response.json()).membersEnabled, false);
-        for (const path of [
-          "/api/members",
-          `/api/members/${randomUUID()}`,
-          `/api/members/requests/${randomUUID()}`,
-        ])
-          assert.equal(
-            (await restricted.send(path, undefined, loginCookie)).status,
-            404,
-          );
-        assert.equal(
-          (
-            await restricted.send(
-              "/api/members",
-              { name: "Pessoa sintética", churchId, status: "Ativo" },
-              loginCookie,
-              { "Idempotency-Key": randomUUID() },
-            )
-          ).status,
-          404,
-        );
-      } finally {
-        await restricted.mf.dispose();
-      }
-    }
     const tables = await previous.client.query(
       "SELECT to_regclass('members') members, to_regclass('member_history') history, to_regclass('member_creation_requests') receipts",
     );
@@ -969,136 +917,130 @@ test("workerd: schema anterior preserva onboarding e igrejas sem habilitar membr
   }
 });
 
-test("workerd: recorte DEV usa tenant administrativo atual em capacidade, cadastro, consultas e recibos", async () => {
-  const allowed = await provisioned();
-  const denied = await provisioned();
-  const runtime = await workerHarness(databaseUrl!, {
-    membersDevOrganizations: allowed.organizationId,
-  });
-  const routes = [
-    "/api/members",
-    `/api/members/${randomUUID()}`,
-    `/api/members/requests/${randomUUID()}`,
-  ];
-  const input = {
-    name: "Pessoa sintética do recorte",
-    churchId: allowed.churchId,
-    status: "Ativo",
-  };
-  const key = randomUUID();
-  const headers = { "Idempotency-Key": key };
+test("workerd: todas as organizações têm membros, com autorização e isolamento após troca/revogação", async () => {
+  // A organização que antes estaria selecionada e a que ficaria fora usam o mesmo Worker sem lista.
+  const formerlySelected = await provisioned();
+  const formerlyUnselected = await provisioned();
+  const runtime = await workerHarness(databaseUrl!);
   try {
-    for (const path of ["/api/context", ...routes])
+    for (const path of [
+      "/api/context",
+      "/api/members",
+      `/api/members/${randomUUID()}`,
+      `/api/members/requests/${randomUUID()}`,
+    ])
       assert.equal((await runtime.send(path)).status, 401);
-    assert.equal(
-      (await runtime.send("/api/members", input, "", headers)).status,
-      401,
-    );
-    for (const [account, enabled] of [
-      [allowed, true],
-      [denied, false],
-    ] as const) {
+    const results = [];
+    for (const account of [formerlySelected, formerlyUnselected]) {
       const context = await runtime.send(
         "/api/context",
         undefined,
         account.cookie,
       );
-      assert.equal(context.status, 200);
       assert.deepEqual(await context.json(), {
         organizationId: account.organizationId,
         role: "admin",
-        membersEnabled: enabled,
+        membersEnabled: true,
       });
+      const input = {
+        name: "Pessoa sintética",
+        churchId: account.churchId,
+        status: "Ativo",
+      };
+      const key = randomUUID();
+      const response = await runtime.send(
+        "/api/members",
+        input,
+        account.cookie,
+        { "Idempotency-Key": key },
+      );
+      assert.equal(response.status, 201);
+      const result: unknown = await response.json();
+      assert.ok(
+        result &&
+          typeof result === "object" &&
+          "memberId" in result &&
+          typeof result.memberId === "string" &&
+          "organizationId" in result &&
+          typeof result.organizationId === "string",
+      );
+      assert.equal(result.organizationId, account.organizationId);
+      const replay = await runtime.send("/api/members", input, account.cookie, {
+        "Idempotency-Key": key,
+      });
+      assert.equal(replay.status, 201);
+      assert.deepEqual(await replay.json(), result);
       assert.equal(
-        (await runtime.send("/api/churches", undefined, account.cookie)).status,
+        (
+          await runtime.send(
+            `/api/members/requests/${key}`,
+            undefined,
+            account.cookie,
+          )
+        ).status,
         200,
       );
+      const list = await runtime.send(
+        "/api/members",
+        undefined,
+        account.cookie,
+      );
+      assert.equal(list.status, 200);
+      assert.deepEqual(
+        (await list.json()).members.map((m: { id: string }) => m.id),
+        [result.memberId],
+      );
+      assert.equal(
+        (
+          await runtime.send(
+            `/api/members/${result.memberId}`,
+            undefined,
+            account.cookie,
+          )
+        ).status,
+        200,
+      );
+      results.push({ ...result, key });
     }
-    const created = await runtime.send(
-      "/api/members",
-      input,
-      allowed.cookie,
-      headers,
-    );
-    assert.equal(created.status, 201);
-    const result = (await created.json()) as {
-      organizationId: string;
-      memberId: string;
+    const first = results[0]!;
+    const foreignHeaders = {
+      "x-organization-id": formerlySelected.organizationId,
+      "x-members-enabled": "true",
     };
-    assert.equal(result.organizationId, allowed.organizationId);
-    const replay = await runtime.send(
-      "/api/members",
-      input,
-      allowed.cookie,
-      headers,
-    );
-    assert.equal(replay.status, 201);
-    assert.deepEqual(await replay.json(), result);
-    const receipt = await runtime.send(
-      `/api/members/requests/${key}`,
+    for (const path of [
+      `/api/members/${first.memberId}`,
+      `/api/members/requests/${first.key}`,
+    ])
+      assert.equal(
+        (
+          await runtime.send(
+            path,
+            undefined,
+            formerlyUnselected.cookie,
+            foreignHeaders,
+          )
+        ).status,
+        404,
+      );
+    const forged = await runtime.send(
+      `/api/members?organizationId=${formerlySelected.organizationId}&membersEnabled=true`,
       undefined,
-      allowed.cookie,
+      formerlyUnselected.cookie,
+      foreignHeaders,
     );
-    assert.equal(receipt.status, 200);
-    assert.deepEqual(await receipt.json(), result);
-    const list = await runtime.send(
-      "/api/members?name=recorte&status=Ativo&pageSize=1",
-      undefined,
-      allowed.cookie,
-    );
-    assert.equal(list.status, 200);
-    assert.deepEqual(
-      (await list.json()).members.map((member: { id: string }) => member.id),
-      [result.memberId],
-    );
-    const detail = await runtime.send(
-      `/api/members/${result.memberId}`,
-      undefined,
-      allowed.cookie,
-    );
-    assert.equal(detail.status, 200);
-    assert.equal((await detail.json()).member.name, input.name);
+    assert.equal(forged.status, 400);
+    const foreignChurch = {
+      name: "Pessoa sintética",
+      churchId: formerlySelected.churchId,
+      status: "Ativo",
+    };
     assert.equal(
       (
         await runtime.send(
           "/api/members",
-          { ...input, churchId: denied.churchId },
-          allowed.cookie,
+          foreignChurch,
+          formerlyUnselected.cookie,
           { "Idempotency-Key": randomUUID() },
-        )
-      ).status,
-      404,
-    );
-    const allRoutes = [
-      ...routes,
-      `/api/members/${result.memberId}`,
-      `/api/members/requests/${key}`,
-    ];
-    const forged = {
-      "x-organization-id": allowed.organizationId,
-      LEVI_MEMBERS_DEV_ORGANIZATIONS: allowed.organizationId,
-      "x-members-enabled": "true",
-    };
-    for (const path of allRoutes) {
-      const response = await runtime.send(
-        path,
-        undefined,
-        denied.cookie,
-        forged,
-      );
-      assert.equal(response.status, 404);
-      assert.deepEqual(await response.json(), {
-        erro: "NAO_ENCONTRADO",
-        mensagem: "Recurso não encontrado.",
-      });
-    }
-    assert.equal(
-      (
-        await runtime.send(
-          `/api/members?organizationId=${allowed.organizationId}&membersEnabled=true`,
-          undefined,
-          denied.cookie,
-          forged,
         )
       ).status,
       404,
@@ -1108,27 +1050,26 @@ test("workerd: recorte DEV usa tenant administrativo atual em capacidade, cadast
         await runtime.send(
           "/api/members",
           {
-            ...input,
-            organizationId: allowed.organizationId,
+            ...foreignChurch,
+            organizationId: formerlySelected.organizationId,
             membersEnabled: true,
           },
-          denied.cookie,
-          { ...forged, ...headers },
+          formerlyUnselected.cookie,
+          { "Idempotency-Key": randomUUID() },
         )
       ).status,
-      404,
+      400,
     );
-    // Mesmo usuário pode ter vínculo legítimo nas duas organizações: a sessão ativa decide.
     await observer.client.query(
       "INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES($1,$2,'admin')",
-      [denied.organizationId, allowed.id],
+      [formerlyUnselected.organizationId, formerlySelected.id],
     );
     assert.equal(
       (
         await runtime.send(
           "/api/tenant",
-          { organizationId: denied.organizationId },
-          allowed.cookie,
+          { organizationId: formerlyUnselected.organizationId },
+          formerlySelected.cookie,
         )
       ).status,
       200,
@@ -1136,132 +1077,67 @@ test("workerd: recorte DEV usa tenant administrativo atual em capacidade, cadast
     assert.equal(
       (
         await (
-          await runtime.send("/api/context", undefined, allowed.cookie)
-        ).json()
-      ).membersEnabled,
-      false,
-    );
-    for (const path of allRoutes)
-      assert.equal(
-        (await runtime.send(path, undefined, allowed.cookie)).status,
-        404,
-      );
-    assert.equal(
-      (await runtime.send("/api/members", input, allowed.cookie, headers))
-        .status,
-      404,
-    );
-    assert.equal(
-      (
-        await runtime.send(
-          "/api/tenant",
-          { organizationId: allowed.organizationId },
-          allowed.cookie,
-        )
-      ).status,
-      200,
-    );
-    assert.equal(
-      (
-        await (
-          await runtime.send("/api/context", undefined, allowed.cookie)
+          await runtime.send("/api/context", undefined, formerlySelected.cookie)
         ).json()
       ).membersEnabled,
       true,
     );
-    // Uma URL de requisição alternativa também não pode aproveitar o binding DEV.
     assert.equal(
       (
-        await (
-          await runtime.send(
-            "https://other.example.test/api/context",
-            undefined,
-            allowed.cookie,
-          )
-        ).json()
-      ).membersEnabled,
-      false,
+        await runtime.send(
+          `/api/members/${first.memberId}`,
+          undefined,
+          formerlySelected.cookie,
+        )
+      ).status,
+      404,
     );
-    for (const path of allRoutes)
-      assert.equal(
-        (
-          await runtime.send(
-            `https://other.example.test${path}`,
-            undefined,
-            allowed.cookie,
-          )
-        ).status,
-        404,
-      );
-    for (const revoke of [
-      "UPDATE tenant_memberships SET role='unknown-role' WHERE tenant_id=$1 AND user_id=$2",
-      "DELETE FROM tenant_memberships WHERE tenant_id=$1 AND user_id=$2",
-    ]) {
-      await observer.client.query(revoke, [allowed.organizationId, allowed.id]);
-      for (const path of ["/api/context", ...allRoutes])
-        assert.equal(
-          (await runtime.send(path, undefined, allowed.cookie)).status,
-          403,
-        );
-      assert.equal(
-        (await runtime.send("/api/members", input, allowed.cookie, headers))
-          .status,
-        403,
-      );
-    }
-    const counts = await observer.client.query(
-      "SELECT tenant_id, count(*)::int n FROM members WHERE tenant_id IN ($1,$2) GROUP BY tenant_id",
-      [allowed.organizationId, denied.organizationId],
-    );
-    assert.deepEqual(counts.rows, [
-      { tenant_id: allowed.organizationId, n: 1 },
-    ]);
-  } finally {
-    await runtime.mf.dispose();
-  }
-});
-
-test("workerd: origem configurada fora de DEV recusa recorte válido sem afetar igrejas", async () => {
-  const account = await provisioned();
-  const runtime = await workerHarness(databaseUrl!, {
-    membersDevOrganizations: account.organizationId,
-    publicOrigin: "https://other.example.test",
-  });
-  try {
-    const context = await runtime.send(
-      "/api/context",
-      undefined,
-      account.cookie,
-    );
-    assert.equal(context.status, 200);
-    assert.equal((await context.json()).membersEnabled, false);
     assert.equal(
-      (await runtime.send("/api/churches", undefined, account.cookie)).status,
+      (
+        await runtime.send(
+          `/api/members/${results[1]!.memberId}`,
+          undefined,
+          formerlySelected.cookie,
+        )
+      ).status,
       200,
     );
+    await observer.client.query(
+      "DELETE FROM tenant_memberships WHERE tenant_id=$1 AND user_id=$2",
+      [formerlyUnselected.organizationId, formerlySelected.id],
+    );
     for (const path of [
+      "/api/context",
       "/api/members",
-      `/api/members/${randomUUID()}`,
-      `/api/members/requests/${randomUUID()}`,
+      `/api/members/${results[1]!.memberId}`,
     ])
       assert.equal(
-        (await runtime.send(path, undefined, account.cookie)).status,
-        404,
+        (await runtime.send(path, undefined, formerlySelected.cookie)).status,
+        403,
       );
+    await observer.client.query(
+      "UPDATE tenant_memberships SET role='reader' WHERE tenant_id=$1 AND user_id=$2",
+      [formerlyUnselected.organizationId, formerlyUnselected.id],
+    );
+    assert.equal(
+      (await runtime.send("/api/members", undefined, formerlyUnselected.cookie))
+        .status,
+      403,
+    );
     assert.equal(
       (
         await runtime.send(
           "/api/members",
           {
             name: "Pessoa sintética",
-            churchId: account.churchId,
+            churchId: formerlyUnselected.churchId,
             status: "Ativo",
           },
-          account.cookie,
+          formerlyUnselected.cookie,
           { "Idempotency-Key": randomUUID() },
         )
       ).status,
-      404,
+      403,
     );
   } finally {
     await runtime.mf.dispose();

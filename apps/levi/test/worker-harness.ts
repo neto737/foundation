@@ -21,7 +21,7 @@ export interface CapturedEmail {
 
 export async function workerHarness(
   databaseUrl: string,
-  options: { membersDevOrganizations?: string; publicOrigin?: string } = {},
+  options: { publicOrigin?: string } = {},
 ) {
   const origin = options.publicOrigin ?? workerOrigin;
   const url = new URL(databaseUrl);
@@ -63,9 +63,6 @@ export async function workerHarness(
       assets: { ...config.assets, routerConfig: { has_user_worker: true } },
       bindings: {
         LEVI_PUBLIC_ORIGIN: origin,
-        ...(options.membersDevOrganizations !== undefined
-          ? { LEVI_MEMBERS_DEV_ORGANIZATIONS: options.membersDevOrganizations }
-          : {}),
         LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
         RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
         LEVI_EMAIL_FROM: "Levi <levi@example.test>",

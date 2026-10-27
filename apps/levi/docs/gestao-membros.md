@@ -7,53 +7,22 @@ aniversariantes, indicadores, convites ou associação automática a contas.
 
 ## Habilitação e limites
 
-A composição `createApp` recebe `membersEnabled`, desabilitado por padrão.
-O executável Node local habilita a fatia apenas com `LEVI_LOCAL_DATABASE=1`,
-conservando suas guardas de origem/banco local e servidor em loopback. Os harnesses
-sintéticos a habilitam explicitamente. O Worker nunca recebe esse booleano.
+O módulo está disponível para todas as organizações, sem lista de UUIDs,
+booleano de habilitação local ou restrição por origem DEV. Não há avaliação de
+Feature Flags persistidas neste fluxo; sua integração será tratada separadamente.
 
-No Worker, o binding `LEVI_MEMBERS_DEV_ORGANIZATIONS` recebe a variable **não secreta**
-`MEMBERS_DEV_ORGANIZATIONS` do Environment `levi-dev`, com UUIDs de organizações sintéticas separados por vírgula.
-Espaços nas extremidades e letras maiúsculas são normalizados; duplicatas são
-removidas. Ausente, vazia, acima de 4096 caracteres ou com qualquer item inválido
-(inclusive item vazio, separador final, JSON ou curinga) desabilita o conjunto
-inteiro. Aceita UUIDs canônicos com versão 1–8 e variante RFC, compatíveis com os
-UUIDs gerados pelo servidor. Não colocar UUIDs de ambientes no repositório.
+`/api/context` informa `membersEnabled: true` após validar sessão pronta,
+organização ativa e vínculo atual. Essa capacidade não concede permissões: as
+operações de membros continuam exigindo role administrativa e a permissão
+correspondente. Usuário deslogado recebe `401`; sessão não pronta, vínculo
+revogado ou role sem permissão são recusados. Registros de outra organização
+retornam `404`, e identificadores enviados pelo cliente não alteram o tenant ativo.
 
-A lista só tem efeito quando tanto a origem configurada quanto a origem da URL da
-requisição são exatamente `https://levi.t00ls.dev`. Outras origens permanecem
-bloqueadas. Headers, query e corpo não fornecem essa configuração. O Worker deriva
-a configuração dos bindings; ela não vem do cliente. Produção não recebe uma
-habilitação global.
-
-`/api/context` informa `membersEnabled` somente após sessão pronta, organização
-ativa e membership administrativo atual. A mesma decisão é aplicada a todas as
-APIs de membros, inclusive recibos. O middleware recusa antes de validar entrada;
-cada operação revalida o recorte no contexto que usará na persistência, evitando
-que uma troca concorrente de tenant aproveite uma decisão anterior. Sem recorte,
-as APIs retornam `404` sem consultar tabelas de membros, mantendo compatibilidade
-com o schema anterior. Com recorte válido, anônimo recebe `401`, vínculo revogado
-ou role desconhecida `403`, e administrador fora do recorte `404`. A SPA oculta a
-navegação quando a capacidade é falsa e limpa dados ao revalidar contexto/acesso;
-sem canal de push, mudanças externas são conhecidas na próxima revalidação.
-
-A lista não concede membership, não prova que uma organização contém apenas dados
-sintéticos e não substitui a autorização Foundation. A seleção e verificação das
-fixtures são responsabilidade operacional. Antes de qualquer habilitação, conferir
-o histórico aplicado e as ACLs em operação administrativa separada; permitir
-uma organização com schema anterior causará falha de operação, não migration
-automática.
-
-O workflow DEV propaga a variable para a configuração temporária gerada pelo
-deploy. Ausência/erro escreve valor vazio explicitamente, sem herdar recorte antigo
-do arquivo base. A configuração Wrangler raiz permanece sem UUIDs e desabilitada.
-Mudar a variable GitHub não modifica o Worker já publicado: habilitação **e
-retirada do recorte** exigem novo deploy autorizado. O interruptor `DEPLOY_READY` controla somente a publicação e não habilita membros. A presença das rotas da SPA no bundle não
-concede acesso às APIs. Ver [Deploy DEV](deploy-dev.md) para as guardas operacionais.
-
-Esta entrega não autoriza dados reais, migrations persistentes ou deploy. Usar
-somente dados sintéticos em bancos isolados. Retenção, eliminação, direitos dos
-titulares e recuperação precisam ser resolvidos antes de liberar uso real.
+As mutações revalidam sessão, vínculo, organização e versão na transação, mantendo
+auditoria, idempotência e isolamento. A SPA conserva o contrato de contexto e
+limpa os dados após troca de organização ou perda de acesso. Todas as migrations
+e ACLs do módulo precisam estar disponíveis antes da publicação: schema ausente
+falha com erro sanitizado, sem aplicar migrations automaticamente.
 
 ## Contratos e decisões mínimas
 
@@ -182,7 +151,7 @@ aplicação administrativa posterior. Os privilégios exatos e a ordem operacion
 estão no [guia Workers](cloudflare-workers.md#roles-e-acls-mínimas-dev).
 Nenhum deles foi aplicado em DEV ou produção nesta tarefa. Sem a migration e as
 ACLs, a nova edição não está operacionalmente liberada. A capacidade de membros
-continua desabilitada por padrão e respeita o recorte sintético existente.
+está disponível para todas as organizações; edição exige permissão administrativa.
 
 ## Confirmação e uso móvel
 
