@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdtemp, readFile, rm, statfs, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import ts from "typescript";
 import {
   deploySettings,
@@ -207,9 +207,12 @@ try {
     deploymentConfig(parsed.config, settings.hyperdrive),
   );
   config.vars.LEVI_EMAIL_FROM = env.LEVI_EMAIL_FROM;
+  // Secrets só podem existir em memória volátil no runner Linux, nunca no checkout.
+  diagnostics.start("secrets-memory", "falha de operação local");
+  const memory = await statfs("/dev/shm");
+  assert.equal(memory.type, 0x01021994); // TMPFS_MAGIC
   diagnostics.start("bundle-directory", "falha de operação local");
-  await mkdir(".local", { recursive: true });
-  directory = await mkdtemp(resolve(".local/deploy-"));
+  directory = await mkdtemp("/dev/shm/levi-dev-deploy-");
   const configPath = join(directory, "wrangler.json");
   diagnostics.start("bundle-files", "falha de operação local");
   await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
@@ -221,6 +224,14 @@ try {
   const beforeUpload = await activeVersion("previous");
   diagnostics.start("version-unchanged");
   assert.deepEqual(beforeUpload, previous);
+  diagnostics.start("secrets-file", "falha de operação local");
+  const secretsPath = join(directory, "secrets.json");
+  // AUTH_SECRET/LEVI_AUTH_SECRET são deliberadamente omitidos: sem rotação implícita.
+  await writeFile(
+    secretsPath,
+    JSON.stringify({ RESEND_API_KEY: env.RESEND_API_KEY }),
+    { mode: 0o600, flag: "wx" },
+  );
   // Detecta mudanças durante o preflight; não substitui contenção entre repositórios.
   // A saída bruta pode conter configuração privada: nunca é impressa ou anexada.
   diagnostics.start("wrangler", "falha de operação local");
@@ -231,6 +242,8 @@ try {
       "deploy",
       "--config",
       configPath,
+      "--secrets-file",
+      secretsPath,
       "--tag",
       settings.sha,
       "--strict",

@@ -75,6 +75,7 @@ jobs:
           LEVI_DEV_READY: ${{ vars.DEPLOY_READY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
           LEVI_HYPERDRIVE_ID: ${{ vars.HYPERDRIVE_ID }}
           LEVI_DEV_DATABASE_HOST: ${{ vars.DATABASE_HOST }}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
@@ -34,7 +34,8 @@ const valid = {
   LEVI_DEV_DATABASE_NAME: "levi_dev",
   LEVI_EMAIL_FROM: "Levi <hi@levi.t00ls.dev>",
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
-  RESEND_API_KEY: "synthetic-only",
+  RESEND_API_KEY: "resend-synthetic-not-real-key",
+  AUTH_SECRET: "github-auth-synthetic-different-from-remote",
 } satisfies NodeJS.ProcessEnv;
 const versionId = "11111111-1111-4111-8111-111111111111";
 const previousVersionId = "33333333-3333-4333-8333-333333333333";
@@ -82,6 +83,8 @@ test("deploy exige execução confiável manual da master e configuração compl
     { GITHUB_SHA: "b".repeat(40) },
     { LEVI_DEPLOY_SHA: "not-a-sha" },
     { CLOUDFLARE_API_TOKEN: "" },
+    { RESEND_API_KEY: "" },
+    { RESEND_API_KEY: "   " },
     { CLOUDFLARE_ZONE_ID: "" },
     { LEVI_HYPERDRIVE_ID: "0".repeat(32) },
     { LEVI_DEV_DATABASE_NAME: "foundation" },
@@ -188,6 +191,9 @@ async function simulatedDeploy(
     env?: NodeJS.ProcessEnv;
     respond?: (url: string, published: boolean) => Response | undefined;
     cleanupError?: Error;
+    memoryType?: number;
+    secretWriteError?: Error;
+    uploadError?: Error;
     failProgress?: boolean;
     failReport?: boolean;
     ciEvidence?: (call: number) => {
@@ -203,6 +209,7 @@ async function simulatedDeploy(
   const requests: string[] = [];
   const writes: { path: string; mode: number }[] = [];
   let writtenVars: unknown;
+  let writtenSecrets: Record<string, unknown> = {};
   let uploads = 0;
   let ciCalls = 0;
   let cleanups = 0;
@@ -326,27 +333,55 @@ async function simulatedDeploy(
           valid.CLOUDFLARE_API_TOKEN,
         );
         assert.equal("CLOUDFLARE_READ_TOKEN" in settings.env, false);
-        assert.ok(!args.includes("--secrets-file"));
-        assert.equal(settings.env.LEVI_AUTH_SECRET, undefined);
-        assert.equal(settings.env.RESEND_API_KEY, undefined);
+        const secretsIndex = args.indexOf("--secrets-file");
+        assert.ok(secretsIndex > 0);
+        assert.equal(
+          args[secretsIndex + 1],
+          "/dev/shm/levi-dev-deploy-synthetic-only/secrets.json",
+        );
+        assert.deepEqual(Object.keys(writtenSecrets), ["RESEND_API_KEY"]);
+        assert.equal(
+          writtenSecrets.RESEND_API_KEY,
+          fakeProcess.env.RESEND_API_KEY,
+        );
+        for (const name of [
+          "AUTH_SECRET",
+          "LEVI_AUTH_SECRET",
+          "RESEND_API_KEY",
+        ])
+          assert.equal(settings.env[name], undefined);
+        assert.ok(!args.join(" ").includes(valid.RESEND_API_KEY));
         uploads++;
-        return { status: 0 };
+        return options.uploadError
+          ? { status: 1, error: options.uploadError, stderr: sensitive }
+          : { status: 0 };
       },
     },
     "node:fs/promises": {
       readFile: async () => baseConfig,
-      mkdir: async () => {},
-      mkdtemp: async () => ".local/deploy-synthetic-only",
+      statfs: async (path: string) => {
+        assert.equal(path, "/dev/shm");
+        return { type: options.memoryType ?? 0x01021994 };
+      },
+      mkdtemp: async (prefix: string) => prefix + "synthetic-only",
       writeFile: async (
         path: string,
         contents: string,
-        settings: { mode: number },
+        settings: { mode: number; flag?: string },
       ) => {
         assert.ok(!contents.includes(valid.LEVI_AUTH_SECRET!));
-        assert.ok(!contents.includes(valid.RESEND_API_KEY!));
-        writes.push({ path, mode: settings.mode });
-        if (path.endsWith("wrangler.json"))
+        assert.ok(!contents.includes(valid.AUTH_SECRET));
+        assert.equal(settings.mode, 0o600);
+        assert.ok(path.startsWith("/dev/shm/levi-dev-deploy-"));
+        if (path.endsWith("secrets.json")) {
+          assert.equal(settings.flag, "wx");
+          if (options.secretWriteError) throw options.secretWriteError;
+          writtenSecrets = JSON.parse(contents);
+        } else {
+          assert.ok(!contents.includes(valid.RESEND_API_KEY));
           writtenVars = JSON.parse(contents).vars;
+        }
+        writes.push({ path, mode: settings.mode });
       },
       rm: async () => {
         cleanups++;
@@ -413,6 +448,7 @@ async function simulatedDeploy(
     cleanups,
     writes,
     writtenVars,
+    secretNames: Object.keys(writtenSecrets),
     ciCalls,
     exitCode: fakeProcess.exitCode,
   };
@@ -459,7 +495,7 @@ test("diagnóstico: sucesso conserva publicação única, checks, arquivos priva
   assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
   assert.equal(result.cleanups, 1);
-  assert.equal(result.writes.length, 1);
+  assert.equal(result.writes.length, 2);
   assert.ok(result.writes.every((file) => file.mode === 0o600));
   assert.ok(
     result.output.includes(
@@ -1032,16 +1068,16 @@ test("transferência recusa Worker/domínio ausente e 403 antes de arquivos ou u
   }
 });
 
-test("transferência preserva secrets remotos sem exigir nem encaminhar cópias GitHub", async () => {
+test("sincroniza somente Resend e preserva autenticação remota sem exigir cópia GitHub", async () => {
   const result = await simulatedDeploy({
     env: {
       LEVI_AUTH_SECRET: undefined,
-      RESEND_API_KEY: undefined,
+      AUTH_SECRET: undefined,
     },
   });
   assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
-  assert.equal(result.writes.length, 1);
+  assert.equal(result.writes.length, 2);
   assert.ok(result.writes[0]!.path.endsWith("wrangler.json"));
   assert.ok(result.output.includes(previousVersionId));
 });
@@ -1173,7 +1209,7 @@ test("domínio exige roteamento público ativo e previews fechados antes e depoi
       });
       assert.equal(result.exitCode, 1, JSON.stringify({ published, state }));
       assert.equal(result.uploads, published ? 1 : 0);
-      assert.equal(result.writes.length, published ? 1 : 0);
+      assert.equal(result.writes.length, published ? 2 : 0);
       assert.equal(result.cleanups, published ? 1 : 0);
       assert.ok(result.output.includes("custom domains exclusivos do Levi"));
       assert.ok(
@@ -1235,7 +1271,7 @@ test("primeiro corte permite noreply apenas no UUID/SHA original e publica hi es
     assert.equal(result.exitCode, 0, result.output);
     assert.equal(result.uploads, 1);
     assert.equal(result.cleanups, 1);
-    assert.equal(result.writes.length, 1);
+    assert.equal(result.writes.length, 2);
     assert.ok(!result.output.includes(valid.CLOUDFLARE_API_TOKEN!));
   }
 });
@@ -1334,5 +1370,115 @@ test("compatibilidade inicial mantém Assets, secrets e recursos obrigatórios",
         },
       ),
     );
+  }
+});
+
+test("Resend ausente falha antes de CI, leitura remota e upload, sem fallback", async () => {
+  for (const key of [undefined, "", "   "]) {
+    const result = await simulatedDeploy({ env: { RESEND_API_KEY: key } });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.requests.length, 0);
+    assert.equal(result.ciCalls, 0);
+    assert.equal(result.writes.length, 0);
+    assert.equal(result.uploads, 0);
+  }
+});
+
+test("secrets recusam disco persistente e falha de escrita, limpando sem upload", async () => {
+  for (const failure of [
+    { memoryType: 0xef53 },
+    { secretWriteError: new Error(sensitive) },
+  ]) {
+    const result = await simulatedDeploy(failure);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.cleanups, "memoryType" in failure ? 0 : 1);
+    assert.deepEqual(result.secretNames, []);
+    assert.ok(!result.output.includes("private-"));
+    assert.ok(!result.output.includes(valid.RESEND_API_KEY));
+  }
+});
+
+test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar novamente", async () => {
+  const result = await simulatedDeploy({
+    uploadError: new Error(valid.RESEND_API_KEY + sensitive),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 1);
+  assert.equal(result.cleanups, 1);
+  assert.ok(!result.output.includes(valid.RESEND_API_KEY));
+  assert.ok(!result.output.includes(valid.AUTH_SECRET));
+  assert.ok(!result.output.includes("private-"));
+});
+
+test("workflow só recebe Resend no publish do Environment e não carrega autenticação GitHub", async () => {
+  const workflow = await readFile(
+    "../../.github/workflows/deploy-levi-dev.yml",
+    "utf8",
+  );
+  assert.ok(workflow.includes("environment: levi-dev"));
+  const input = "RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}";
+  assert.equal(workflow.split(input).length - 1, 1);
+  assert.ok(workflow.indexOf(input) > workflow.indexOf("id: publish"));
+  assert.ok(!workflow.includes("secrets.AUTH_SECRET"));
+  assert.ok(!workflow.includes("secrets.LEVI_AUTH_SECRET"));
+});
+
+test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazamento", async () => {
+  assert.equal((await statfs("/dev/shm")).type, 0x01021994);
+  const directory = await mkdtemp("/dev/shm/levi-dev-wrangler-test-");
+  const key = "synthetic-resend-dry-run-not-real";
+  try {
+    await writeFile(
+      join(directory, "worker.mjs"),
+      'export default { fetch() { return new Response("synthetic"); } };',
+    );
+    await writeFile(
+      join(directory, "wrangler.json"),
+      JSON.stringify({
+        name: "levi-dev-synthetic-only",
+        main: "worker.mjs",
+        compatibility_date: "2025-09-01",
+        secrets: { required: ["RESEND_API_KEY"] },
+      }),
+    );
+    await writeFile(
+      join(directory, "secrets.json"),
+      JSON.stringify({ RESEND_API_KEY: key }),
+      { mode: 0o600, flag: "wx" },
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        resolve("node_modules/wrangler/bin/wrangler.js"),
+        "deploy",
+        "--config",
+        join(directory, "wrangler.json"),
+        "--secrets-file",
+        join(directory, "secrets.json"),
+        "--dry-run",
+        "--outdir",
+        join(directory, "out"),
+        "--strict",
+      ],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 30_000,
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          CI: "true",
+          WRANGLER_SEND_METRICS: "false",
+          WRANGLER_WRITE_LOGS: "false",
+          WRANGLER_LOG_SANITIZE: "true",
+        },
+      },
+    );
+    const output = String(result.stdout) + String(result.stderr);
+    assert.equal(result.status, 0, output.replaceAll(key, "[redacted]"));
+    assert.ok(!output.includes(key));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
