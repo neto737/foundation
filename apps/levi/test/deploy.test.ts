@@ -339,10 +339,17 @@ async function simulatedDeploy(
           args[secretsIndex + 1],
           "/dev/shm/levi-dev-deploy-synthetic-only/secrets.json",
         );
-        assert.deepEqual(Object.keys(writtenSecrets), ["RESEND_API_KEY"]);
+        assert.deepEqual(Object.keys(writtenSecrets), [
+          "RESEND_API_KEY",
+          "LEVI_AUTH_SECRET",
+        ]);
         assert.equal(
           writtenSecrets.RESEND_API_KEY,
           fakeProcess.env.RESEND_API_KEY,
+        );
+        assert.equal(
+          writtenSecrets.LEVI_AUTH_SECRET,
+          fakeProcess.env.LEVI_AUTH_SECRET,
         );
         for (const name of [
           "AUTH_SECRET",
@@ -351,6 +358,7 @@ async function simulatedDeploy(
         ])
           assert.equal(settings.env[name], undefined);
         assert.ok(!args.join(" ").includes(valid.RESEND_API_KEY));
+        assert.ok(!args.join(" ").includes(valid.LEVI_AUTH_SECRET));
         uploads++;
         return options.uploadError
           ? { status: 1, error: options.uploadError, stderr: sensitive }
@@ -369,7 +377,6 @@ async function simulatedDeploy(
         contents: string,
         settings: { mode: number; flag?: string },
       ) => {
-        assert.ok(!contents.includes(valid.LEVI_AUTH_SECRET!));
         assert.ok(!contents.includes(valid.AUTH_SECRET));
         assert.equal(settings.mode, 0o600);
         assert.ok(path.startsWith("/dev/shm/levi-dev-deploy-"));
@@ -379,6 +386,7 @@ async function simulatedDeploy(
           writtenSecrets = JSON.parse(contents);
         } else {
           assert.ok(!contents.includes(valid.RESEND_API_KEY));
+          assert.ok(!contents.includes(valid.LEVI_AUTH_SECRET));
           writtenVars = JSON.parse(contents).vars;
         }
         writes.push({ path, mode: settings.mode });
@@ -1068,18 +1076,15 @@ test("transferência recusa Worker/domínio ausente e 403 antes de arquivos ou u
   }
 });
 
-test("sincroniza somente Resend e preserva autenticação remota sem exigir cópia GitHub", async () => {
-  const result = await simulatedDeploy({
-    env: {
-      LEVI_AUTH_SECRET: undefined,
-      AUTH_SECRET: undefined,
-    },
-  });
+test("sincroniza autenticação e Resend exclusivamente do contrato canônico, sem legado", async () => {
+  const result = await simulatedDeploy({ env: { AUTH_SECRET: undefined } });
   assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
   assert.equal(result.writes.length, 2);
   assert.ok(result.writes[0]!.path.endsWith("wrangler.json"));
   assert.ok(result.output.includes(previousVersionId));
+  assert.deepEqual(result.secretNames, ["RESEND_API_KEY", "LEVI_AUTH_SECRET"]);
+  assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
 });
 
 test("transferência bloqueia divergência de remetente e ausência de Assets/secrets", async () => {
@@ -1401,7 +1406,9 @@ test("secrets recusam disco persistente e falha de escrita, limpando sem upload"
 
 test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar novamente", async () => {
   const result = await simulatedDeploy({
-    uploadError: new Error(valid.RESEND_API_KEY + sensitive),
+    uploadError: new Error(
+      valid.RESEND_API_KEY + valid.LEVI_AUTH_SECRET + sensitive,
+    ),
   });
   assert.equal(result.exitCode, 1);
   assert.equal(result.uploads, 1);
@@ -1411,7 +1418,7 @@ test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar no
   assert.ok(!result.output.includes("private-"));
 });
 
-test("workflow só recebe Resend no publish do Environment e não carrega autenticação GitHub", async () => {
+test("workflow recebe somente nomes canônicos no publish do Environment, sem AUTH_SECRET legado", async () => {
   const workflow = await readFile(
     "../../.github/workflows/deploy-levi-dev.yml",
     "utf8",
@@ -1421,13 +1428,16 @@ test("workflow só recebe Resend no publish do Environment e não carrega autent
   assert.equal(workflow.split(input).length - 1, 1);
   assert.ok(workflow.indexOf(input) > workflow.indexOf("id: publish"));
   assert.ok(!workflow.includes("secrets.AUTH_SECRET"));
-  assert.ok(!workflow.includes("secrets.LEVI_AUTH_SECRET"));
+  const authentication = "LEVI_AUTH_SECRET: ${{ secrets.LEVI_AUTH_SECRET }}";
+  assert.equal(workflow.split(authentication).length - 1, 1);
+  assert.ok(workflow.indexOf(authentication) > workflow.indexOf("id: publish"));
 });
 
 test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazamento", async () => {
   assert.equal((await statfs("/dev/shm")).type, 0x01021994);
   const directory = await mkdtemp("/dev/shm/levi-dev-wrangler-test-");
   const key = "synthetic-resend-dry-run-not-real";
+  const authKey = "synthetic-auth-dry-run-more-than-32-characters";
   try {
     await writeFile(
       join(directory, "worker.mjs"),
@@ -1439,12 +1449,12 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
         name: "levi-dev-synthetic-only",
         main: "worker.mjs",
         compatibility_date: "2025-09-01",
-        secrets: { required: ["RESEND_API_KEY"] },
+        secrets: { required: ["RESEND_API_KEY", "LEVI_AUTH_SECRET"] },
       }),
     );
     await writeFile(
       join(directory, "secrets.json"),
-      JSON.stringify({ RESEND_API_KEY: key }),
+      JSON.stringify({ RESEND_API_KEY: key, LEVI_AUTH_SECRET: authKey }),
       { mode: 0o600, flag: "wx" },
     );
     const result = spawnSync(
@@ -1478,6 +1488,7 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
     const output = String(result.stdout) + String(result.stderr);
     assert.equal(result.status, 0, output.replaceAll(key, "[redacted]"));
     assert.ok(!output.includes(key));
+    assert.ok(!output.includes(authKey));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -1508,5 +1519,19 @@ test("entradas internas ausentes bloqueiam mesmo com configurações legadas pre
     assert.equal(result.writes.length, 0);
     assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
     assert.ok(!result.output.includes(valid.RESEND_API_KEY));
+  }
+});
+
+test("LEVI_AUTH_SECRET ausente ou curto bloqueia antes de I/O mesmo com AUTH_SECRET legado", async () => {
+  for (const value of [undefined, "", "   ", "x".repeat(31)]) {
+    const result = await simulatedDeploy({
+      env: { LEVI_AUTH_SECRET: value, AUTH_SECRET: valid.LEVI_AUTH_SECRET },
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.requests.length, 0);
+    assert.equal(result.ciCalls, 0);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.writes.length, 0);
+    assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
   }
 });

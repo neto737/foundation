@@ -1470,3 +1470,133 @@ test("sessão revogada enquanto o provisionamento aguarda lock não pode criar o
     0,
   );
 });
+
+test("troca do segredo invalida cookie antigo sem perder senha, vínculos ou tokens aleatórios persistidos", async () => {
+  const account = await provisionedAccount();
+  const resetToken = await passwordToken(account);
+  assert.equal(
+    (await request("/api/onboarding/email", { email: account.email })).status,
+    200,
+  );
+  const oldMagicLink = mailUrl(account.email);
+  const snapshot = async () =>
+    (
+      await observer.client.query(
+        `SELECT
+      (SELECT to_jsonb(t) FROM tenants t WHERE id=$1) AS organization,
+      (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM churches c WHERE tenant_id=$1) AS churches,
+      (SELECT jsonb_agg(to_jsonb(m) ORDER BY m.id) FROM tenant_memberships m WHERE tenant_id=$1) AS memberships,
+      (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM audit_events a WHERE tenant=$1) AS audit`,
+        [account.organizationId],
+      )
+    ).rows;
+  const persisted = await snapshot();
+  const passwordHash = async () =>
+    (
+      await observer.client.query<{ password: string }>(
+        `SELECT password FROM account WHERE user_id=$1 AND provider_id='credential'`,
+        [account.id],
+      )
+    ).rows[0]?.password;
+  const previousHash = await passwordHash();
+  assert.ok(previousHash);
+  const rotated = createApp({
+    databaseUrl: applicationDatabaseUrl(databaseUrl!),
+    baseURL: origin,
+    secret: "synthetic-rotated-secret-with-more-than-32-characters",
+    email: {
+      send: async (input) => {
+        sent.push(input);
+      },
+    },
+  });
+  const rotatedRequest = (path: string, body?: object, cookie = "") =>
+    rotated.request(
+      new Request(new URL(path, origin), {
+        method: body ? "POST" : "GET",
+        headers: { origin, cookie, "content-type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+  assert.equal(
+    (await rotatedRequest("/api/organizations", undefined, account.cookie))
+      .status,
+    401,
+  );
+  assert.equal(
+    (await rotatedRequest("/admin", undefined, account.cookie)).status,
+    404,
+  );
+  // A assinatura deixou de ser aceita; não houve DELETE/revogação durável das sessões.
+  assert.equal(
+    (await request("/api/organizations", undefined, account.cookie)).status,
+    200,
+  );
+  const login = await rotatedRequest("/api/auth/sign-in/email", {
+    email: account.email,
+    password: "synthetic-password",
+  });
+  assert.equal(login.status, 200);
+  const cookie = cookies(login);
+  assert.ok(cookie.includes("session_token="));
+  assert.equal(
+    (await rotatedRequest("/api/organizations", undefined, cookie)).status,
+    200,
+  );
+  assert.equal(
+    (await request("/api/organizations", undefined, cookie)).status,
+    401,
+  );
+  assert.equal(await passwordHash(), previousHash);
+  assert.deepEqual(await snapshot(), persisted);
+  // Os tokens de link são aleatórios e persistidos; a troca de segredo não os revoga.
+  const magic = await rotatedRequest(
+    oldMagicLink.pathname + oldMagicLink.search,
+  );
+  assert.equal(magic.status, 302);
+  assert.ok(cookies(magic).includes("session_token="));
+  const replay = await rotatedRequest(
+    oldMagicLink.pathname + oldMagicLink.search,
+  );
+  assert.equal(replay.status, 302);
+  assert.equal(cookies(replay), "");
+  assert.ok(replay.headers.get("location")?.includes("error="));
+  assert.equal(
+    (
+      await rotatedRequest(
+        "/api/onboarding/password",
+        { token: resetToken, newPassword: "synthetic-password" },
+        cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await rotatedRequest(
+        "/api/onboarding/password",
+        { token: resetToken, newPassword: "synthetic-password" },
+        cookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await rotatedRequest("/api/auth/sign-in/email", {
+        email: account.email,
+        password: "synthetic-password",
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(await snapshot(), persisted);
+  assert.equal(
+    (
+      await observer.client.query('SELECT id FROM "user" WHERE email=$1', [
+        account.email,
+      ])
+    ).rows[0]?.id,
+    account.id,
+  );
+});

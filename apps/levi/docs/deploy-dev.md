@@ -183,12 +183,12 @@ Settings → Environments → levi-dev do GitHub Foundation, sem fornecer valore
 versioná-los. Em terminal privado, `gh secret set NOME --repo t00ls-dev/foundation --env levi-dev`
 solicita o valor interativamente.
 
-| Secret do Environment levi-dev | Uso                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------- |
-| `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                             |
-| `CLOUDFLARE_API_TOKEN`         | Leitura dos recursos verificados e publicação Worker/Assets/custom domain |
-| `RESEND_API_KEY`               | Fonte da chave de envio, sincronizada no mesmo upload do Worker           |
-| `LEVI_AUTH_SECRET`             | Contrato nominal reservado; não consumido nem enviado, migração pendente  |
+| Secret do Environment levi-dev | Uso                                                                           |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| `CLOUDFLARE_ACCOUNT_ID`        | Conta correta                                                                 |
+| `CLOUDFLARE_API_TOKEN`         | Leitura dos recursos verificados e publicação Worker/Assets/custom domain     |
+| `RESEND_API_KEY`               | Fonte da chave de envio, sincronizada no mesmo upload do Worker               |
+| `LEVI_AUTH_SECRET`             | Fonte exclusiva do binding de autenticação; obrigatório, mínimo 32 caracteres |
 
 Variables do Environment: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`, `LEVI_DATABASE_HOST`,
 `LEVI_DATABASE_NAME`, `LEVI_EMAIL_FROM` e `LEVI_DEPLOY_READY`. O workflow as mapeia para as entradas
@@ -224,8 +224,9 @@ Sequência para operação posterior, separadamente autorizada:
    de deploy e diagnóstico. Cadastros legados podem existir temporariamente para
    coordenar a transição; o código novo nunca os usa como fallback. Removê-los só
    depois de confirmar que todos os consumidores usam os nomes canônicos.
-4. Não copiar AUTH_SECRET para LEVI_AUTH_SECRET nem enviar qualquer um deles.
-   Sem equivalência comprovada, continuar exigindo/herdando o segredo remoto.
+4. Não copiar AUTH_SECRET presumindo equivalência. Esta revisão passa a exigir
+   o novo LEVI_AUTH_SECRET cadastrado pelo responsável; sua primeira aplicação é
+   uma troca efetiva de segredo, condicionada à autorização própria descrita abaixo.
 5. Habilitar LEVI_DEPLOY_READY somente para uma publicação expressamente autorizada.
    Ausência de configuração canônica deve bloquear, mesmo se o nome legado existir.
 
@@ -244,45 +245,83 @@ O token Cloudflare único deve permitir todas as leituras anteriores/posteriores
 não comprova os escopos efetivos; falha de permissão bloqueia sem contorno. Esta
 adaptação não concede permissões nem requer Hyperdrive Write ou acesso migrador.
 
-O Environment **foundation/levi-dev** é a fonte de verdade de `RESEND_API_KEY`.
-O workflow recebe esse secret somente no step `publish`; ausência ou valor vazio
-bloqueia a execução antes de consultar recursos ou fazer upload, sem fallback
-para a chave remota. Atualizar o cadastro GitHub exige depois uma publicação
+O Environment **foundation/levi-dev** é a fonte exclusiva de `RESEND_API_KEY` e
+`LEVI_AUTH_SECRET` para a definição desta revisão. Ambos são recebidos somente
+no step `publish`; ausência, Resend vazio ou segredo de autenticação com menos de
+32 caracteres úteis bloqueiam antes de consultar recursos ou fazer upload.
+Não há fallback para AUTH_SECRET legado nem para o valor remoto anterior. Atualizar o cadastro GitHub exige depois uma publicação
 manual da master com CI aprovada; a alteração do secret não dispara deploy.
 
 O Wrangler **4.149.0** fixado envia a chave junto ao código por `deploy
 --secrets-file`, sem `secret put/bulk` nem versão adicional. O runner verifica que
 `/dev/shm` é tmpfs, cria diretório privado 0700 e arquivo JSON exclusivo 0600 com
-**somente RESEND_API_KEY**, sem valor em argv, config, logs, artifacts ou caches.
+**somente RESEND_API_KEY e LEVI_AUTH_SECRET**, sem valor em argv, config, logs, artifacts ou caches.
 A configuração não secreta também fica nesse diretório volátil, removido no
 `finally` em sucesso ou falha. Sem tmpfs ou com falha de escrita, não publica.
 Interrupção abrupta pode impedir o finally; nenhum arquivo é gravado em disco
 persistente e o runner hospedado é descartado ao encerrar o job.
 Ver [upload de secrets com código](https://developers.cloudflare.com/workers/configuration/secrets/#upload-secrets-alongside-code).
 
-O nome canônico **pretendido** no GitHub é `LEVI_AUTH_SECRET`, igual ao binding
-existente no Worker. O cadastro legado `AUTH_SECRET` não é prova de equivalência
-ao valor remoto ativo, nem deve ser copiado ou renomeado presumindo igualdade.
-O contrato nominal está preparado, mas seu cadastro não é requisito do deploy.
-A migração de autenticação continua pendente:
-o workflow não recebe AUTH_SECRET/LEVI_AUTH_SECRET e o JSON nunca os inclui. Os
-nomes remotos obrigatórios continuam em `secrets.required`; Wrangler conserva os
-secrets omitidos da última versão enviada, cuja igualdade à ativa é revalidada.
-Não extrair valores para comparar nem rotacionar autenticação implicitamente.
-Centralização integral só poderá ser declarada após comprovação privada suficiente
-de continuidade ou autorização específica de rotação, em etapa separada.
+### Troca do segredo: impacto e publicação posterior
+
+O novo LEVI_AUTH_SECRET foi cadastrado pelo responsável no GitHub, mas sua
+aplicação ao Worker **não foi executada nesta preparação**. O valor remoto antigo
+não está disponível; esta revisão prepara uma troca, e não uma migração que
+prometa preservar assinaturas antigas. Não extrair ou comparar valores, não ler
+AUTH_SECRET legado e não incorporar keyring ou segunda fonte de verdade.
+
+A investigação do Better Auth **1.7.10** fixado e do factory Levi identificou:
+
+| Área                                     | Impacto da troca                                                                                                                                                                                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cookies e sessões                        | Cookies assinados com o segredo antigo deixam de autenticar. As linhas de sessão não são apagadas nem revogadas por isso; uma nova autenticação cria cookies válidos. O contexto de organização por sessão pode precisar ser selecionado novamente. |
+| Senhas                                   | Hash scrypt independente do segredo; a senha existente continua válida.                                                                                                                                                                             |
+| Magic links                              | Tokens aleatórios persistidos, não assinados com esse segredo. Podem continuar válidos até expiração/consumo; a troca não é revogação de links.                                                                                                     |
+| Recuperação de senha                     | Token aleatório persistido também pode continuar válido. No Levi, definir senha continua exigindo uma sessão verificada correspondente; cookies antigos não atendem esse requisito.                                                                 |
+| Verificação JWT de e-mail do Better Auth | Depende do segredo; tokens antigos falham com a chave nova. Esse endpoint genérico não é exposto pelo Levi.                                                                                                                                         |
+| Limites de abuso                         | Mudam as chaves HMAC por IP/usuário/destinatário; essas janelas recebem novos contadores. O orçamento global diário email-day não depende do segredo e é preservado. Os registros antigos expiram normalmente.                                      |
+| Dados de domínio e integrações           | Organização, igreja, memberships/roles, auditoria e hashes de idempotência não dependem desse segredo para decifração. Google/OAuth e TOTP não são habilitados pelo factory Levi; nenhuma cifragem de domínio dependente do segredo foi encontrada. |
+
+Os testes usam PostgreSQL descartável, senha/segredos sintéticos e e-mail em
+memória: verificam recusa de cookie antigo, novo login com a mesma senha,
+preservação do hash/vínculos/auditoria e consumo único de magic link e recuperação
+emitidos antes da troca. Não consultam dados do Neon nem enviam mensagens reais.
+Essa análise não cobre uma futura ativação de OAuth com tokens criptografados,
+TOTP ou novas funcionalidades que persistam ciphertext: reavaliar antes dessas
+mudanças. A documentação do provedor descreve [segredos versionados](https://better-auth.com/docs/reference/options#secrets),
+mas manter a chave antiga exigiria dispor dela; essa estratégia não é adotada aqui.
+
+Antes da primeira publicação com esta revisão:
+
+1. Integrar primeiro a padronização de variables do PR #169 e esta preparação,
+   cada qual sob autorização própria; exigir CI aprovada do SHA final da master.
+2. Confirmar a presença do novo LEVI_AUTH_SECRET no Environment levi-dev, sem
+   expor valor; não criar fallback. O runner valida o comprimento no step privado.
+3. Obter autorização expressa para a publicação que aplicará o novo segredo,
+   reconhecendo o impacto de cookies antigos e o fato de que links aleatórios não
+   serão necessariamente invalidados. Não abrir LEVI_DEPLOY_READY nesta preparação.
+4. Publicar uma única vez pelo workflow oficial, após seus preflights existentes.
+   Resend e autenticação vão no mesmo upload; secrets não relacionados são herdados
+   pelo Wrangler. Worker, domínio, Assets, Hyperdrive e TLS não são alterados.
+5. Conferir UUID/SHA/100% tráfego, bindings e smokes. Validar login, nova sessão e
+   acesso às organizações com conta previamente autorizada. Envio real de e-mail
+   continua exigindo autorização específica. Em falha ou estado incerto, parar:
+   sem segundo upload, limpeza de sessões, rollback ou alteração de dados automática.
+
+Estar pronto no código não significa que o Worker já use a chave GitHub nem que a
+centralização integral tenha sido operacionalmente concluída. Não retornar a uma
+versão antiga automaticamente; qualquer recuperação deve revalidar a configuração
+de secrets e seus efeitos sobre sessões.
 
 A presença do binding Resend após upload comprova seu nome/tipo, não entrega de
 mensagem nem correção funcional de login por link. O sucesso do upload e os smokes
 não substituem validação de envio real separadamente autorizada.
 
-Presença/nome/data de atualização não provam equivalência de secrets. O custodiante
-precisa confirmar, sem exportar valores, que a versão ativa é a origem autorizada
-do secret de autenticação e que não há versão pendente ou publicador alternativo. Sem essa
-comprovação, interromper. Preservar o secret evita rotação pelo publicador, mas não
-certifica continuidade de todas as sessões após a atualização Better Auth: testar
-uma sessão sintética anterior e um novo login no corte autorizado. E-mail real
-somente com destinatário sintético aprovado e configuração Resend validada.
+Presença/nome/data de atualização não provam equivalência de secrets. A preparação
+não afirma equivalência com o segredo antigo e não a utiliza como requisito para
+a troca futuramente autorizada. Continua obrigatório comprovar versão ativa igual
+à última enviada, ausência de publicador concorrente e demais preflights antes
+do upload. O sucesso do deploy não substitui testes funcionais autorizados.
 
 `LEVI_ACCESS_APP_ID` e `LEVI_DEV_EMAIL_ALLOWLIST` deixaram de ser consumidos;
 nenhum endereço pessoal deve ser colocado em variables públicas. Chaves de gestão
