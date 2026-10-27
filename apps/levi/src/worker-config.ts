@@ -7,6 +7,7 @@ export interface WorkerEnv {
   HYPERDRIVE: Pick<Hyperdrive, "connectionString">;
   LEVI_PUBLIC_ORIGIN: string;
   LEVI_AUTH_SECRET: string;
+  LEVI_ADMIN_EMAIL?: string | undefined;
   LEVI_EMAIL_FROM: string;
   RESEND_API_KEY: string;
 }
@@ -33,6 +34,7 @@ export function workerOptions(env: WorkerEnv): AppOptions {
     baseURL: origin.origin,
     onboardingReturnPath: "/onboarding",
     secret: env.LEVI_AUTH_SECRET,
+    adminEmail: env.LEVI_ADMIN_EMAIL,
     email,
     publicAbuseProtection: true,
   };

@@ -31,6 +31,7 @@ const app = createApp({
   baseURL: publicOrigin,
   onboardingReturnPath: "/onboarding",
   secret,
+  adminEmail: process.env.LEVI_ADMIN_EMAIL,
   email: {
     async send(message) {
       // Transporte de desenvolvimento: arquivos privados, sem endpoint de leitura.

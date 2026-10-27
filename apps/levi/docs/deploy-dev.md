@@ -189,6 +189,7 @@ solicita o valor interativamente.
 | `CLOUDFLARE_API_TOKEN`         | Leitura dos recursos verificados e publicação Worker/Assets/custom domain     |
 | `RESEND_API_KEY`               | Fonte da chave de envio, sincronizada no mesmo upload do Worker               |
 | `LEVI_AUTH_SECRET`             | Fonte exclusiva do binding de autenticação; obrigatório, mínimo 32 caracteres |
+| `LEVI_ADMIN_EMAIL`             | Único e-mail administrativo; ausente, vazio ou inválido nega acesso           |
 
 Variables do Environment: `CLOUDFLARE_ZONE_ID`, `LEVI_HYPERDRIVE_ID`, `LEVI_DATABASE_HOST`,
 `LEVI_DATABASE_NAME`, `LEVI_EMAIL_FROM` e `LEVI_DEPLOY_READY`. O workflow as mapeia para as entradas
@@ -245,17 +246,20 @@ O token Cloudflare único deve permitir todas as leituras anteriores/posteriores
 não comprova os escopos efetivos; falha de permissão bloqueia sem contorno. Esta
 adaptação não concede permissões nem requer Hyperdrive Write ou acesso migrador.
 
-O Environment **foundation/levi-dev** é a fonte exclusiva de `RESEND_API_KEY` e
-`LEVI_AUTH_SECRET` para a definição desta revisão. Ambos são recebidos somente
+O Environment **foundation/levi-dev** é a fonte exclusiva de `RESEND_API_KEY`,
+`LEVI_AUTH_SECRET` e `LEVI_ADMIN_EMAIL` para a definição desta revisão. Ambos são recebidos somente
 no step `publish`; ausência, Resend vazio ou segredo de autenticação com menos de
 32 caracteres úteis bloqueiam antes de consultar recursos ou fazer upload.
+LEVI_ADMIN_EMAIL é normalizado; ausência ou formato inválido envia string vazia
+para negar administração sem herdar valor remoto anterior. O endereço não é
+impresso nem comparado em diagnóstico. Ver [Administração global](administracao-global.md).
 Não há fallback para AUTH_SECRET legado nem para o valor remoto anterior. Atualizar o cadastro GitHub exige depois uma publicação
 manual da master com CI aprovada; a alteração do secret não dispara deploy.
 
 O Wrangler **4.149.0** fixado envia a chave junto ao código por `deploy
 --secrets-file`, sem `secret put/bulk` nem versão adicional. O runner verifica que
 `/dev/shm` é tmpfs, cria diretório privado 0700 e arquivo JSON exclusivo 0600 com
-**somente RESEND_API_KEY e LEVI_AUTH_SECRET**, sem valor em argv, config, logs, artifacts ou caches.
+**somente RESEND_API_KEY, LEVI_AUTH_SECRET e LEVI_ADMIN_EMAIL**, sem valor em argv, config, logs, artifacts ou caches.
 A configuração não secreta também fica nesse diretório volátil, removido no
 `finally` em sucesso ou falha. Sem tmpfs ou com falha de escrita, não publica.
 Interrupção abrupta pode impedir o finally; nenhum arquivo é gravado em disco

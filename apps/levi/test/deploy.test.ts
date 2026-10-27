@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { administrativeEmail } from "../src/admin-config.js";
 import {
   classifyDeployError,
   DeployDiagnostics,
@@ -35,6 +36,7 @@ const valid = {
   LEVI_EMAIL_FROM: "Levi <hi@levi.t00ls.dev>",
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
   RESEND_API_KEY: "resend-synthetic-not-real-key",
+  LEVI_ADMIN_EMAIL: "synthetic-private-admin@example.test",
   AUTH_SECRET: "github-auth-synthetic-different-from-remote",
 } satisfies NodeJS.ProcessEnv;
 const versionId = "11111111-1111-4111-8111-111111111111";
@@ -44,6 +46,7 @@ const baseBindings = [
   { type: "assets", name: "ASSETS" },
   { type: "secret_text", name: "LEVI_AUTH_SECRET" },
   { type: "secret_text", name: "RESEND_API_KEY" },
+  { type: "secret_text", name: "LEVI_ADMIN_EMAIL" },
   {
     type: "plain_text",
     name: "LEVI_PUBLIC_ORIGIN",
@@ -342,6 +345,7 @@ async function simulatedDeploy(
         assert.deepEqual(Object.keys(writtenSecrets), [
           "RESEND_API_KEY",
           "LEVI_AUTH_SECRET",
+          "LEVI_ADMIN_EMAIL",
         ]);
         assert.equal(
           writtenSecrets.RESEND_API_KEY,
@@ -352,6 +356,7 @@ async function simulatedDeploy(
           fakeProcess.env.LEVI_AUTH_SECRET,
         );
         for (const name of [
+          "LEVI_ADMIN_EMAIL",
           "AUTH_SECRET",
           "LEVI_AUTH_SECRET",
           "RESEND_API_KEY",
@@ -359,6 +364,11 @@ async function simulatedDeploy(
           assert.equal(settings.env[name], undefined);
         assert.ok(!args.join(" ").includes(valid.RESEND_API_KEY));
         assert.ok(!args.join(" ").includes(valid.LEVI_AUTH_SECRET));
+        assert.equal(
+          writtenSecrets.LEVI_ADMIN_EMAIL,
+          administrativeEmail(fakeProcess.env.LEVI_ADMIN_EMAIL) ?? "",
+        );
+        assert.ok(!args.join(" ").includes(valid.LEVI_ADMIN_EMAIL));
         uploads++;
         return options.uploadError
           ? { status: 1, error: options.uploadError, stderr: sensitive }
@@ -387,6 +397,7 @@ async function simulatedDeploy(
         } else {
           assert.ok(!contents.includes(valid.RESEND_API_KEY));
           assert.ok(!contents.includes(valid.LEVI_AUTH_SECRET));
+          assert.ok(!contents.includes(valid.LEVI_ADMIN_EMAIL));
           writtenVars = JSON.parse(contents).vars;
         }
         writes.push({ path, mode: settings.mode });
@@ -397,6 +408,7 @@ async function simulatedDeploy(
       },
     },
     typescript: ts,
+    "../src/admin-config.js": { administrativeEmail },
     "./deploy-config.js": {
       deploySettings,
       verifyHyperdrive,
@@ -1083,7 +1095,11 @@ test("sincroniza autenticação e Resend exclusivamente do contrato canônico, s
   assert.equal(result.writes.length, 2);
   assert.ok(result.writes[0]!.path.endsWith("wrangler.json"));
   assert.ok(result.output.includes(previousVersionId));
-  assert.deepEqual(result.secretNames, ["RESEND_API_KEY", "LEVI_AUTH_SECRET"]);
+  assert.deepEqual(result.secretNames, [
+    "RESEND_API_KEY",
+    "LEVI_AUTH_SECRET",
+    "LEVI_ADMIN_EMAIL",
+  ]);
   assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
 });
 
@@ -1407,7 +1423,10 @@ test("secrets recusam disco persistente e falha de escrita, limpando sem upload"
 test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar novamente", async () => {
   const result = await simulatedDeploy({
     uploadError: new Error(
-      valid.RESEND_API_KEY + valid.LEVI_AUTH_SECRET + sensitive,
+      valid.RESEND_API_KEY +
+        valid.LEVI_AUTH_SECRET +
+        valid.LEVI_ADMIN_EMAIL +
+        sensitive,
     ),
   });
   assert.equal(result.exitCode, 1);
@@ -1438,6 +1457,7 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
   const directory = await mkdtemp("/dev/shm/levi-dev-wrangler-test-");
   const key = "synthetic-resend-dry-run-not-real";
   const authKey = "synthetic-auth-dry-run-more-than-32-characters";
+  const adminEmail = "synthetic-admin-dry-run@example.test";
   try {
     await writeFile(
       join(directory, "worker.mjs"),
@@ -1449,12 +1469,18 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
         name: "levi-dev-synthetic-only",
         main: "worker.mjs",
         compatibility_date: "2025-09-01",
-        secrets: { required: ["RESEND_API_KEY", "LEVI_AUTH_SECRET"] },
+        secrets: {
+          required: ["RESEND_API_KEY", "LEVI_AUTH_SECRET", "LEVI_ADMIN_EMAIL"],
+        },
       }),
     );
     await writeFile(
       join(directory, "secrets.json"),
-      JSON.stringify({ RESEND_API_KEY: key, LEVI_AUTH_SECRET: authKey }),
+      JSON.stringify({
+        RESEND_API_KEY: key,
+        LEVI_AUTH_SECRET: authKey,
+        LEVI_ADMIN_EMAIL: adminEmail,
+      }),
       { mode: 0o600, flag: "wx" },
     );
     const result = spawnSync(
@@ -1489,6 +1515,7 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
     assert.equal(result.status, 0, output.replaceAll(key, "[redacted]"));
     assert.ok(!output.includes(key));
     assert.ok(!output.includes(authKey));
+    assert.ok(!output.includes(adminEmail));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -1533,5 +1560,60 @@ test("LEVI_AUTH_SECRET ausente ou curto bloqueia antes de I/O mesmo com AUTH_SEC
     assert.equal(result.uploads, 0);
     assert.equal(result.writes.length, 0);
     assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
+  }
+});
+
+test("e-mail administrativo é privado, normalizado e sobrescrito para negar quando ausente/inválido", async () => {
+  for (const configured of [
+    undefined,
+    "",
+    " ",
+    "invalid",
+    "a@example.test,b@example.test",
+    "  SYNTHETIC-PRIVATE-ADMIN@EXAMPLE.TEST  ",
+  ]) {
+    const result = await simulatedDeploy({
+      env: { LEVI_ADMIN_EMAIL: configured },
+    });
+    assert.equal(result.exitCode, 0, result.output);
+    assert.equal(result.uploads, 1);
+    assert.ok(!result.output.includes(valid.LEVI_ADMIN_EMAIL));
+    if (configured?.trim()) assert.ok(!result.output.includes(configured));
+  }
+  const workflow = await readFile(
+    "../../.github/workflows/deploy-levi-dev.yml",
+    "utf8",
+  );
+  assert.equal(workflow.split("${{ secrets.LEVI_ADMIN_EMAIL }}").length - 1, 1);
+  const diagnostic = await readFile(
+    "../../.github/workflows/diagnose-levi-cloudflare.yml",
+    "utf8",
+  );
+  assert.ok(!diagnostic.includes("LEVI_ADMIN_EMAIL"));
+});
+
+test("publicação exige o binding administrativo privado sem bloquear versões anteriores que não o possuem", async () => {
+  const withoutAdmin = baseBindings.filter(
+    (binding) => binding.name !== "LEVI_ADMIN_EMAIL",
+  );
+  for (const failPublished of [false, true]) {
+    const result = await simulatedDeploy({
+      respond: (url, published) => {
+        if (url.includes("/versions/") && (!published || failPublished))
+          return Response.json({
+            success: true,
+            result: {
+              annotations: {
+                "workers/tag": published ? valid.GITHUB_SHA : "e".repeat(40),
+              },
+              resources: { bindings: withoutAdmin },
+            },
+          });
+        return undefined;
+      },
+    });
+    assert.equal(result.uploads, 1);
+    assert.equal(result.exitCode, failPublished ? 1 : 0, result.output);
+    assert.ok(!result.output.includes(valid.LEVI_ADMIN_EMAIL));
   }
 });

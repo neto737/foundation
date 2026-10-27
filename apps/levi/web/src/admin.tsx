@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api.js";
 import {
   adminApi,
-  type Administrator,
-  type AdministrativeAccount,
   type AdministrativeSession,
   type Feature,
   type Organization,
@@ -12,8 +10,6 @@ import { useFormFocusVisibility } from "./ui.js";
 
 type Snapshot = {
   session: AdministrativeSession;
-  administrators: Administrator[];
-  administratorNext: string | null;
   organizations: Organization[];
   organizationNext: string | null;
   features: Feature[];
@@ -44,8 +40,7 @@ export function Admin() {
     const signal = controller.current.signal;
     try {
       const session = await adminApi.session(signal);
-      const [administrators, organizations, features] = await Promise.all([
-        adminApi.administrators(signal),
+      const [organizations, features] = await Promise.all([
         adminApi.organizations(signal),
         adminApi.features(signal),
       ]);
@@ -62,8 +57,6 @@ export function Admin() {
         kind: "ready",
         data: {
           session,
-          administrators: administrators.items,
-          administratorNext: administrators.next,
           organizations: organizations.items,
           organizationNext: organizations.next,
           features,
@@ -251,15 +244,6 @@ function AdminContent({
     refreshAfter?: boolean,
   ) => Promise<void>;
 }) {
-  const [email, setEmail] = useState("");
-  const lookupGeneration = useRef(0);
-  const [found, setFound] = useState<
-    AdministrativeAccount | null | undefined
-  >();
-  const [administrators, setAdministrators] = useState(data.administrators);
-  const [administratorNext, setAdministratorNext] = useState(
-    data.administratorNext,
-  );
   const [organizations, setOrganizations] = useState(data.organizations);
   const [organizationNext, setOrganizationNext] = useState(
     data.organizationNext,
@@ -274,138 +258,6 @@ function AdminContent({
   );
   return (
     <>
-      <section
-        className="global-admin-section"
-        aria-labelledby="administrators-title"
-      >
-        <h2 id="administrators-title">Administradores</h2>
-        <p>
-          Concessões globais são independentes das funções nas organizações.
-        </p>
-        <ul className="item-list">
-          {administrators.map((item) => (
-            <li key={item.userId}>
-              <div>
-                <strong>{item.name || item.email}</strong>
-                <p>{item.email}</p>
-                <small>
-                  {item.userId} · {item.revokedAt ? "Revogado" : "Ativo"} ·
-                  versão {item.version}
-                </small>
-              </div>
-              <button
-                disabled={busy || item.userId === data.session.userId}
-                onClick={() => {
-                  const enabled = item.revokedAt !== null;
-                  if (
-                    window.confirm(
-                      `${enabled ? "Conceder" : "Revogar"} acesso administrativo de ${item.email}?`,
-                    )
-                  )
-                    void run(
-                      (signal) => adminApi.change(item, enabled, signal),
-                      "Concessão administrativa atualizada.",
-                    );
-                }}
-              >
-                {item.revokedAt ? "Conceder novamente" : "Revogar"}
-              </button>
-            </li>
-          ))}
-        </ul>
-        {administratorNext && (
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run(
-                async (signal) => {
-                  const page = await adminApi.administrators(
-                    signal,
-                    administratorNext,
-                  );
-                  return () => {
-                    if (alive.current && !signal.aborted) {
-                      setAdministrators((items) => [...items, ...page.items]);
-                      setAdministratorNext(page.next);
-                    }
-                  };
-                },
-                "Lista consultada.",
-                false,
-              )
-            }
-          >
-            Mais administradores
-          </button>
-        )}
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const lookup = ++lookupGeneration.current;
-            setFound(undefined);
-            void run(
-              async (signal) => {
-                const account = await adminApi.find(email, signal);
-                return () => {
-                  if (
-                    alive.current &&
-                    !signal.aborted &&
-                    lookup === lookupGeneration.current
-                  )
-                    setFound(account);
-                };
-              },
-              "Busca concluída.",
-              false,
-            );
-          }}
-        >
-          <label className="field">
-            E-mail exato da conta
-            <input
-              type="email"
-              required
-              maxLength={254}
-              value={email}
-              onChange={(event) => {
-                lookupGeneration.current++;
-                setEmail(event.target.value);
-                setFound(undefined);
-              }}
-            />
-          </label>
-          <button disabled={busy}>Localizar conta</button>
-        </form>
-        {found === null && <p role="status">Nenhuma conta única encontrada.</p>}
-        {found && (
-          <div className="account-result">
-            <p>
-              {found.name} · {found.email}
-            </p>
-            <p>
-              {found.eligible
-                ? "Conta verificada e com senha."
-                : "Conta ainda não elegível: precisa verificar o e-mail e cadastrar senha."}
-            </p>
-            <button
-              disabled={busy || !found.eligible || found.active}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Conceder acesso administrativo global de ${found.email}?`,
-                  )
-                )
-                  void run(
-                    (signal) => adminApi.change(found, true, signal),
-                    "Acesso administrativo concedido.",
-                  );
-              }}
-            >
-              {found.active ? "Já é administrador" : "Conceder acesso"}
-            </button>
-          </div>
-        )}
-      </section>
       <section
         className="global-admin-section"
         aria-labelledby="features-title"

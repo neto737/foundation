@@ -1166,17 +1166,26 @@ test("workerd: guard administrativo protege HTML antes de Assets, API e validaç
         "DELETE",
         "OPTIONS",
       ]) {
-        const response = await mf.dispatchFetch(workerOrigin + path, {
-          method,
-          headers: {
-            cookie,
-            origin: "https://hostil.example",
-            "content-type": "text/plain",
-          },
-          ...(!["GET", "HEAD"].includes(method)
-            ? { body: "x".repeat(20_000) }
-            : {}),
-        });
+        const response = await mf
+          .dispatchFetch(workerOrigin + path, {
+            method,
+            headers: {
+              cookie,
+              origin: "https://hostil.example",
+              "content-type": "text/plain",
+            },
+            ...(!["GET", "HEAD"].includes(method)
+              ? { body: "x".repeat(20_000) }
+              : {}),
+          })
+          .catch((error: unknown) => {
+            const cause = error instanceof Error ? error.cause : null;
+            const code =
+              cause && typeof cause === "object" && "code" in cause
+                ? String(cause.code)
+                : "unknown";
+            throw new Error(`${method} ${path}: ${code}`, { cause: error });
+          });
         assert.equal(response.status, 404, `${method} ${path}`);
         assert.equal(
           response.headers.get("cache-control"),
@@ -1190,34 +1199,51 @@ test("workerd: guard administrativo protege HTML antes de Assets, API e validaç
     "INSERT INTO global_administrators(user_id) VALUES($1)",
     [common.id],
   );
-  const html = await send("/admin", undefined, common.cookie);
-  assert.equal(html.status, 200);
-  assert.match(html.headers.get("content-type") ?? "", /text\/html/);
-  assert.ok((await html.text()).includes('id="root"'));
-  const administrative = await send(
-    "/api/admin/session",
-    undefined,
-    common.cookie,
-  );
-  assert.equal(administrative.status, 200);
-  assert.equal(
-    (await send("/api/churches", undefined, common.cookie)).status,
-    403,
-  );
-  const csrf = await send(
-    "/api/admin/accounts/find",
-    { email: common.email },
-    common.cookie,
-    { origin: "https://hostil.example" },
-  );
-  assert.equal(csrf.status, 403);
-  await observer.client.query(
-    "UPDATE global_administrators SET revoked_at=now(),version=version+1 WHERE user_id=$1",
-    [common.id],
-  );
+  // Mesmo com concessão histórica, ausência de configuração continua negando.
   assert.equal((await send("/admin", undefined, common.cookie)).status, 404);
-  assert.equal(
-    (await send("/api/admin/session", undefined, common.cookie)).status,
-    404,
-  );
+  const configured = await workerHarness(databaseUrl!, {
+    adminEmail: common.email,
+  });
+  try {
+    const html = await configured.send("/admin", undefined, common.cookie);
+    assert.equal(html.status, 200);
+    assert.match(html.headers.get("content-type") ?? "", /text\/html/);
+    assert.ok((await html.text()).includes('id="root"'));
+    const administrative = await configured.send(
+      "/api/admin/session",
+      undefined,
+      common.cookie,
+    );
+    assert.equal(administrative.status, 200);
+    assert.equal(
+      (await configured.send("/api/churches", undefined, common.cookie)).status,
+      403,
+    );
+    const csrf = await configured.send(
+      "/api/admin/accounts/find",
+      { email: common.email },
+      common.cookie,
+      { origin: "https://hostil.example" },
+    );
+    assert.equal(csrf.status, 403);
+    await observer.client.query(
+      'UPDATE "user" SET email_verified=false WHERE id=$1',
+      [common.id],
+    );
+    assert.equal(
+      (await configured.send("/admin", undefined, common.cookie)).status,
+      404,
+    );
+    assert.equal(
+      (await configured.send("/api/admin/session", undefined, common.cookie))
+        .status,
+      404,
+    );
+  } finally {
+    await observer.client.query(
+      'UPDATE "user" SET email_verified=true WHERE id=$1',
+      [common.id],
+    );
+    await configured.mf.dispose();
+  }
 });

@@ -1,8 +1,9 @@
 import type { FoundationSession } from "@t00ls-dev/auth";
-import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import type { Database } from "./auth.js";
+import { administrativeEmail } from "./admin-config.js";
 import { RequestError } from "./contracts.js";
-import { account, globalAdministrators, session, user } from "./data/schema.js";
+import { account, session, user } from "./data/schema.js";
 
 export type AdministrativeTransaction = Parameters<
   Parameters<Database["db"]["transaction"]>[0]
@@ -87,25 +88,31 @@ async function authorize(
   tx: AdministrativeTransaction,
   identity: FoundationSession | null,
   recent: boolean,
+  adminEmail?: string,
 ) {
-  if (!identity) administrativeNotFound();
+  const configured = administrativeEmail(adminEmail);
+  if (
+    !configured ||
+    !identity?.user.emailVerified ||
+    administrativeEmail(identity.user.email) !== configured
+  )
+    administrativeNotFound();
   try {
-    await lockReadyIdentity(
+    const current = await lockReadyIdentity(
       tx,
       { userId: identity.user.id, sessionId: identity.session.id },
       false,
     );
-    const [grant] = await tx
-      .select({ userId: globalAdministrators.userId })
-      .from(globalAdministrators)
-      .where(
-        and(
-          eq(globalAdministrators.userId, identity.user.id),
-          isNull(globalAdministrators.revokedAt),
-        ),
-      )
-      .for("share");
-    if (!grant) administrativeNotFound();
+    if (administrativeEmail(current.email) !== configured)
+      administrativeNotFound();
+    // Dados históricos ambíguos nunca identificam o administrador por aproximação.
+    const matches = await tx
+      .select({ id: user.id })
+      .from(user)
+      .where(sql`lower(btrim(${user.email})) = ${configured}`)
+      .limit(2);
+    if (matches.length !== 1 || matches[0]?.id !== identity.user.id)
+      administrativeNotFound();
   } catch {
     // Não diferenciar inexistência, conta não pronta e armazenamento indisponível.
     administrativeNotFound();
@@ -123,10 +130,11 @@ async function authorize(
 export async function requireGlobalAdministrator(
   database: Database,
   identity: FoundationSession | null,
+  adminEmail?: string,
 ) {
   try {
     return await database.db.transaction((tx) =>
-      authorize(tx, identity, false),
+      authorize(tx, identity, false, adminEmail),
     );
   } catch {
     administrativeNotFound();
@@ -137,6 +145,7 @@ export async function withGlobalAdministrator<T>(
   input: {
     database: Database;
     identity: FoundationSession | null;
+    adminEmail?: string | undefined;
     mutation: boolean;
     recent: boolean;
   },
@@ -148,11 +157,17 @@ export async function withGlobalAdministrator<T>(
     } catch {
       administrativeNotFound();
     }
-    const actor = await authorize(tx, input.identity, input.recent);
+    const actor = await authorize(
+      tx,
+      input.identity,
+      input.recent,
+      input.adminEmail,
+    );
     const result = await operation(tx, actor);
     // Locks posteriores (inclusive no append da auditoria) podem consumir a
     // validade/recência. A mesma transação deve desfazer tudo antes de confirmar.
-    if (input.mutation) await authorize(tx, input.identity, input.recent);
+    if (input.mutation)
+      await authorize(tx, input.identity, input.recent, input.adminEmail);
     return result;
   });
 }

@@ -52,7 +52,10 @@ da primeira entrega.
   pendente antes de executar essa revisão. A sincronização da autenticação via
   LEVI_AUTH_SECRET está preparada, mas sua primeira aplicação exige publicação
   com troca de segredo expressamente autorizada; não foi executada nesta etapa.
-  Versionamento privado segue pendente.
+  O painel passa a exigir e-mail verificado correspondente a LEVI_ADMIN_EMAIL,
+  sem concessões pelo banco ou gestão de administradores na interface; a nova
+  configuração requer publicação autorizada. Versionamento privado segue
+  pendente.
 
 - Workspace pnpm com Turborepo e Node.js `>=22.22.0`.
 - TypeScript strict compartilhado em `@t00ls-dev/typescript-config`.

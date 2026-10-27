@@ -23,9 +23,13 @@ async function administrator(page: Page) {
     const id = result.rows[0]?.id;
     if (!id) throw new Error("Conta sintética ausente.");
     await database.client.query(
-      "INSERT INTO global_administrators(user_id) VALUES($1)",
-      [id],
+      'UPDATE "user" SET email=$1 WHERE lower(email)=$2',
+      [`${randomUUID()}@example.test`, "admin-configured@example.test"],
     );
+    await database.client.query('UPDATE "user" SET email=$2 WHERE id=$1', [
+      id,
+      "admin-configured@example.test",
+    ]);
     return { email, id };
   } finally {
     await database.client.end();
@@ -47,18 +51,19 @@ test("painel exige guard HTTP real, funciona sem organização e mantém navega�
     "/ADMIN",
   ])
     expect((await context.request.get(path)).status(), path).toBe(404);
-  const actor = await administrator(page);
+  await administrator(page);
   await expect(page.getByRole("link", { name: /administr/ })).toHaveCount(0);
   const response = await page.goto("/admin");
   expect(response?.status()).toBe(200);
   await expect(
-    page.getByRole("heading", { name: "Administradores", exact: true }),
+    page.getByRole("heading", { name: "Funcionalidades", exact: true }),
   ).toBeVisible();
-  const actorRow = page.getByRole("listitem").filter({ hasText: actor.id });
-  await expect(actorRow).toContainText(actor.email);
   await expect(
-    actorRow.getByRole("button", { name: "Revogar", exact: true }),
-  ).toBeDisabled();
+    page.getByRole("heading", { name: "Administradores", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("admin-configured@example.test", { exact: true }),
+  ).toHaveCount(0);
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Funcionalidades", exact: true }),
@@ -76,103 +81,11 @@ test("painel exige guard HTTP real, funciona sem organização e mantém navega�
   ).toBeVisible();
   await page.goBack();
   await expect(
-    page.getByRole("heading", { name: "Administradores", exact: true }),
+    page.getByRole("heading", { name: "Funcionalidades", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Sair", exact: true }).click();
   await expect(page).toHaveURL(/\/entrar$/);
   expect((await context.request.get("/admin")).status()).toBe(404);
-});
-
-test("busca exata, concessão, conflito e revogação passam pelos contratos reais", async ({
-  page,
-  browser,
-}) => {
-  const actor = await administrator(page);
-  const other = await browser.newContext({
-    baseURL: new URL(page.url()).origin,
-  });
-  const targetPage = await other.newPage();
-  try {
-    const target = await readyAccount(targetPage);
-    await page.bringToFront();
-    await page.goto("/admin");
-    page.on("dialog", (dialog) => dialog.accept());
-    await page.getByLabel("E-mail exato da conta").fill(target);
-    await page
-      .getByRole("button", { name: "Localizar conta", exact: true })
-      .click();
-    await expect(
-      page.getByRole("button", { name: "Conceder acesso", exact: true }),
-    ).toBeEnabled();
-    const staleDatabase = await fixture();
-    try {
-      await staleDatabase.client.query(
-        "UPDATE session SET created_at=now()-interval '11 minutes' WHERE user_id=$1",
-        [actor.id],
-      );
-      await page
-        .getByRole("button", { name: "Conceder acesso", exact: true })
-        .click();
-      await expect(page.getByRole("alert")).toContainText("Entre novamente");
-      await expect(
-        page.getByRole("button", { name: "Entrar novamente", exact: true }),
-      ).toBeVisible();
-    } finally {
-      await staleDatabase.client.query(
-        "UPDATE session SET created_at=now() WHERE user_id=$1",
-        [actor.id],
-      );
-      await staleDatabase.client.end();
-    }
-    await page
-      .getByRole("button", { name: "Conceder acesso", exact: true })
-      .click();
-    await expect(
-      page.getByText("Acesso administrativo concedido.", { exact: true }),
-    ).toBeVisible();
-    expect((await other.request.get("/api/admin/session")).status()).toBe(200);
-    const database = await fixture();
-    try {
-      // Concorrente altera a versão depois da consulta exibida.
-      await database.client.query(
-        'UPDATE global_administrators SET version=version+1 WHERE user_id=(SELECT id FROM "user" WHERE email=$1)',
-        [target],
-      );
-      const item = page.getByRole("listitem").filter({ hasText: target });
-      await item.getByRole("button", { name: "Revogar", exact: true }).click();
-      await expect(page.getByRole("alert")).toContainText(
-        "A concessão foi alterada",
-      );
-      await item.getByRole("button", { name: "Revogar", exact: true }).click();
-      await expect(
-        page.getByText("Concessão administrativa atualizada.", { exact: true }),
-      ).toBeVisible();
-      expect((await other.request.get("/api/admin/session")).status()).toBe(
-        404,
-      );
-      const events = await database.client.query(
-        "SELECT action FROM audit_events WHERE actor=$1 AND action IN ('admin.granted','admin.revoked')",
-        [actor.id],
-      );
-      expect(events.rows.map((row) => row.action).sort()).toEqual([
-        "admin.granted",
-        "admin.revoked",
-      ]);
-      await page.context().addCookies(await other.cookies());
-      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      await expect(page.getByRole("alert")).toHaveText(
-        "Recurso não encontrado.",
-      );
-      await expect(
-        page.getByRole("heading", { name: "Administradores", exact: true }),
-      ).toHaveCount(0);
-      expect((await page.request.get("/api/admin/session")).status()).toBe(404);
-    } finally {
-      await database.client.end();
-    }
-  } finally {
-    await other.close();
-  }
 });
 
 test("políticas selected/all/disabled exigem seleção e confirmação e preservam versões", async ({
@@ -272,7 +185,7 @@ test("retorno e foco removem dados revogados e respostas antigas não restauram 
     await page.goto("/admin");
     await received;
     await database.client.query(
-      "UPDATE global_administrators SET revoked_at=now(),version=version+1 WHERE user_id=$1",
+      'UPDATE "user" SET email_verified=false WHERE id=$1',
       [actor.id],
     );
     await page.evaluate(() => {
@@ -282,7 +195,7 @@ test("retorno e foco removem dados revogados e respostas antigas não restauram 
     await expect(page.getByRole("alert")).toHaveText("Recurso não encontrado.");
     release();
     await expect(
-      page.getByRole("heading", { name: "Administradores", exact: true }),
+      page.getByRole("heading", { name: "Funcionalidades", exact: true }),
     ).toHaveCount(0);
     expect((await page.request.get("/admin")).status()).toBe(404);
     expect((await page.request.get("/api/admin/administrators")).status()).toBe(
@@ -290,61 +203,10 @@ test("retorno e foco removem dados revogados e respostas antigas não restauram 
     );
   } finally {
     release();
+    await database.client.query(
+      'UPDATE "user" SET email_verified=true WHERE id=$1',
+      [actor.id],
+    );
     await database.client.end();
-  }
-});
-
-test("busca alterada descarta resposta antiga antes de oferecer uma concessão", async ({
-  page,
-  browser,
-}) => {
-  await administrator(page);
-  const other = await browser.newContext({
-    baseURL: new URL(page.url()).origin,
-  });
-  let release: () => void = () => {};
-  let received: () => void = () => {};
-  const pending = new Promise<void>((resolve) => {
-    received = resolve;
-  });
-  const delayed = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let first = true;
-  await page.route("**/api/admin/accounts/find", async (route) => {
-    if (!first) return route.continue();
-    first = false;
-    const response = await route.fetch();
-    received();
-    await delayed;
-    await route.fulfill({ response }).catch(() => {});
-  });
-  try {
-    const target = await readyAccount(await other.newPage());
-    await page.bringToFront();
-    await page.goto("/admin");
-    const email = page.getByLabel("E-mail exato da conta");
-    await email.fill(target);
-    await page
-      .getByRole("button", { name: "Localizar conta", exact: true })
-      .click();
-    await pending;
-    await email.fill(`${randomUUID()}@example.test`);
-    release();
-    await expect(
-      page.getByText("Busca concluída.", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Conceder acesso", exact: true }),
-    ).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Localizar conta", exact: true })
-      .click();
-    await expect(
-      page.getByText("Nenhuma conta única encontrada.", { exact: true }),
-    ).toBeVisible();
-  } finally {
-    release();
-    await other.close();
   }
 });
