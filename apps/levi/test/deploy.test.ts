@@ -13,10 +13,11 @@ import {
   deploySettings,
   verifyHyperdrive,
   verifyWorkerBindings,
+  verifyPreviousWorkerBindings,
   deploymentConfig,
 } from "../tools/deploy-config.js";
 
-const valid: NodeJS.ProcessEnv = {
+const valid = {
   GITHUB_ACTIONS: "true",
   GITHUB_REPOSITORY: "t00ls-dev/foundation",
   GITHUB_EVENT_NAME: "workflow_dispatch",
@@ -31,10 +32,10 @@ const valid: NodeJS.ProcessEnv = {
   LEVI_HYPERDRIVE_ID: "c".repeat(32),
   LEVI_DEV_DATABASE_HOST: "ep-synthetic-only.us-east-2.aws.neon.tech",
   LEVI_DEV_DATABASE_NAME: "levi_dev",
-  LEVI_EMAIL_FROM: "Levi <levi@example.test>",
+  LEVI_EMAIL_FROM: "Levi <hi@levi.t00ls.dev>",
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
   RESEND_API_KEY: "synthetic-only",
-};
+} satisfies NodeJS.ProcessEnv;
 const versionId = "11111111-1111-4111-8111-111111111111";
 const previousVersionId = "33333333-3333-4333-8333-333333333333";
 const baseBindings = [
@@ -89,6 +90,8 @@ test("deploy exige execução confiável manual da master e configuração compl
         "ep-synthetic-only-pooler.us-east-2.aws.neon.tech",
     },
     { LEVI_EMAIL_FROM: "" },
+    { LEVI_EMAIL_FROM: "Levi <noreply@levi.t00ls.dev>" },
+    { LEVI_EMAIL_FROM: "Levi <other@levi.t00ls.dev>" },
   ])
     assert.throws(() => deploySettings({ ...valid, ...changes }));
 });
@@ -355,6 +358,7 @@ async function simulatedDeploy(
       deploySettings,
       verifyHyperdrive,
       verifyWorkerBindings,
+      verifyPreviousWorkerBindings,
       deploymentConfig,
       deployOrigin: "https://levi.t00ls.dev",
       deployWorker: "levi-dev",
@@ -1178,5 +1182,157 @@ test("domínio exige roteamento público ativo e previews fechados antes e depoi
         ),
       );
     }
+  }
+});
+
+const originalTransferVersion = {
+  id: "526d47d8-39cc-46af-8ec5-1bf2bf3d7282",
+  sha: "b2c892e27e3a8988f0be554692ffea43d35fcd61",
+  from: "Levi <noreply@levi.t00ls.dev>",
+};
+const foundationTransferVersion = {
+  id: versionId,
+  sha: valid.GITHUB_SHA,
+  from: valid.LEVI_EMAIL_FROM,
+};
+// Somente respostas sintéticas: todas as chamadas/arquivos/subprocessos do runner são interceptados.
+function transferResponse(
+  url: string,
+  snapshot: typeof originalTransferVersion,
+): Response | undefined {
+  let result: unknown;
+  if (url.endsWith("/deployments"))
+    result = {
+      deployments: [
+        { versions: [{ version_id: snapshot.id, percentage: 100 }] },
+      ],
+    };
+  else if (url.endsWith("/versions")) result = { items: [{ id: snapshot.id }] };
+  else if (url.includes("/versions/"))
+    result = {
+      annotations: { "workers/tag": snapshot.sha },
+      resources: {
+        bindings: baseBindings.map((binding) =>
+          binding.name === "LEVI_EMAIL_FROM"
+            ? { ...binding, text: snapshot.from }
+            : binding,
+        ),
+      },
+    };
+  else return undefined;
+  return Response.json({ success: true, result });
+}
+
+test("primeiro corte permite noreply apenas no UUID/SHA original e publica hi estritamente", async () => {
+  for (const previous of [
+    originalTransferVersion,
+    { ...originalTransferVersion, from: valid.LEVI_EMAIL_FROM },
+  ]) {
+    const result = await simulatedDeploy({
+      respond: (url, published) =>
+        transferResponse(url, published ? foundationTransferVersion : previous),
+    });
+    assert.equal(result.exitCode, 0, result.output);
+    assert.equal(result.uploads, 1);
+    assert.equal(result.cleanups, 1);
+    assert.equal(result.writes.length, 1);
+    assert.ok(!result.output.includes(valid.CLOUDFLARE_API_TOKEN!));
+  }
+});
+
+test("corte recusa remetente anterior inesperado e não estende exceção para outra versão/SHA", async () => {
+  for (const previous of [
+    {
+      ...originalTransferVersion,
+      from: "Levi <private-sender@unexpected.example>",
+    },
+    { ...originalTransferVersion, id: previousVersionId },
+    { ...originalTransferVersion, sha: "f".repeat(40) },
+  ]) {
+    const result = await simulatedDeploy({
+      respond: (url, published) =>
+        transferResponse(url, published ? foundationTransferVersion : previous),
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 0);
+    assert.equal(result.writes.length, 0);
+    assert.ok(!result.output.includes("private-sender"));
+  }
+});
+
+test("corte detecta troca de remetente entre snapshots mesmo com UUID/SHA iguais", async () => {
+  let reads = 0;
+  const result = await simulatedDeploy({
+    respond: (url, published) => {
+      if (!published && url.includes("/versions/")) reads++;
+      return transferResponse(
+        url,
+        published
+          ? foundationTransferVersion
+          : {
+              ...originalTransferVersion,
+              from:
+                reads > 1
+                  ? valid.LEVI_EMAIL_FROM
+                  : originalTransferVersion.from,
+            },
+      );
+    },
+  });
+  assert.equal(reads, 2);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.uploads, 0);
+});
+
+test("pós-upload recusa noreply e terceiros, sem repetir upload ou usar a exceção inicial", async () => {
+  for (const from of [
+    originalTransferVersion.from,
+    "Levi <private-sender@unexpected.example>",
+  ]) {
+    const result = await simulatedDeploy({
+      respond: (url, published) =>
+        transferResponse(
+          url,
+          published
+            ? { ...foundationTransferVersion, from }
+            : originalTransferVersion,
+        ),
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.uploads, 1);
+    assert.equal(result.cleanups, 1);
+    assert.ok(!result.output.includes(from));
+  }
+});
+
+test("compatibilidade inicial mantém Assets, secrets e recursos obrigatórios", () => {
+  const legacyBindings = baseBindings.map((binding) =>
+    binding.name === "LEVI_EMAIL_FROM"
+      ? { ...binding, text: originalTransferVersion.from }
+      : binding,
+  );
+  for (const missing of [
+    "ASSETS",
+    "LEVI_AUTH_SECRET",
+    "RESEND_API_KEY",
+    "LEVI_PUBLIC_ORIGIN",
+    "HYPERDRIVE",
+  ]) {
+    assert.throws(() =>
+      verifyPreviousWorkerBindings(
+        {
+          resources: {
+            bindings: legacyBindings.filter(
+              (binding) => binding.name !== missing,
+            ),
+          },
+        },
+        valid,
+        {
+          versionId: originalTransferVersion.id,
+          sha: originalTransferVersion.sha,
+        },
+      ),
+    );
   }
 });

@@ -7,6 +7,7 @@ import {
   deploySettings,
   verifyHyperdrive,
   verifyWorkerBindings,
+  verifyPreviousWorkerBindings,
   deploymentConfig,
   deployOrigin,
   deployWorker,
@@ -151,7 +152,7 @@ try {
     assert.ok(routes.every((route) => route.script !== deployWorker));
   }
   await protections();
-  async function activeVersion() {
+  async function activeVersion(phase: "previous" | "published") {
     const deployments = await cloudflare(
       "deployments-read",
       `${account}/workers/scripts/${deployWorker}/deployments`,
@@ -183,13 +184,16 @@ try {
     const sha: unknown = version.annotations?.["workers/tag"];
     assert.ok(typeof sha === "string");
     assert.match(sha, /^[a-f0-9]{40}$/);
-    diagnostics.verify("version-binding", () =>
-      verifyWorkerBindings(version, env),
-    );
-    return { versionId, sha };
+    const sender = diagnostics.verify("version-binding", () => {
+      if (phase === "previous")
+        return verifyPreviousWorkerBindings(version, env, { versionId, sha });
+      verifyWorkerBindings(version, env);
+      return "current";
+    });
+    return { versionId, sha, sender };
   }
   // Falha antes do upload se o alvo ou a continuidade não puderem ser comprovados.
-  const previous = await activeVersion();
+  const previous = await activeVersion("previous");
   console.info(
     JSON.stringify({ operacao: "versao-dev-anterior", ...previous }),
   );
@@ -214,7 +218,7 @@ try {
   const currentCI = await requireSuccessfulCI(env, fetch, diagnostics);
   diagnostics.start("ci-unchanged");
   assert.deepEqual(currentCI, ci);
-  const beforeUpload = await activeVersion();
+  const beforeUpload = await activeVersion("previous");
   diagnostics.start("version-unchanged");
   assert.deepEqual(beforeUpload, previous);
   // Detecta mudanças durante o preflight; não substitui contenção entre repositórios.
@@ -250,7 +254,7 @@ try {
   assert.equal(result.status, 0);
   diagnostics.phase = "published";
   await protections();
-  const published = await activeVersion();
+  const published = await activeVersion("published");
   diagnostics.inspect("version-tag");
   assert.equal(published.sha, settings.sha);
   // A evidência do binding é da versão com tráfego, não apenas da config enviada.

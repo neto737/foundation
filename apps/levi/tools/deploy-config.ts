@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 export const deployOrigin = "https://levi.t00ls.dev";
 export const deployWorker = "levi-dev";
+const emailFrom = "Levi <hi@levi.t00ls.dev>";
+const previousEmailFrom = "Levi <noreply@levi.t00ls.dev>";
 
 export function deploySettings(env: NodeJS.ProcessEnv) {
   assert.equal(env.GITHUB_ACTIONS, "true");
@@ -28,7 +30,7 @@ export function deploySettings(env: NodeJS.ProcessEnv) {
   for (const name of ["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN"])
     assert.ok(env[name]?.trim());
   // Secrets pertencem ao Worker existente, não às entradas do publicador.
-  assert.ok(env.LEVI_EMAIL_FROM?.trim());
+  assert.equal(env.LEVI_EMAIL_FROM, emailFrom);
   return { sha, account, hyperdrive };
 }
 
@@ -76,6 +78,31 @@ export function verifyWorkerBindings(
     assert.equal(matches[0].type, type);
     if (type === "plain_text") assert.equal(matches[0].text, text);
   }
+}
+
+// Compatibilidade somente com a versão original comprovada para o primeiro corte.
+// Uma versão futura/reenviada com noreply não recebe essa exceção.
+export function verifyPreviousWorkerBindings(
+  version: Parameters<typeof verifyWorkerBindings>[0],
+  env: NodeJS.ProcessEnv,
+  identity: { versionId: string; sha: string },
+): "legacy" | "current" {
+  const bindings: unknown = version.resources?.bindings;
+  assert.ok(Array.isArray(bindings));
+  const from: unknown = bindings.find(
+    (binding) => binding?.name === "LEVI_EMAIL_FROM",
+  )?.text;
+  const legacy = from === previousEmailFrom;
+  if (legacy) {
+    assert.equal(identity.versionId, "526d47d8-39cc-46af-8ec5-1bf2bf3d7282");
+    assert.equal(identity.sha, "b2c892e27e3a8988f0be554692ffea43d35fcd61");
+    assert.equal(env.LEVI_EMAIL_FROM, emailFrom);
+  }
+  verifyWorkerBindings(
+    version,
+    legacy ? { ...env, LEVI_EMAIL_FROM: previousEmailFrom } : env,
+  );
+  return legacy ? "legacy" : "current";
 }
 
 export function deploymentConfig(
