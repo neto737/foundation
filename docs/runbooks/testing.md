@@ -116,12 +116,12 @@ CRUD, filtros, isolamento A/B, CSRF, expiração/revogação e múltiplos Set-Co
 Também injeta falhas na execução de queries para verificar confirmação de logout
 sem renovação, retry após recuperação e ausência de tokens/parâmetros nos logs.
 E2E usa um Worker/configuração próprios, captura e-mail em banco temporário e
-valida nove cenários em desktop e mobile, incluindo `401` de mutação antiga após
-login de outra identidade sem recarregar a página. Nenhum teste envia e-mail
-real. A caixa `/__test/mail` pertence apenas a `e2e/worker.ts`, fora do bundle
-DEV. O harness não reutiliza servidor ou estado de desenvolvimento e executa
-migration duas vezes para conferir reaplicação idempotente pelo journal
-Wrangler.
+valida os cenários de `examples/links/e2e` em desktop e mobile, incluindo `401`
+de mutação antiga após login de outra identidade sem recarregar a página. Nenhum
+teste envia e-mail real. A caixa `/__test/mail` pertence apenas a
+`e2e/worker.ts`, fora do bundle DEV. O harness não reutiliza servidor ou estado
+de desenvolvimento e executa migration duas vezes para conferir reaplicação
+idempotente pelo journal Wrangler.
 
 O E2E de security headers usa também o Worker de produção compilado e Workers
 Assets reais em Wrangler local (porta 5175, D1 descartável e chaves Turnstile

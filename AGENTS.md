@@ -23,3 +23,17 @@ add it again. Set `"agentGuidance": false` in the root `turbo.json` or
 committed with your work to avoid an uncommitted change on the next agent
 invocation.
 <!-- END:turborepo-agent-rules -->
+
+## Regras globais do Foundation
+
+- Use os executáveis locais `git` e `gh` nas operações Git/GitHub; não os
+  substitua por APIs ou conectores GitHub integrados ao harness. `gh api` pelo
+  executável local é permitido.
+- Use a autenticação existente, sem criar credenciais paralelas.
+- Respeite proteções de branches, CI, gates e autorizações de merge/deploy.
+  Criar um PR não autoriza merge ou deploy.
+- Não acrescente créditos de autoria a Codex, Claude Code, OpenAI ou Anthropic
+  em commits, PRs, código ou documentação, inclusive trailers `Co-authored-by`.
+  Preserve licenças, atribuições legais obrigatórias e histórico existente.
+- Consulte a skill `foundation-workflow` e os runbooks em `docs/runbooks/` para
+  o fluxo de trabalho e as operações do projeto.
