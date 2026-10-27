@@ -17,6 +17,62 @@ Hyperdrive e e-mail próprios. Nenhum recurso é transferido ou recriado pelo c�
 de preparação. Não há deploy do Links, migrations, Release ou dependência de
 publicação npm nesse workflow. Produção permanece fora deste procedimento.
 
+## Diagnóstico Cloudflare somente leitura
+
+O [workflow manual de diagnóstico](../../../.github/workflows/diagnose-levi-cloudflare.yml)
+é independente do publicador. **Sua preparação não autoriza integração ou execução:**
+primeiro revisar/integrar e depois executar somente sob autorização correspondente.
+Não usar o workflow de deploy, o Smoke Hyperdrive de outro produto, uma branch de
+PR ou a credencial local revogada para testar acesso.
+
+O diagnóstico usa somente o Environment **levi-dev do Foundation**, preservando sua
+política de master. Não pode consultar os secrets do original: `levi/dev` continua
+com `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_READ_TOKEN` **não testados** por esse fluxo.
+Não copiar esses valores ao Foundation nem inferir igualdade entre cadastros.
+
+Após integração e autorização, selecionar master e informar `execution_sha` igual
+ao SHA completo desse checkout. O input `token_type` define a rota de autenticação:
+`user` para `/user/tokens/verify` ou `account` para
+`/accounts/{account_id}/tokens/verify`, conforme metadados conhecidos do cadastro.
+Não há fallback de tipo/identidade após falha. O workflow exige ref/master,
+repositório Foundation e SHA exato; checkout não persiste credenciais e setup Node
+ocorre antes do step que recebe secrets. Não instala dependências, importa o app
+ou executa Wrangler; usa apenas Node e código integrado no repositório.
+
+O runner lê `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` do Environment e os IDs
+já cadastrados em variables. Não exige abrir DEPLOY_READY nem altera esse gate.
+É permitido diagnosticar com DEPLOY_READY=false; isso não habilita publicação.
+
+As chamadas são exclusivamente GET à API HTTPS Cloudflare, com timeout, sem retry
+ou redirects: autenticação, configuração Hyperdrive, metadados do Worker,
+domínio esperado, zona/rotas e versões/deployments. A listagem de versões é limitada
+às cinco mais recentes; consulta detalhes das versões ativas e até três recentes,
+no máximo cinco versões distintas. Reconsulta deployment e última enviada para
+indicar consistência do snapshot, sem coordenar ou impedir outro publicador.
+
+A saída JSON nos logs identifica o cadastro testado, status HTTP e resultados
+fechados, UUIDs de deployment/versão, tráfego e tags SHA válidas. De bindings e
+Hyperdrive emite somente verificações booleanas (`null` quando um campo opcional
+não foi informado), sem valores de secrets,
+remetente, seleção de organizações, usuários ou payload integral. Não cria
+artifacts, caches, arquivos de credenciais ou summary com dados brutos.
+Distingue 401, 403, 404, 429/5xx, erro de rede e resposta incompleta. Uma falha em
+um GET não muda a credencial nem impede registrar consultas independentes.
+
+`ok=true` significa autenticação ativa, consultas reconhecidas e snapshot estável;
+**não atesta prontidão de deploy, igualdade entre secrets, ausência de divergências
+de configuração nem recuperação homologada**. As verificações booleanas precisam
+ser lidas individualmente. Tráfego dividido ou uma versão enviada sem tráfego são
+registrados sem correção automática. Versões anteriores consultáveis são somente
+candidatas: recuperar exige comprovar Assets/recursos/configuração e obter
+outra autorização. Credenciais de escrita não são testadas com chamadas de escrita.
+
+Se houver 401, registrar somente o cadastro testado como rejeitado; 403 indica
+negação da consulta específica e 404 não deve ser tratado como invalidação global
+da credencial. Falhas transitórias não autorizam trocar token ou abrir gates.
+Não repetir automaticamente. Nenhum erro, header Authorization, fingerprint,
+texto remoto arbitrário ou valor de credencial deve ser anexado a logs/relatórios.
+
 ## CI, identidade e publicação
 
 A [CI raiz](../../../.github/workflows/ci.yml) valida PRs e pushes em master,
