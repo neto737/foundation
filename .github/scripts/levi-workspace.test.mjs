@@ -326,7 +326,12 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
     Object.values(publish.env)
       .filter((value) => value.includes("secrets."))
       .sort(),
-    ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "RESEND_API_KEY"]
+    [
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_TOKEN",
+      "RESEND_API_KEY",
+      "LEVI_AUTH_SECRET",
+    ]
       .map((name) => "${{ secrets." + name + " }}")
       .sort(),
   );
@@ -337,7 +342,7 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
     LEVI_EMAIL_FROM: "vars.LEVI_EMAIL_FROM",
   }))
     assert.equal(publish.env[internal], "${{ " + configured + " }}");
-  assert.equal(publish.env.LEVI_AUTH_SECRET, undefined);
+  assert.equal(publish.env.LEVI_AUTH_SECRET, "${{ secrets.LEVI_AUTH_SECRET }}");
   assert.equal(publish.env.AUTH_SECRET, undefined);
   assert.equal(publish.env.RESEND_API_KEY, "${{ secrets.RESEND_API_KEY }}");
   assert.equal(publish.if, undefined);

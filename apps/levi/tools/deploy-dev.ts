@@ -226,10 +226,13 @@ try {
   assert.deepEqual(beforeUpload, previous);
   diagnostics.start("secrets-file", "falha de operação local");
   const secretsPath = join(directory, "secrets.json");
-  // AUTH_SECRET/LEVI_AUTH_SECRET são deliberadamente omitidos: sem rotação implícita.
+  // Lista explícita: nunca incluir AUTH_SECRET legado ou credenciais do executor.
   await writeFile(
     secretsPath,
-    JSON.stringify({ RESEND_API_KEY: env.RESEND_API_KEY }),
+    JSON.stringify({
+      RESEND_API_KEY: env.RESEND_API_KEY,
+      LEVI_AUTH_SECRET: env.LEVI_AUTH_SECRET,
+    }),
     { mode: 0o600, flag: "wx" },
   );
   // Detecta mudanças durante o preflight; não substitui contenção entre repositórios.

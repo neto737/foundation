@@ -49,8 +49,10 @@ da primeira entrega.
   Publicador manual Levi integrado e transferência DEV concluída, com o original
   contido. A definição usa nomes canônicos LEVI_ no Environment `levi-dev` e o
   gate `LEVI_DEPLOY_READY`; a migração administrativa dos cadastros permanece
-  pendente antes de executar essa revisão. A autenticação remota continua
-  herdada, sem centralização integral. Versionamento privado segue pendente.
+  pendente antes de executar essa revisão. A sincronização da autenticação via
+  LEVI_AUTH_SECRET está preparada, mas sua primeira aplicação exige publicação
+  com troca de segredo expressamente autorizada; não foi executada nesta etapa.
+  Versionamento privado segue pendente.
 
 - Workspace pnpm com Turborepo e Node.js `>=22.22.0`.
 - TypeScript strict compartilhado em `@t00ls-dev/typescript-config`.
