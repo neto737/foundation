@@ -75,8 +75,8 @@ texto remoto arbitrário ou valor de credencial deve ser anexado a logs/relatór
 ## CI, identidade e publicação
 
 A [CI raiz](../../../.github/workflows/ci.yml) valida PRs e pushes em master,
-incluindo os gates do Foundation, quatro shards Links, duas distribuições públicas
-e os jobs próprios Levi de PostgreSQL/ACLs/Worker/E2E. O agregador `checks` exige
+incluindo os gates do Foundation e os jobs próprios Levi de
+PostgreSQL/ACLs/Worker/E2E. O agregador `checks` exige
 sucesso de todos os jobs de validação; falha, cancelamento, omissão e skip indevido
 bloqueiam o resultado. CI não recebe Environment ou secrets operacionais do Levi.
 
