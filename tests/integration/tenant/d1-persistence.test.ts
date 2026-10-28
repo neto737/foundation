@@ -9,7 +9,7 @@ import {
   resolveTenantContext,
   TenantAccessDeniedError,
 } from "@t00ls-dev/tenant";
-import { Miniflare } from "miniflare";
+import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 describe("D1 tenant persistence", () => {
@@ -17,11 +17,13 @@ describe("D1 tenant persistence", () => {
   let database: D1Database;
 
   beforeAll(async () => {
-    miniflare = new Miniflare({
-      d1Databases: ["DB"],
-      modules: true,
-      script: "export default { fetch() { return new Response('ok') } }",
-    });
+    miniflare = new Miniflare(
+      convertV4MiniflareOptions({
+        d1Databases: ["DB"],
+        modules: true,
+        script: "export default { fetch() { return new Response('ok') } }",
+      }),
+    );
     database = await miniflare.getD1Database("DB");
     await database.exec(D1_SCHEMA);
     await database.batch([

@@ -1,17 +1,19 @@
 import { createD1Database } from "@t00ls-dev/db/d1";
 import { sql } from "drizzle-orm";
-import { Miniflare } from "miniflare";
+import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 describe("D1 adapter", () => {
   let miniflare: Miniflare;
 
   beforeAll(() => {
-    miniflare = new Miniflare({
-      d1Databases: ["DB"],
-      modules: true,
-      script: "export default { fetch() { return new Response('ok') } }",
-    });
+    miniflare = new Miniflare(
+      convertV4MiniflareOptions({
+        d1Databases: ["DB"],
+        modules: true,
+        script: "export default { fetch() { return new Response('ok') } }",
+      }),
+    );
   });
   afterAll(async () => miniflare.dispose());
 
