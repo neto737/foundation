@@ -71,7 +71,7 @@ const hyperdrive = {
   },
 };
 
-test("deploy exige execução confiável manual da master e configuração completa, sem credenciais de migrations", () => {
+void test("deploy exige execução confiável manual da master e configuração completa, sem credenciais de migrations", () => {
   assert.equal(deploySettings(valid).sha, valid.GITHUB_SHA);
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
@@ -102,7 +102,7 @@ test("deploy exige execução confiável manual da master e configuração compl
     assert.throws(() => deploySettings({ ...valid, ...changes }));
 });
 
-test("Hyperdrive exige cache desabilitado, recurso e role exclusivos e alvo DEV esperado", () => {
+void test("Hyperdrive exige cache desabilitado, recurso e role exclusivos e alvo DEV esperado", () => {
   verifyHyperdrive(hyperdrive, valid);
   for (const changes of [
     { id: "d".repeat(32) },
@@ -119,16 +119,49 @@ test("Hyperdrive exige cache desabilitado, recurso e role exclusivos e alvo DEV 
     assert.throws(() => verifyHyperdrive({ ...hyperdrive, ...changes }, valid));
 });
 
-test("configuração temporária preserva logs fechados e não altera Wrangler local", async () => {
+async function readWorkerConfig() {
   const parsed = ts.parseConfigFileTextToJson(
     "wrangler.jsonc",
     await readFile("wrangler.jsonc", "utf8"),
   );
   assert.ok(!parsed.error);
-  const original = JSON.stringify(parsed.config);
-  const result = deploymentConfig(parsed.config, valid.LEVI_HYPERDRIVE_ID!);
-  assert.equal(JSON.stringify(parsed.config), original);
-  assert.deepEqual(parsed.config.routes, []);
+  const config: unknown = parsed.config;
+  assert.ok(config && typeof config === "object");
+  assert.ok("vars" in config && config.vars && typeof config.vars === "object");
+  assert.ok("routes" in config);
+  assert.ok("observability" in config);
+  const observability = config.observability;
+  assert.ok(observability && typeof observability === "object");
+  assert.ok("enabled" in observability);
+  assert.ok(
+    "logs" in observability &&
+      observability.logs &&
+      typeof observability.logs === "object",
+  );
+  assert.ok(
+    "traces" in observability &&
+      observability.traces &&
+      typeof observability.traces === "object",
+  );
+  assert.ok("invocation_logs" in observability.logs);
+  assert.ok("enabled" in observability.traces);
+  return {
+    ...config,
+    observability: {
+      ...observability,
+      logs: observability.logs,
+      traces: observability.traces,
+    },
+    vars: config.vars,
+  };
+}
+
+void test("configuração temporária preserva logs fechados e não altera Wrangler local", async () => {
+  const base = await readWorkerConfig();
+  const original = JSON.stringify(base);
+  const result = deploymentConfig(base, valid.LEVI_HYPERDRIVE_ID);
+  assert.equal(JSON.stringify(base), original);
+  assert.deepEqual(base.routes, []);
   assert.deepEqual(result.routes, [
     { pattern: "levi.t00ls.dev", custom_domain: true },
   ]);
@@ -139,37 +172,32 @@ test("configuração temporária preserva logs fechados e não altera Wrangler l
     "LEVI_AUTH_SECRET",
     "RESEND_API_KEY",
   ]);
-  assert.equal(result.observability.enabled, false);
-  assert.equal(result.observability.logs.invocation_logs, false);
-  assert.equal(result.observability.traces.enabled, false);
-  assert.ok(!JSON.stringify(result).includes(valid.LEVI_AUTH_SECRET!));
+  assert.deepEqual(result.observability, base.observability);
+  assert.equal(base.observability.enabled, false);
+  assert.equal(base.observability.logs.invocation_logs, false);
+  assert.equal(base.observability.traces.enabled, false);
+  assert.ok(!JSON.stringify(result).includes(valid.LEVI_AUTH_SECRET));
   assert.throws(() =>
-    deploymentConfig(
-      { ...parsed.config, workers_dev: true },
-      valid.LEVI_HYPERDRIVE_ID!,
-    ),
+    deploymentConfig({ ...base, workers_dev: true }, valid.LEVI_HYPERDRIVE_ID),
   );
   assert.throws(() =>
-    deploymentConfig(
-      { ...parsed.config, preview_urls: true },
-      valid.LEVI_HYPERDRIVE_ID!,
-    ),
+    deploymentConfig({ ...base, preview_urls: true }, valid.LEVI_HYPERDRIVE_ID),
   );
   assert.throws(() =>
     deploymentConfig(
       {
-        ...parsed.config,
+        ...base,
         observability: {
-          ...parsed.config.observability,
+          ...base.observability,
           logs: { enabled: false, invocation_logs: true },
         },
       },
-      valid.LEVI_HYPERDRIVE_ID!,
+      valid.LEVI_HYPERDRIVE_ID,
     ),
   );
 });
 
-test("CLI sem contexto autorizado falha antes de qualquer rede e sanitiza valores privados", () => {
+void test("CLI sem contexto autorizado falha antes de qualquer rede e sanitiza valores privados", () => {
   const result = spawnSync(
     process.execPath,
     ["--import", "tsx", "tools/deploy-dev.ts"],
@@ -183,7 +211,7 @@ test("CLI sem contexto autorizado falha antes de qualquer rede e sanitiza valore
   assert.ok(output.includes("etapa: configuração"));
   assert.ok(output.includes("verificação: contexto e configuração DEV"));
   assert.ok(output.includes("categoria: divergência de configuração"));
-  assert.ok(!output.includes(valid.LEVI_AUTH_SECRET!));
+  assert.ok(!output.includes(valid.LEVI_AUTH_SECRET));
   assert.ok(!output.includes("AssertionError"));
 });
 
@@ -239,72 +267,91 @@ async function simulatedDeploy(
         `Bearer ${valid.CLOUDFLARE_API_TOKEN}`,
       );
     const override = options.respond?.(input, uploads > 0);
-    if (override) return override;
+    if (override) return Promise.resolve(override);
     const url = new URL(input);
     if (url.hostname === "api.github.com")
-      return Response.json({ object: { sha: valid.GITHUB_SHA } });
+      return Promise.resolve(
+        Response.json({ object: { sha: valid.GITHUB_SHA } }),
+      );
     if (url.pathname.includes("/hyperdrive/configs/"))
-      return cloudflare(hyperdrive);
+      return Promise.resolve(cloudflare(hyperdrive));
     if (url.pathname.endsWith("/subdomain"))
-      return cloudflare({ enabled: false, previews_enabled: false });
+      return Promise.resolve(
+        cloudflare({ enabled: false, previews_enabled: false }),
+      );
     if (url.pathname.endsWith("/workers/domains"))
-      return cloudflare([
-        {
-          hostname: "levi.t00ls.dev",
-          service: "levi-dev",
-          zone_id: valid.CLOUDFLARE_ZONE_ID,
-          enabled: true,
-          previews_enabled: false,
-        },
-      ]);
-    if (url.pathname.endsWith("/workers/routes")) return cloudflare([]);
-    if (url.pathname.includes("/zones/"))
-      return cloudflare({
-        name: "t00ls.dev",
-        account: { id: valid.CLOUDFLARE_ACCOUNT_ID },
-      });
-    if (url.pathname.endsWith("/deployments"))
-      return cloudflare({
-        deployments: [
+      return Promise.resolve(
+        cloudflare([
           {
-            versions: [
-              {
-                version_id: uploads ? versionId : previousVersionId,
-                percentage: 100,
-              },
-            ],
+            hostname: "levi.t00ls.dev",
+            service: "levi-dev",
+            zone_id: valid.CLOUDFLARE_ZONE_ID,
+            enabled: true,
+            previews_enabled: false,
           },
-        ],
-      });
+        ]),
+      );
+    if (url.pathname.endsWith("/workers/routes"))
+      return Promise.resolve(cloudflare([]));
+    if (url.pathname.includes("/zones/"))
+      return Promise.resolve(
+        cloudflare({
+          name: "t00ls.dev",
+          account: { id: valid.CLOUDFLARE_ACCOUNT_ID },
+        }),
+      );
+    if (url.pathname.endsWith("/deployments"))
+      return Promise.resolve(
+        cloudflare({
+          deployments: [
+            {
+              versions: [
+                {
+                  version_id: uploads ? versionId : previousVersionId,
+                  percentage: 100,
+                },
+              ],
+            },
+          ],
+        }),
+      );
     if (url.pathname.includes("/versions/"))
-      return cloudflare({
-        annotations: {
-          "workers/tag": uploads ? valid.GITHUB_SHA : "e".repeat(40),
-        },
-        resources: {
-          bindings: baseBindings,
-        },
-      });
+      return Promise.resolve(
+        cloudflare({
+          annotations: {
+            "workers/tag": uploads ? valid.GITHUB_SHA : "e".repeat(40),
+          },
+          resources: {
+            bindings: baseBindings,
+          },
+        }),
+      );
     if (url.pathname.endsWith("/versions"))
-      return cloudflare({
-        items: [{ id: uploads ? versionId : previousVersionId }],
-      });
+      return Promise.resolve(
+        cloudflare({
+          items: [{ id: uploads ? versionId : previousVersionId }],
+        }),
+      );
     if (url.hostname === "levi.t00ls.dev") {
       if (url.pathname === "/")
-        return new Response("<html></html>", {
-          headers: { ...headers, "content-type": "text/html" },
-        });
+        return Promise.resolve(
+          new Response("<html></html>", {
+            headers: { ...headers, "content-type": "text/html" },
+          }),
+        );
       if (url.pathname === "/api/onboarding")
-        return Response.json({ etapa: "email" }, { headers });
+        return Promise.resolve(Response.json({ etapa: "email" }, { headers }));
       if (url.pathname === "/api/members")
-        return new Response(null, {
-          status: 401,
-          headers,
-        });
+        return Promise.resolve(
+          new Response(null, {
+            status: 401,
+            headers,
+          }),
+        );
       if (["/admin", "/api/admin/session"].includes(url.pathname))
-        return new Response(null, { status: 404, headers });
+        return Promise.resolve(new Response(null, { status: 404, headers }));
       if (["/api/organizations", "/api/churches"].includes(url.pathname))
-        return new Response(null, { status: 401, headers });
+        return Promise.resolve(new Response(null, { status: 401, headers }));
     }
     throw new Error("Request não previsto no harness");
   };
@@ -319,7 +366,8 @@ async function simulatedDeploy(
               JSON.parse(JSON.stringify(actual)),
               JSON.parse(JSON.stringify(expected)),
             );
-        return Reflect.get(target, key, receiver);
+        const value: unknown = Reflect.get(target, key, receiver);
+        return value;
       },
     }),
     "node:path": { join, resolve },
@@ -376,12 +424,13 @@ async function simulatedDeploy(
       },
     },
     "node:fs/promises": {
-      readFile: async () => baseConfig,
+      readFile: async () => Promise.resolve(baseConfig),
       statfs: async (path: string) => {
         assert.equal(path, "/dev/shm");
-        return { type: options.memoryType ?? 0x01021994 };
+        return Promise.resolve({ type: options.memoryType ?? 0x01021994 });
       },
-      mkdtemp: async (prefix: string) => prefix + "synthetic-only",
+      mkdtemp: async (prefix: string) =>
+        Promise.resolve(prefix + "synthetic-only"),
       writeFile: async (
         path: string,
         contents: string,
@@ -393,18 +442,24 @@ async function simulatedDeploy(
         if (path.endsWith("secrets.json")) {
           assert.equal(settings.flag, "wx");
           if (options.secretWriteError) throw options.secretWriteError;
-          writtenSecrets = JSON.parse(contents);
+          const secrets: unknown = JSON.parse(contents);
+          assert.ok(secrets && typeof secrets === "object");
+          writtenSecrets = Object.fromEntries(Object.entries(secrets));
         } else {
           assert.ok(!contents.includes(valid.RESEND_API_KEY));
           assert.ok(!contents.includes(valid.LEVI_AUTH_SECRET));
           assert.ok(!contents.includes(valid.LEVI_ADMIN_EMAIL));
-          writtenVars = JSON.parse(contents).vars;
+          const config: unknown = JSON.parse(contents);
+          assert.ok(config && typeof config === "object" && "vars" in config);
+          writtenVars = config.vars;
         }
         writes.push({ path, mode: settings.mode });
+        return Promise.resolve();
       },
       rm: async () => {
         cleanups++;
         if (options.cleanupError) throw options.cleanupError;
+        return Promise.resolve();
       },
     },
     typescript: ts,
@@ -422,12 +477,12 @@ async function simulatedDeploy(
     "./ci-evidence.js": {
       requireSuccessfulCI: async () => {
         ciCalls++;
-        return (
+        return Promise.resolve(
           options.ciEvidence?.(ciCalls) ?? {
             sha: valid.GITHUB_SHA,
             runId: 1,
             attempt: 1,
-          }
+          },
         );
       },
     },
@@ -474,7 +529,7 @@ async function simulatedDeploy(
   };
 }
 
-test("readiness inválido bloqueia antes de CI, consultas, arquivos e upload", async () => {
+void test("readiness inválido bloqueia antes de CI, consultas, arquivos e upload", async () => {
   for (const value of [
     undefined,
     "",
@@ -493,7 +548,7 @@ test("readiness inválido bloqueia antes de CI, consultas, arquivos e upload", a
   }
 });
 
-test("token único ausente não usa token legado nem inicia operação privilegiada", async () => {
+void test("token único ausente não usa token legado nem inicia operação privilegiada", async () => {
   const result = await simulatedDeploy({
     env: {
       CLOUDFLARE_API_TOKEN: undefined,
@@ -510,7 +565,7 @@ test("token único ausente não usa token legado nem inicia operação privilegi
 const sensitive =
   "postgres://user:private-password@private.invalid/db?token=private-token\nAuthorization: Bearer private-token\nCookie: session=private-cookie";
 
-test("diagnóstico: sucesso conserva publicação única, checks, arquivos privados e limpeza", async () => {
+void test("diagnóstico: sucesso conserva publicação única, checks, arquivos privados e limpeza", async () => {
   const result = await simulatedDeploy();
   assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
@@ -532,10 +587,10 @@ test("diagnóstico: sucesso conserva publicação única, checks, arquivos priva
     "/api/members",
   ])
     assert.ok(result.requests.includes(`https://levi.t00ls.dev${path}`));
-  assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET!));
+  assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
 });
 
-test("diagnóstico: HTTP pós-upload identifica operação/status e interrompe sem retry", async () => {
+void test("diagnóstico: HTTP pós-upload identifica operação/status e interrompe sem retry", async () => {
   const result = await simulatedDeploy({
     respond: (url, published) =>
       published && url.endsWith("/deployments")
@@ -560,7 +615,7 @@ test("diagnóstico: HTTP pós-upload identifica operação/status e interrompe s
   assert.ok(!result.output.includes("private-"));
 });
 
-test("diagnóstico: HTTP anterior ao upload interrompe sem chamar o publicador", async () => {
+void test("diagnóstico: HTTP anterior ao upload interrompe sem chamar o publicador", async () => {
   const result = await simulatedDeploy({
     respond: (url) =>
       url.includes("/hyperdrive/configs/")
@@ -577,7 +632,7 @@ test("diagnóstico: HTTP anterior ao upload interrompe sem chamar o publicador",
   assert.ok(!result.output.includes("private-"));
 });
 
-test("diagnóstico: JSON inválido e envelope reprovado são respostas inesperadas sem corpo privado", async () => {
+void test("diagnóstico: JSON inválido e envelope reprovado são respostas inesperadas sem corpo privado", async () => {
   for (const response of [
     new Response(sensitive),
     Response.json({ success: false, errors: [{ message: sensitive }] }),
@@ -595,7 +650,7 @@ test("diagnóstico: JSON inválido e envelope reprovado são respostas inesperad
   }
 });
 
-test("diagnóstico: formato inválido e tráfego divergente mantêm HTTP sem aceitar deployment incompleto", async () => {
+void test("diagnóstico: formato inválido e tráfego divergente mantêm HTTP sem aceitar deployment incompleto", async () => {
   for (const [resultBody, category, check] of [
     [
       { deployments: [] },
@@ -628,7 +683,7 @@ test("diagnóstico: formato inválido e tráfego divergente mantêm HTTP sem ace
   }
 });
 
-test("diagnóstico: divergências de proteção e tag localizam check sem imprimir valores recebidos", async () => {
+void test("diagnóstico: divergências de proteção e tag localizam check sem imprimir valores recebidos", async () => {
   for (const [operation, expected] of [
     ["hyperdrive", "origem e cache do Hyperdrive"],
     ["tag", "tag da versão ativa igual ao SHA"],
@@ -662,7 +717,7 @@ test("diagnóstico: divergências de proteção e tag localizam check sem imprim
   }
 });
 
-test("diagnóstico: falha de rede preserva apenas código técnico conhecido", async () => {
+void test("diagnóstico: falha de rede preserva apenas código técnico conhecido", async () => {
   const result = await simulatedDeploy({
     respond: (url) => {
       if (url.endsWith("/deployments"))
@@ -688,7 +743,7 @@ test("diagnóstico: falha de rede preserva apenas código técnico conhecido", a
   );
 });
 
-test("diagnóstico: resposta pública divergente mantém 401 obrigatório e interrompe o smoke", async () => {
+void test("diagnóstico: resposta pública divergente mantém 401 obrigatório e interrompe o smoke", async () => {
   const result = await simulatedDeploy({
     respond: (url) =>
       url === "https://levi.t00ls.dev/api/organizations"
@@ -711,7 +766,7 @@ test("diagnóstico: resposta pública divergente mantém 401 obrigatório e inte
   assert.ok(!result.output.includes("private-"));
 });
 
-test("diagnóstico: falha na limpeza preserva exit 1 e não expõe caminhos privados", async () => {
+void test("diagnóstico: falha na limpeza preserva exit 1 e não expõe caminhos privados", async () => {
   const result = await simulatedDeploy({
     cleanupError: Object.assign(new Error(sensitive), { code: "EACCES" }),
   });
@@ -725,9 +780,9 @@ test("diagnóstico: falha na limpeza preserva exit 1 e não expõe caminhos priv
   assert.ok(!result.output.includes("private-"));
 });
 
-test("diagnóstico alinhado ao Foundation: erros hostis não acionam getters, proxies ou coerção", () => {
+void test("diagnóstico alinhado ao Foundation: erros hostis não acionam getters, proxies ou coerção", () => {
   let touched = 0;
-  const hostile = Object.create(
+  const hostile: unknown = Object.create(
     null,
     Object.fromEntries(
       ["code", "cause", "name", "message", "stack", "toJSON"].map((key) => [
@@ -787,7 +842,7 @@ test("diagnóstico alinhado ao Foundation: erros hostis não acionam getters, pr
   assert.equal(touched, 0);
 });
 
-test("diagnóstico alinhado ao Foundation: causas são próprias, fechadas, limitadas e cíclicas-seguras", () => {
+void test("diagnóstico alinhado ao Foundation: causas são próprias, fechadas, limitadas e cíclicas-seguras", () => {
   assert.equal(
     classifyDeployError(
       new Error(sensitive, { cause: { cause: { code: "ECONNRESET" } } }),
@@ -803,7 +858,7 @@ test("diagnóstico alinhado ao Foundation: causas são próprias, fechadas, limi
   assert.equal(classifyDeployError(deep), "UNKNOWN");
 });
 
-test("diagnóstico alinhado ao Foundation: catálogos e status são validados também em runtime", () => {
+void test("diagnóstico alinhado ao Foundation: catálogos e status são validados também em runtime", () => {
   const output: string[] = [];
   const diagnostics = new DeployDiagnostics((message) => output.push(message));
   diagnostics.phase = sensitive as never;
@@ -820,11 +875,10 @@ test("diagnóstico alinhado ao Foundation: catálogos e status são validados ta
   assert.ok(output.every((line) => !line.includes("private-")));
 });
 
-test("diagnóstico alinhado ao Foundation: HTTP vem somente da resposta atual, incluindo 401 esperado do Levi", async () => {
+void test("diagnóstico alinhado ao Foundation: HTTP vem somente da resposta atual, incluindo 401 esperado do Levi", async () => {
   const diagnostics = new DeployDiagnostics();
-  await diagnostics.request(
-    "deployments-read",
-    async () => new Response(sensitive, { status: 503 }),
+  await diagnostics.request("deployments-read", async () =>
+    Promise.resolve(new Response(sensitive, { status: 503 })),
   );
   assert.ok(
     diagnostics
@@ -833,11 +887,15 @@ test("diagnóstico alinhado ao Foundation: HTTP vem somente da resposta atual, i
   );
   diagnostics.inspect("deployment-shape", "resposta inesperada");
   assert.ok(diagnostics.message(null).includes("status HTTP: 503"));
-  const original = { cause: { code: "ENOTFOUND" }, status: 502 };
+  const original: unknown = { cause: { code: "ENOTFOUND" }, status: 502 };
   await assert.rejects(
-    diagnostics.request("version-read", async () => {
-      throw original;
-    }),
+    diagnostics.request(
+      "version-read",
+      () =>
+        new Promise<Response>(() => {
+          throw original;
+        }),
+    ),
     (error) => error === original,
   );
   assert.ok(
@@ -849,7 +907,7 @@ test("diagnóstico alinhado ao Foundation: HTTP vem somente da resposta atual, i
   );
   await diagnostics.request(
     "organizations-read",
-    async () => new Response(null, { status: 401 }),
+    async () => Promise.resolve(new Response(null, { status: 401 })),
     401,
   );
   assert.ok(
@@ -865,7 +923,7 @@ test("diagnóstico alinhado ao Foundation: HTTP vem somente da resposta atual, i
   );
 });
 
-test("diagnóstico alinhado ao Foundation: falha e duplicação do diagnóstico não alteram operações", async () => {
+void test("diagnóstico alinhado ao Foundation: falha e duplicação do diagnóstico não alteram operações", async () => {
   const diagnostics = new DeployDiagnostics(() => {
     throw new Error(sensitive);
   });
@@ -890,13 +948,13 @@ test("diagnóstico alinhado ao Foundation: falha e duplicação do diagnóstico 
   );
   await assert.rejects(
     diagnostics.request("version-read", async () => {
-      throw other;
+      return Promise.reject(other);
     }),
     (error) => error === other,
   );
 });
 
-test("diagnóstico: logger de progresso reprovado não impede sucesso e logger de erro não impede exit 1", async () => {
+void test("diagnóstico: logger de progresso reprovado não impede sucesso e logger de erro não impede exit 1", async () => {
   const success = await simulatedDeploy({ failProgress: true });
   assert.equal(success.exitCode, 0);
   assert.equal(success.uploads, 1);
@@ -920,7 +978,7 @@ test("diagnóstico: logger de progresso reprovado não impede sucesso e logger d
   }
 });
 
-test("diagnóstico: status público reprovado é HTTP mesmo se cabeçalhos faltarem", async () => {
+void test("diagnóstico: status público reprovado é HTTP mesmo se cabeçalhos faltarem", async () => {
   const failure = await simulatedDeploy({
     respond: (url) =>
       url === "https://levi.t00ls.dev/"
@@ -936,12 +994,9 @@ test("diagnóstico: status público reprovado é HTTP mesmo se cabeçalhos falta
   assert.ok(!failure.output.includes("private-"));
 });
 
-test("deploy não configura recorte de membros e aceita binding legado sem compará-lo", async () => {
-  const parsed = ts.parseConfigFileTextToJson(
-    "wrangler.jsonc",
-    await readFile("wrangler.jsonc", "utf8"),
-  );
-  const config = deploymentConfig(parsed.config, valid.LEVI_HYPERDRIVE_ID!);
+void test("deploy não configura recorte de membros e aceita binding legado sem compará-lo", async () => {
+  const base = await readWorkerConfig();
+  const config = deploymentConfig(base, valid.LEVI_HYPERDRIVE_ID);
   assert.equal("LEVI_MEMBERS_DEV_ORGANIZATIONS" in config.vars, false);
   const workflow = await readFile(
     "../../.github/workflows/deploy-levi-dev.yml",
@@ -977,13 +1032,13 @@ test("deploy não configura recorte de membros e aceita binding legado sem compa
     assert.equal(result.exitCode, 0, result.output);
     assert.equal(result.uploads, 1);
     assert.deepEqual(result.writtenVars, {
-      ...parsed.config.vars,
+      ...base.vars,
       LEVI_EMAIL_FROM: valid.LEVI_EMAIL_FROM,
     });
   }
 });
 
-test("versão ativa exige binding único e ID esperado", async () => {
+void test("versão ativa exige binding único e ID esperado", async () => {
   const binding = {
     type: "hyperdrive",
     name: "HYPERDRIVE",
@@ -1023,7 +1078,7 @@ test("versão ativa exige binding único e ID esperado", async () => {
   }
 });
 
-test("smoke exige membros bloqueados e não registra corpo de resposta divergente", async () => {
+void test("smoke exige membros bloqueados e não registra corpo de resposta divergente", async () => {
   const result = await simulatedDeploy({
     respond: (url) =>
       url === "https://levi.t00ls.dev/api/members"
@@ -1035,7 +1090,7 @@ test("smoke exige membros bloqueados e não registra corpo de resposta divergent
   assert.ok(!result.output.includes("private-"));
 });
 
-test("deploy não envia um SHA que ficou obsoleto durante a preparação", async () => {
+void test("deploy não envia um SHA que ficou obsoleto durante a preparação", async () => {
   let reads = 0;
   const result = await simulatedDeploy({
     respond: (url) => {
@@ -1052,11 +1107,11 @@ test("deploy não envia um SHA que ficou obsoleto durante a preparação", async
   assert.equal(result.cleanups, 1);
 });
 
-test("deploy recusa CI substituída imediatamente antes do upload e limpa arquivos privados", async () => {
+void test("deploy recusa CI substituída imediatamente antes do upload e limpa arquivos privados", async () => {
   for (const scenario of ["attempt", "run"] as const) {
     const result = await simulatedDeploy({
       ciEvidence: (call) => ({
-        sha: valid.GITHUB_SHA!,
+        sha: valid.GITHUB_SHA,
         runId: scenario === "run" && call === 2 ? 2 : 1,
         attempt: scenario === "attempt" && call === 2 ? 2 : 1,
       }),
@@ -1070,7 +1125,7 @@ test("deploy recusa CI substituída imediatamente antes do upload e limpa arquiv
   }
 });
 
-test("transferência recusa Worker/domínio ausente e 403 antes de arquivos ou upload", async () => {
+void test("transferência recusa Worker/domínio ausente e 403 antes de arquivos ou upload", async () => {
   for (const [path, response] of [
     ["/subdomain", new Response(null, { status: 404 })],
     ["/workers/domains", Response.json({ success: true, result: [] })],
@@ -1088,7 +1143,7 @@ test("transferência recusa Worker/domínio ausente e 403 antes de arquivos ou u
   }
 });
 
-test("sincroniza autenticação e Resend exclusivamente do contrato canônico, sem legado", async () => {
+void test("sincroniza autenticação e Resend exclusivamente do contrato canônico, sem legado", async () => {
   const result = await simulatedDeploy({ env: { AUTH_SECRET: undefined } });
   assert.equal(result.exitCode, 0, result.output);
   assert.equal(result.uploads, 1);
@@ -1103,7 +1158,7 @@ test("sincroniza autenticação e Resend exclusivamente do contrato canônico, s
   assert.ok(!result.output.includes(valid.LEVI_AUTH_SECRET));
 });
 
-test("transferência bloqueia divergência de remetente e ausência de Assets/secrets", async () => {
+void test("transferência bloqueia divergência de remetente e ausência de Assets/secrets", async () => {
   for (const bindings of [
     baseBindings.filter((b) => b.name !== "ASSETS"),
     baseBindings.filter((b) => b.name !== "LEVI_AUTH_SECRET"),
@@ -1132,7 +1187,7 @@ test("transferência bloqueia divergência de remetente e ausência de Assets/se
   }
 });
 
-test("transferência não herda secrets de versão enviada sem tráfego", async () => {
+void test("transferência não herda secrets de versão enviada sem tráfego", async () => {
   const result = await simulatedDeploy({
     respond: (url) =>
       url.endsWith("/versions")
@@ -1150,7 +1205,7 @@ test("transferência não herda secrets de versão enviada sem tráfego", async 
   );
 });
 
-test("transferência interrompe se versão ativa mudar entre preflight e upload", async () => {
+void test("transferência interrompe se versão ativa mudar entre preflight e upload", async () => {
   let reads = 0;
   const result = await simulatedDeploy({
     respond: (url) => {
@@ -1179,7 +1234,7 @@ test("transferência interrompe se versão ativa mudar entre preflight e upload"
   assert.ok(result.output.includes("versão ativa inalterada antes do upload"));
 });
 
-test("smokes administrativos exigem 404 e no-store sem expor respostas", async () => {
+void test("smokes administrativos exigem 404 e no-store sem expor respostas", async () => {
   for (const path of ["/admin", "/api/admin/session"]) {
     for (const status of [200, 404]) {
       const result = await simulatedDeploy({
@@ -1201,7 +1256,7 @@ test("smokes administrativos exigem 404 e no-store sem expor respostas", async (
   }
 });
 
-test("domínio exige roteamento público ativo e previews fechados antes e depois do upload", async () => {
+void test("domínio exige roteamento público ativo e previews fechados antes e depois do upload", async () => {
   for (const published of [false, true]) {
     for (const state of [
       { enabled: false, previews_enabled: true },
@@ -1280,7 +1335,7 @@ function transferResponse(
   return Response.json({ success: true, result });
 }
 
-test("primeiro corte permite noreply apenas no UUID/SHA original e publica hi estritamente", async () => {
+void test("primeiro corte permite noreply apenas no UUID/SHA original e publica hi estritamente", async () => {
   for (const previous of [
     originalTransferVersion,
     { ...originalTransferVersion, from: valid.LEVI_EMAIL_FROM },
@@ -1293,11 +1348,11 @@ test("primeiro corte permite noreply apenas no UUID/SHA original e publica hi es
     assert.equal(result.uploads, 1);
     assert.equal(result.cleanups, 1);
     assert.equal(result.writes.length, 2);
-    assert.ok(!result.output.includes(valid.CLOUDFLARE_API_TOKEN!));
+    assert.ok(!result.output.includes(valid.CLOUDFLARE_API_TOKEN));
   }
 });
 
-test("corte recusa remetente anterior inesperado e não estende exceção para outra versão/SHA", async () => {
+void test("corte recusa remetente anterior inesperado e não estende exceção para outra versão/SHA", async () => {
   for (const previous of [
     {
       ...originalTransferVersion,
@@ -1317,7 +1372,7 @@ test("corte recusa remetente anterior inesperado e não estende exceção para o
   }
 });
 
-test("corte detecta troca de remetente entre snapshots mesmo com UUID/SHA iguais", async () => {
+void test("corte detecta troca de remetente entre snapshots mesmo com UUID/SHA iguais", async () => {
   let reads = 0;
   const result = await simulatedDeploy({
     respond: (url, published) => {
@@ -1341,7 +1396,7 @@ test("corte detecta troca de remetente entre snapshots mesmo com UUID/SHA iguais
   assert.equal(result.uploads, 0);
 });
 
-test("pós-upload recusa noreply e terceiros, sem repetir upload ou usar a exceção inicial", async () => {
+void test("pós-upload recusa noreply e terceiros, sem repetir upload ou usar a exceção inicial", async () => {
   for (const from of [
     originalTransferVersion.from,
     "Levi <private-sender@unexpected.example>",
@@ -1362,7 +1417,7 @@ test("pós-upload recusa noreply e terceiros, sem repetir upload ou usar a exce�
   }
 });
 
-test("compatibilidade inicial mantém Assets, secrets e recursos obrigatórios", () => {
+void test("compatibilidade inicial mantém Assets, secrets e recursos obrigatórios", () => {
   const legacyBindings = baseBindings.map((binding) =>
     binding.name === "LEVI_EMAIL_FROM"
       ? { ...binding, text: originalTransferVersion.from }
@@ -1394,7 +1449,7 @@ test("compatibilidade inicial mantém Assets, secrets e recursos obrigatórios",
   }
 });
 
-test("Resend ausente falha antes de CI, leitura remota e upload, sem fallback", async () => {
+void test("Resend ausente falha antes de CI, leitura remota e upload, sem fallback", async () => {
   for (const key of [undefined, "", "   "]) {
     const result = await simulatedDeploy({ env: { RESEND_API_KEY: key } });
     assert.equal(result.exitCode, 1);
@@ -1405,7 +1460,7 @@ test("Resend ausente falha antes de CI, leitura remota e upload, sem fallback", 
   }
 });
 
-test("secrets recusam disco persistente e falha de escrita, limpando sem upload", async () => {
+void test("secrets recusam disco persistente e falha de escrita, limpando sem upload", async () => {
   for (const failure of [
     { memoryType: 0xef53 },
     { secretWriteError: new Error(sensitive) },
@@ -1420,7 +1475,7 @@ test("secrets recusam disco persistente e falha de escrita, limpando sem upload"
   }
 });
 
-test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar novamente", async () => {
+void test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar novamente", async () => {
   const result = await simulatedDeploy({
     uploadError: new Error(
       valid.RESEND_API_KEY +
@@ -1437,7 +1492,7 @@ test("falha Wrangler não vaza secrets nem saída bruta e não tenta publicar no
   assert.ok(!result.output.includes("private-"));
 });
 
-test("workflow recebe somente nomes canônicos no publish do Environment, sem AUTH_SECRET legado", async () => {
+void test("workflow recebe somente nomes canônicos no publish do Environment, sem AUTH_SECRET legado", async () => {
   const workflow = await readFile(
     "../../.github/workflows/deploy-levi-dev.yml",
     "utf8",
@@ -1452,7 +1507,7 @@ test("workflow recebe somente nomes canônicos no publish do Environment, sem AU
   assert.ok(workflow.indexOf(authentication) > workflow.indexOf("id: publish"));
 });
 
-test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazamento", async () => {
+void test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazamento", async () => {
   assert.equal((await statfs("/dev/shm")).type, 0x01021994);
   const directory = await mkdtemp("/dev/shm/levi-dev-wrangler-test-");
   const key = "synthetic-resend-dry-run-not-real";
@@ -1521,7 +1576,7 @@ test("Wrangler fixado aceita secrets em tmpfs no mesmo deploy dry-run, sem vazam
   }
 });
 
-test("entradas internas ausentes bloqueiam mesmo com configurações legadas preenchidas", async () => {
+void test("entradas internas ausentes bloqueiam mesmo com configurações legadas preenchidas", async () => {
   const legacy = {
     EMAIL_FROM: valid.LEVI_EMAIL_FROM,
     HYPERDRIVE_ID: valid.LEVI_HYPERDRIVE_ID,
@@ -1549,7 +1604,7 @@ test("entradas internas ausentes bloqueiam mesmo com configurações legadas pre
   }
 });
 
-test("LEVI_AUTH_SECRET ausente ou curto bloqueia antes de I/O mesmo com AUTH_SECRET legado", async () => {
+void test("LEVI_AUTH_SECRET ausente ou curto bloqueia antes de I/O mesmo com AUTH_SECRET legado", async () => {
   for (const value of [undefined, "", "   ", "x".repeat(31)]) {
     const result = await simulatedDeploy({
       env: { LEVI_AUTH_SECRET: value, AUTH_SECRET: valid.LEVI_AUTH_SECRET },
@@ -1563,7 +1618,7 @@ test("LEVI_AUTH_SECRET ausente ou curto bloqueia antes de I/O mesmo com AUTH_SEC
   }
 });
 
-test("e-mail administrativo é privado, normalizado e sobrescrito para negar quando ausente/inválido", async () => {
+void test("e-mail administrativo é privado, normalizado e sobrescrito para negar quando ausente/inválido", async () => {
   for (const configured of [
     undefined,
     "",
@@ -1592,7 +1647,7 @@ test("e-mail administrativo é privado, normalizado e sobrescrito para negar qua
   assert.ok(!diagnostic.includes("LEVI_ADMIN_EMAIL"));
 });
 
-test("publicação exige o binding administrativo privado sem bloquear versões anteriores que não o possuem", async () => {
+void test("publicação exige o binding administrativo privado sem bloquear versões anteriores que não o possuem", async () => {
   const withoutAdmin = baseBindings.filter(
     (binding) => binding.name !== "LEVI_ADMIN_EMAIL",
   );

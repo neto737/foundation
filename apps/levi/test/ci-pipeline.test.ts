@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-test("agregador CI recusa falha, cancelamento, omissão e job inesperado", () => {
+void test("agregador CI recusa falha, cancelamento, omissão e job inesperado", () => {
   const success = Object.fromEntries(
     ["static", "tests", "e2e"].map((name) => [name, { result: "success" }]),
   );
@@ -36,7 +36,7 @@ test("agregador CI recusa falha, cancelamento, omissão e job inesperado", () =>
   }
 });
 
-test("resumo de deploy usa apenas estados e SHA válidos, sem ecoar entradas privadas", async () => {
+void test("resumo de deploy usa apenas estados e SHA válidos, sem ecoar entradas privadas", async () => {
   const directory = await mkdtemp(join(tmpdir(), "levi-summary-"));
   try {
     const file = join(directory, "summary.md");
