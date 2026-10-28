@@ -148,7 +148,10 @@ test("fluxo real completo, login, seleção e retomada por refresh", async ({
   ).toBeVisible();
   await provision(page);
   await page
-    .getByRole("button", { name: "Acessar Comunidade sintética", exact: true })
+    .getByRole("button", {
+      name: "Acessar organização Comunidade sintética",
+      exact: true,
+    })
     .click();
   await expect(
     page.getByRole("heading", { name: "Igrejas da organização" }),
@@ -388,7 +391,10 @@ test("troca real entre organizações não conserva igrejas anteriores e revoga�
     page.getByText("Organização sem vínculo", { exact: true }),
   ).toHaveCount(0);
   await page
-    .getByRole("button", { name: "Acessar Organização inicial", exact: true })
+    .getByRole("button", {
+      name: "Acessar organização Organização inicial",
+      exact: true,
+    })
     .click();
   await expect(
     page.getByText("Primeira igreja sintética", { exact: true }),
@@ -398,7 +404,7 @@ test("troca real entre organizações não conserva igrejas anteriores e revoga�
     .click();
   await page
     .getByRole("button", {
-      name: "Acessar Outra organização permitida",
+      name: "Acessar organização Outra organização permitida",
       exact: true,
     })
     .click();
@@ -463,7 +469,10 @@ test("mudança de tenant entre leituras não mistura o nome da organização e s
     await route.fulfill({ response: original });
   });
   await page
-    .getByRole("button", { name: "Acessar Organização escolhida", exact: true })
+    .getByRole("button", {
+      name: "Acessar organização Organização escolhida",
+      exact: true,
+    })
     .click();
   await expect(
     page.getByRole("heading", { name: "Suas organizações" }),
@@ -479,7 +488,10 @@ test("401 e 403 interceptados removem igrejas exibidas e reconsultam o servidor"
   await readyAccount(page);
   await provision(page);
   await page
-    .getByRole("button", { name: "Acessar Comunidade sintética", exact: true })
+    .getByRole("button", {
+      name: "Acessar organização Comunidade sintética",
+      exact: true,
+    })
     .click();
   await expect(
     page.getByRole("heading", { name: "Igrejas da organização" }),
@@ -508,7 +520,7 @@ test("401 e 403 interceptados removem igrejas exibidas e reconsultam o servidor"
     if (status === 401) {
       await page
         .getByRole("button", {
-          name: "Acessar Comunidade sintética",
+          name: "Acessar organização Comunidade sintética",
           exact: true,
         })
         .click();
@@ -602,9 +614,13 @@ test("responsividade, teclado e acessibilidade básica da interface real", async
     .analyze();
   expect(form.violations.map((violation) => violation.id)).toEqual([]);
   await provision(page);
-  await page
-    .getByRole("button", { name: "Acessar Comunidade sintética", exact: true })
-    .click();
+  const organization = page.getByRole("button", {
+    name: "Acessar organização Comunidade sintética",
+    exact: true,
+  });
+  await expect(organization).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await organization.click();
   await expect(
     page.getByRole("heading", { name: "Igrejas da organização" }),
   ).toBeVisible();
@@ -668,7 +684,7 @@ test("onboarding: contatos opcionais, validação e rascunho preservado ao recup
   ).toBeVisible();
   await page
     .getByRole("button", {
-      name: "Acessar Organização com contatos sintéticos",
+      name: "Acessar organização Organização com contatos sintéticos",
       exact: true,
     })
     .click();
