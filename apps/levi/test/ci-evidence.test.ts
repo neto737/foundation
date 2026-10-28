@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFile } from "node:fs/promises";
 import { requireSuccessfulCI, validateCIRun } from "../tools/ci-evidence.js";
 import { DeployDiagnostics } from "../tools/deploy-diagnostics.js";
 
@@ -34,7 +33,7 @@ function api(changes: Record<string, unknown> = {}): typeof fetch {
       "Bearer synthetic-only",
     );
     assert.equal(options?.redirect, "error");
-    const path = String(url).replace(
+    const path = (url instanceof Request ? url.url : url.toString()).replace(
       "https://api.github.com/repos/t00ls-dev/foundation/",
       "",
     );
@@ -64,11 +63,11 @@ function api(changes: Record<string, unknown> = {}): typeof fetch {
       ...changes,
     };
     assert.ok(path in responses);
-    return Response.json(responses[path]);
+    return Promise.resolve(Response.json(responses[path]));
   };
 }
 
-test("CI: aceita somente push canônico na master, SHA exato e tentativa atual concluída", () => {
+void test("CI: aceita somente push canônico na master, SHA exato e tentativa atual concluída", () => {
   validateCIRun(run, sha, 202);
   for (const changes of [
     { workflow_id: 203 },
@@ -88,7 +87,7 @@ test("CI: aceita somente push canônico na master, SHA exato e tentativa atual c
     assert.throws(() => validateCIRun({ ...run, ...changes }, sha, 202));
 });
 
-test("CI: contexto manual inválido é recusado antes de qualquer request", async () => {
+void test("CI: contexto manual inválido é recusado antes de qualquer request", async () => {
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
     { GITHUB_REPOSITORY: "t00ls-dev/levi" },
@@ -107,14 +106,14 @@ test("CI: contexto manual inválido é recusado antes de qualquer request", asyn
     await assert.rejects(
       requireSuccessfulCI({ ...env, ...changes }, async () => {
         requests++;
-        return Response.json({});
+        return Promise.resolve(Response.json({}));
       }),
     );
     assert.equal(requests, 0);
   }
 });
 
-test("CI: falha fechada para checks ausente, duplicado, incompleto ou de outra tentativa", async () => {
+void test("CI: falha fechada para checks ausente, duplicado, incompleto ou de outra tentativa", async () => {
   const check = {
     name: "checks",
     run_id: 101,
@@ -149,13 +148,14 @@ test("CI: falha fechada para checks ausente, duplicado, incompleto ou de outra t
   );
 });
 
-test("CI: recusa tentativa/run substituídos e master avançada durante a consulta", async () => {
+void test("CI: recusa tentativa/run substituídos e master avançada durante a consulta", async () => {
   for (const scenario of ["attempt", "new-run", "master", "failure"] as const) {
     const counts = new Map<string, number>();
     const original = api();
     await assert.rejects(
       requireSuccessfulCI(env, async (url, options) => {
-        const path = new URL(String(url)).pathname;
+        const path = new URL(url instanceof Request ? url.url : url.toString())
+          .pathname;
         const count = (counts.get(path) ?? 0) + 1;
         counts.set(path, count);
         if (count === 2) {
@@ -176,7 +176,7 @@ test("CI: recusa tentativa/run substituídos e master avançada durante a consul
   }
 });
 
-test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efetivamente aprovado", async () => {
+void test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efetivamente aprovado", async () => {
   assert.deepEqual(await requireSuccessfulCI(env, api()), {
     sha,
     runId: 101,
@@ -231,23 +231,26 @@ test("CI: recuperação manual exige CI aprovada do SHA atual e job checks efeti
   ])
     await assert.rejects(requireSuccessfulCI(env, api(changes)));
   await assert.rejects(
-    requireSuccessfulCI(env, async () => new Response(null, { status: 403 })),
+    requireSuccessfulCI(env, async () =>
+      Promise.resolve(new Response(null, { status: 403 })),
+    ),
   );
   await assert.rejects(
     requireSuccessfulCI({ ...env, GITHUB_EVENT_NAME: "pull_request" }, api()),
   );
 });
 
-test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor respostas", async () => {
+void test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor respostas", async () => {
   for (const [request, check, category, status] of [
     [
-      async () => new Response("private-response", { status: 403 }),
+      async () =>
+        Promise.resolve(new Response("private-response", { status: 403 })),
       "consulta da master remota",
       "falha HTTP",
       "403",
     ],
     [
-      async () => new Response("private-invalid-json"),
+      async () => Promise.resolve(new Response("private-invalid-json")),
       "consulta da master remota",
       "resposta inesperada",
       "200",
@@ -293,9 +296,9 @@ test("CI: diagnóstico identifica HTTP, JSON inválido e job reprovado sem expor
   }
 });
 
-test("CI: preserva a exceção original mesmo quando o diagnóstico recebe Proxy e o sink falha", async () => {
+void test("CI: preserva a exceção original mesmo quando o diagnóstico recebe Proxy e o sink falha", async () => {
   let touched = 0;
-  const original = new Proxy(
+  const original: unknown = new Proxy(
     {},
     {
       get() {
@@ -312,9 +315,10 @@ test("CI: preserva a exceção original mesmo quando o diagnóstico recebe Proxy
   try {
     await requireSuccessfulCI(
       env,
-      async () => {
-        throw original;
-      },
+      () =>
+        new Promise<Response>(() => {
+          throw original;
+        }),
       diagnostics,
     );
   } catch (error) {

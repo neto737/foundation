@@ -1,3 +1,5 @@
+import type { FeatureKey, FeaturePolicy } from "../feature-contracts.js";
+import type { MemberProfile } from "../member-types.js";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -181,15 +183,84 @@ export const auditEvents = pgTable(
     actor: uuid("actor").notNull(),
     action: text("action").notNull(),
     target: uuid("target").notNull(),
-    tenant: uuid("tenant")
-      .notNull()
-      .references(() => tenants.id),
+    tenant: uuid("tenant").references(() => tenants.id),
     timestamp: instant("timestamp").notNull(),
     metadata: jsonb("metadata").notNull(),
     requestId: text("request_id"),
     result: text("result").notNull(),
   },
-  (t) => [check("audit_metadata_minimal", sql`${t.metadata} = '{}'::jsonb`)],
+  (t) => [
+    check("audit_metadata_minimal", sql`${t.metadata} = '{}'::jsonb`),
+    check(
+      "audit_global_scope",
+      sql`(${t.tenant} IS NULL) = (${t.action} IN (
+        'admin.bootstrapped', 'admin.granted', 'admin.revoked',
+        'feature_flag.all', 'feature_flag.selected', 'feature_flag.disabled'
+      ))`,
+    ),
+  ],
+);
+
+// Autoridade global do Levi; independente dos vínculos organizacionais.
+export const globalAdministrators = pgTable(
+  "global_administrators",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => user.id),
+    grantedAt: instant("granted_at").notNull().defaultNow(),
+    grantedBy: uuid("granted_by"),
+    revokedAt: instant("revoked_at"),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    check("global_administrator_version_positive", sql`${t.version} > 0`),
+  ],
+);
+
+// Sem FK/cascade para a identidade histórica: apagar conta não reabre bootstrap.
+export const adminBootstrap = pgTable(
+  "admin_bootstrap",
+  {
+    id: integer("id").primaryKey(),
+    userId: uuid("bootstrapped_user_id").notNull(),
+    completedAt: instant("completed_at").notNull().defaultNow(),
+    operationId: uuid("operation_id").notNull(),
+  },
+  (t) => [check("admin_bootstrap_singleton", sql`${t.id} = 1`)],
+);
+
+export const featureFlags = pgTable(
+  "feature_flags",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    key: text("key").$type<FeatureKey>().notNull().unique(),
+    policy: text("policy").$type<FeaturePolicy["kind"]>().notNull(),
+    version: integer("version").notNull().default(1),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+    updatedBy: uuid("updated_by").notNull(),
+  },
+  (t) => [
+    check("feature_key_known", sql`${t.key} IN ('members')`),
+    check(
+      "feature_policy_known",
+      sql`${t.policy} IN ('all', 'selected', 'disabled')`,
+    ),
+    check("feature_version_positive", sql`${t.version} > 0`),
+  ],
+);
+
+export const featureFlagOrganizations = pgTable(
+  "feature_flag_organizations",
+  {
+    featureFlagId: uuid("feature_flag_id")
+      .notNull()
+      .references(() => featureFlags.id),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => tenants.id),
+  },
+  (t) => [primaryKey({ columns: [t.featureFlagId, t.organizationId] })],
 );
 
 // Entidades pessoais do Levi: não são contas de autenticação.
@@ -284,9 +355,7 @@ export const memberProfileHistory = pgTable(
     memberId: uuid("member_id").notNull(),
     actorId: uuid("actor_id").notNull(),
     version: integer("version").notNull(),
-    previousProfile: jsonb("previous_profile")
-      .$type<import("../member-types.js").MemberProfile>()
-      .notNull(),
+    previousProfile: jsonb("previous_profile").$type<MemberProfile>().notNull(),
     createdAt: instant("created_at").notNull().defaultNow(),
   },
   (t) => [

@@ -27,10 +27,11 @@ const options = {
   email: {
     send: async (input: { to: string; text: string }) => {
       sent.push(input);
+      return Promise.resolve();
     },
   },
 };
-const app = createApp({ ...options, membersEnabled: true });
+const app = createApp(options);
 function request(path: string, body?: object, cookie = "", key?: string) {
   return app.request(
     new Request(new URL(path, origin), {
@@ -62,9 +63,13 @@ async function account(contacts: object = {}) {
     .getSetCookie()
     .map((value) => value.split(";")[0])
     .join("; ");
-  const id: string = (
-    await observer.client.query('SELECT id FROM "user" WHERE email=$1', [email])
-  ).rows[0].id;
+  const id = (
+    await observer.client.query<{ id: string }>(
+      'SELECT id FROM "user" WHERE email=$1',
+      [email],
+    )
+  ).rows[0]?.id;
+  assert.ok(id);
   assert.equal(
     (await request("/api/onboarding/password-email", {}, cookie)).status,
     200,
@@ -121,17 +126,17 @@ async function created(who: Account, input: object = {}) {
 }
 async function count(tenantId: string) {
   return (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       `SELECT (SELECT count(*)::int FROM members WHERE tenant_id=$1) members, (SELECT count(*)::int FROM member_history WHERE tenant_id=$1) history, (SELECT count(*)::int FROM audit_events WHERE tenant=$1 AND action='member.created') audit, (SELECT count(*)::int FROM member_creation_requests WHERE tenant_id=$1) receipts`,
       [tenantId],
     )
   ).rows[0];
 }
 
-test("membros PostgreSQL: cadastro mínimo, opcionais, homônimos e contatos compartilhados sem contas novas", async () => {
+void test("membros PostgreSQL: cadastro mínimo, opcionais, homônimos e contatos compartilhados sem contas novas", async () => {
   const who = await account();
   const before = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       'SELECT (SELECT count(*) FROM "user") users, (SELECT count(*) FROM account) accounts, (SELECT count(*) FROM tenant_memberships) memberships',
     )
   ).rows[0];
@@ -142,7 +147,8 @@ test("membros PostgreSQL: cadastro mínimo, opcionais, homônimos e contatos com
     who.cookie,
   );
   assert.equal(detailResponse.status, 200);
-  const detail = (await detailResponse.json()).member;
+  const detail = readObject(readObject(await detailResponse.json()).member);
+  assert.ok(typeof detail.id === "string");
   assert.match(
     detail.id,
     /^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/,
@@ -172,15 +178,17 @@ test("membros PostgreSQL: cadastro mínimo, opcionais, homônimos e contatos com
   const full = await created(who, input);
   const other = await created(who, input);
   assert.notEqual(full.memberId, other.memberId);
-  const value = (
-    await (
-      await request(`/api/members/${full.memberId}`, undefined, who.cookie)
-    ).json()
-  ).member;
+  const value = readObject(
+    readObject(
+      await (
+        await request(`/api/members/${full.memberId}`, undefined, who.cookie)
+      ).json(),
+    ).member,
+  );
   for (const [key, field] of Object.entries(input))
     assert.equal(value[key], field);
   const afterCounts = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       'SELECT (SELECT count(*) FROM "user") users, (SELECT count(*) FROM account) accounts, (SELECT count(*) FROM tenant_memberships) memberships',
     )
   ).rows[0];
@@ -192,27 +200,30 @@ test("membros PostgreSQL: cadastro mínimo, opcionais, homônimos e contatos com
     receipts: 3,
   });
   const event = (
-    await observer.client.query("SELECT * FROM audit_events WHERE target=$1", [
-      full.memberId,
-    ])
+    await observer.client.query<Record<string, unknown>>(
+      "SELECT * FROM audit_events WHERE target=$1",
+      [full.memberId],
+    )
   ).rows[0];
+  assert.ok(event);
   assert.equal(event.action, "member.created");
   assert.equal(event.actor, who.id);
   assert.deepEqual(event.metadata, {});
   assert.ok(!JSON.stringify(event).includes(who.email));
   assert.ok(!JSON.stringify(event).includes(input.name));
   const history = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       "SELECT * FROM member_history WHERE member_id=$1",
       [full.memberId],
     )
   ).rows[0];
+  assert.ok(history);
   assert.equal(history.tenant_id, who.organizationId);
   assert.equal(history.initial_status, "Inativo");
   assert.equal(history.church_name, "Igreja sintética de membros");
 });
 
-test("membros PostgreSQL: anônimo, campos inválidos, igreja obrigatória e isolamento não expõem outro tenant", async () => {
+void test("membros PostgreSQL: anônimo, campos inválidos, igreja obrigatória e isolamento não expõem outro tenant", async () => {
   const first = await account();
   const second = await account();
   const foreign = await created(second);
@@ -259,20 +270,21 @@ test("membros PostgreSQL: anônimo, campos inválidos, igreja obrigatória e iso
   assert.equal(foreignResponse.status, 404);
   assert.deepEqual(await foreignResponse.json(), await missingResponse.json());
   assert.deepEqual(
-    (
+    readObject(
       await (
         await request(
           `/api/members?churchId=${second.churchId}`,
           undefined,
           first.cookie,
         )
-      ).json()
+      ).json(),
     ).members,
     [],
   );
   assert.deepEqual(
-    (await (await request("/api/members", undefined, first.cookie)).json())
-      .members,
+    readObject(
+      await (await request("/api/members", undefined, first.cookie)).json(),
+    ).members,
     [],
   );
   await assert.rejects(
@@ -304,11 +316,12 @@ test("membros PostgreSQL: anônimo, campos inválidos, igreja obrigatória e iso
   });
 });
 
-test("membros PostgreSQL: revogação e role desconhecida bloqueiam leitura, criação e recuperação", async () => {
+void test("membros PostgreSQL: revogação e role desconhecida bloqueiam leitura, criação e recuperação", async () => {
   const who = await account();
   const key = randomUUID();
   const result = await create(who, {}, key);
-  const { memberId } = await result.json();
+  const { memberId } = readObject(await result.json());
+  assert.ok(typeof memberId === "string");
   for (const role of ["unknown", null]) {
     if (role)
       await observer.client.query(
@@ -336,15 +349,16 @@ test("membros PostgreSQL: revogação e role desconhecida bloqueiam leitura, cri
   });
 });
 
-test("membros PostgreSQL: filtros literais, ordenação estável e paginação sempre organizacionais", async () => {
+void test("membros PostgreSQL: filtros literais, ordenação estável e paginação sempre organizacionais", async () => {
   const who = await account();
   const second = await account();
-  const church: string = (
-    await observer.client.query(
+  const church = (
+    await observer.client.query<{ id: string }>(
       "INSERT INTO churches(tenant_id,name) VALUES($1,'Outra igreja sintética') RETURNING id",
       [who.organizationId],
     )
-  ).rows[0].id;
+  ).rows[0]?.id;
+  assert.ok(church);
   const ids = [];
   for (const name of ["Alfa", "Alfa", "Beta", "100%_literal", "Outra"])
     ids.push(
@@ -365,13 +379,13 @@ test("membros PostgreSQL: filtros literais, ordenação estável e paginação s
       who.cookie,
     );
     assert.equal(response.status, 200);
-    const value = await response.json();
+    const value = readObject(await response.json());
     pages.push(value);
     assert.equal(value.organizationId, who.organizationId);
     assert.equal(value.hasNext, page < 3);
   }
   const ordered = pages.flatMap((page) =>
-    page.members.map((member: { id: string }) => member.id),
+    readObjects(page.members).map((member) => member.id),
   );
   assert.equal(new Set(ordered).size, 5);
   assert.deepEqual(new Set(ordered), new Set(ids));
@@ -390,11 +404,13 @@ test("membros PostgreSQL: filtros literais, ordenação estável e paginação s
     ["page=10", 0],
   ] as const)
     assert.equal(
-      (
-        await (
-          await request(`/api/members?${query}`, undefined, who.cookie)
-        ).json()
-      ).members.length,
+      readObjects(
+        readObject(
+          await (
+            await request(`/api/members?${query}`, undefined, who.cookie)
+          ).json(),
+        ).members,
+      ).length,
       expected,
     );
   for (const query of ["page=0", "pageSize=101", "tenant=x", "name=a&name=b"])
@@ -404,11 +420,11 @@ test("membros PostgreSQL: filtros literais, ordenação estável e paginação s
     );
 });
 
-test("membros PostgreSQL: reenvios concorrentes retornam um membro, histórico, auditoria e recibo", async () => {
+void test("membros PostgreSQL: reenvios concorrentes retornam um membro, histórico, auditoria e recibo", async () => {
   const who = await account();
   const key = randomUUID();
   const results = await Promise.all(
-    Array.from({ length: 5 }, () => create(who, {}, key)),
+    Array.from({ length: 5 }, () => Promise.resolve(create(who, {}, key))),
   );
   for (const result of results) assert.equal(result.status, 201);
   const bodies = await Promise.all(results.map((result) => result.json()));
@@ -453,7 +469,7 @@ for (const table of [
   "audit_events",
   "member_creation_requests",
 ])
-  test(`membros PostgreSQL: rollback integral após falha tardia em ${table}`, async () => {
+  void test(`membros PostgreSQL: rollback integral após falha tardia em ${table}`, async () => {
     const who = await account();
     const key = randomUUID();
     const column = table === "audit_events" ? "tenant" : "tenant_id";
@@ -488,7 +504,7 @@ for (const table of [
     });
   });
 
-test("membros PostgreSQL: datas DATE não mudam com fuso da sessão e histórico/recibo são elimináveis com a ficha", async () => {
+void test("membros PostgreSQL: datas DATE não mudam com fuso da sessão e histórico/recibo são elimináveis com a ficha", async () => {
   const who = await account();
   const { memberId } = await created(who, {
     birthDate: "2000-02-29",
@@ -504,7 +520,7 @@ test("membros PostgreSQL: datas DATE não mudam com fuso da sessão e histórico
       zone,
     ]);
     const date = (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT birth_date::text, joined_on::text FROM members WHERE id=$1",
         [memberId],
       )
@@ -513,11 +529,13 @@ test("membros PostgreSQL: datas DATE não mudam com fuso da sessão e histórico
       birth_date: "2000-02-29",
       joined_on: "2026-10-22",
     });
-    const detail = (
-      await (
-        await request(`/api/members/${memberId}`, undefined, who.cookie)
-      ).json()
-    ).member;
+    const detail = readObject(
+      readObject(
+        await (
+          await request(`/api/members/${memberId}`, undefined, who.cookie)
+        ).json(),
+      ).member,
+    );
     assert.equal(detail.birthDate, "2000-02-29");
     assert.equal(detail.baptismDate, "2020-01-01");
   }
@@ -536,27 +554,28 @@ test("membros PostgreSQL: datas DATE não mudam com fuso da sessão e histórico
   });
 });
 
-test("membros PostgreSQL: habilitação é opt-in local e não muda o onboarding padrão", async () => {
-  const disabled = createApp(options);
+void test("membros PostgreSQL: disponibilidade padrão exige sessão e permite cadastro autorizado", async () => {
+  const defaultApp = createApp(options);
   for (const path of [
     "/api/members",
     `/api/members/${randomUUID()}`,
     `/api/members/requests/${randomUUID()}`,
   ])
     assert.equal(
-      (await disabled.request(new Request(new URL(path, origin)))).status,
-      404,
+      (await defaultApp.request(new Request(new URL(path, origin)))).status,
+      401,
     );
   const who = await account();
   assert.equal(
     (
-      await disabled.request(
+      await defaultApp.request(
         new Request(new URL("/api/members", origin), {
           method: "POST",
           headers: {
             Origin: origin,
             Cookie: who.cookie,
             "Content-Type": "application/json",
+            "Idempotency-Key": randomUUID(),
           },
           body: JSON.stringify({
             name: "Sintética",
@@ -566,11 +585,11 @@ test("membros PostgreSQL: habilitação é opt-in local e não muda o onboarding
         }),
       )
     ).status,
-    404,
+    201,
   );
 });
 
-test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes na própria conexão da aplicação", async () => {
+void test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes na própria conexão da aplicação", async () => {
   const who = await account();
   const dates = {
     birthDate: "2000-02-29",
@@ -587,7 +606,6 @@ test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes 
     const zonedApp = createApp({
       ...options,
       databaseUrl: zonedUrl.toString(),
-      membersEnabled: true,
     });
     const send = (path: string, body?: object) =>
       zonedApp.request(
@@ -609,15 +627,16 @@ test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes 
       ...dates,
     });
     assert.equal(response.status, 201);
-    const { memberId } = await response.json();
+    const { memberId } = readObject(await response.json());
+    assert.ok(typeof memberId === "string");
     const detail = await send(`/api/members/${memberId}`);
     assert.equal(detail.status, 200);
-    const { member } = await detail.json();
+    const member = readObject(readObject(await detail.json()).member);
     for (const [key, value] of Object.entries(dates))
       assert.equal(member[key], value);
     assert.deepEqual(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT birth_date::text,joined_on::text,baptism_date::text FROM members WHERE id=$1",
           [memberId],
         )
@@ -638,10 +657,10 @@ test("membros PostgreSQL: cadastro e ficha preservam datas com fusos diferentes 
 });
 
 for (const revoke of ["session", "membership", "context"] as const)
-  test(`membros PostgreSQL: revalida ${revoke} após aguardar lock de idempotência`, async () => {
+  void test(`membros PostgreSQL: revalida ${revoke} após aguardar lock de idempotência`, async () => {
     const who = await account();
     const key = randomUUID();
-    const blocker = await createPostgresDatabase(databaseUrl!);
+    const blocker = await createPostgresDatabase(databaseUrl);
     await blocker.client.query("BEGIN");
     await blocker.client.query(
       "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
@@ -651,7 +670,7 @@ for (const revoke of ["session", "membership", "context"] as const)
     try {
       let waiting = false;
       for (let attempt = 0; attempt < 200; attempt++) {
-        const result = await observer.client.query(
+        const result = await observer.client.query<Record<string, unknown>>(
           "SELECT pid FROM pg_stat_activity WHERE wait_event_type='Lock' AND query ILIKE '%pg_advisory_xact_lock%'",
         );
         if (result.rowCount) {
@@ -691,7 +710,7 @@ for (const revoke of ["session", "membership", "context"] as const)
     });
   });
 
-test("edição: allowlist, isolamento, versão, persistência e histórico/auditoria atômicos", async () => {
+void test("edição: allowlist, isolamento, versão, persistência e histórico/auditoria atômicos", async () => {
   const who = await account();
   const other = await account();
   const receipt = await created(who, {
@@ -761,9 +780,10 @@ test("edição: allowlist, isolamento, versão, persistência e histórico/audit
   ])
     assert.equal((await edit(input)).status, 400);
   const before = (
-    await observer.client.query("SELECT * FROM members WHERE id=$1", [
-      receipt.memberId,
-    ])
+    await observer.client.query<Record<string, unknown>>(
+      "SELECT * FROM members WHERE id=$1",
+      [receipt.memberId],
+    )
   ).rows[0];
   const concurrent = await Promise.all([
     edit(profile),
@@ -771,33 +791,38 @@ test("edição: allowlist, isolamento, versão, persistência e histórico/audit
   ]);
   assert.deepEqual(concurrent.map((r) => r.status).sort(), [200, 409]);
   const stored = (
-    await observer.client.query("SELECT * FROM members WHERE id=$1", [
-      receipt.memberId,
-    ])
+    await observer.client.query<Record<string, unknown>>(
+      "SELECT * FROM members WHERE id=$1",
+      [receipt.memberId],
+    )
   ).rows[0];
+  assert.ok(stored && before);
   assert.equal(stored.version, 2);
   for (const column of ["id", "tenant_id", "church_id", "status", "created_at"])
     assert.deepEqual(stored[column], before[column]);
   const history = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       "SELECT * FROM member_profile_history WHERE member_id=$1",
       [receipt.memberId],
     )
   ).rows;
   assert.equal(history.length, 1);
-  assert.equal(history[0].version, 1);
-  assert.equal(history[0].previous_profile.phone, "Contato anterior");
-  assert.equal(history[0].actor_id, who.id);
+  assert.equal(history[0]?.version, 1);
+  assert.equal(
+    readObject(history[0]?.previous_profile).phone,
+    "Contato anterior",
+  );
+  assert.equal(history[0]?.actor_id, who.id);
   const audit = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       "SELECT * FROM audit_events WHERE target=$1 AND action='member.updated'",
       [receipt.memberId],
     )
   ).rows;
   assert.equal(audit.length, 1);
-  assert.deepEqual(audit[0].metadata, {});
+  assert.deepEqual(audit[0]?.metadata, {});
   const detail = await request(path, undefined, who.cookie);
-  assert.equal((await detail.json()).member.version, 2);
+  assert.equal(readObject(readObject(await detail.json()).member).version, 2);
   // Falha de auditoria deve desfazer perfil e histórico, observados por outra conexão.
   await observer.client.query(
     `CREATE FUNCTION fail_profile_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='member.updated' THEN RAISE EXCEPTION 'synthetic'; END IF; RETURN NEW; END $$`,
@@ -809,19 +834,20 @@ test("edição: allowlist, isolamento, versão, persistência e histórico/audit
     assert.equal((await edit({ ...profile, version: 2 })).status, 503);
     assert.deepEqual(
       (
-        await observer.client.query("SELECT * FROM members WHERE id=$1", [
-          receipt.memberId,
-        ])
+        await observer.client.query<Record<string, unknown>>(
+          "SELECT * FROM members WHERE id=$1",
+          [receipt.memberId],
+        )
       ).rows[0],
       stored,
     );
     assert.equal(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT count(*)::int n FROM member_profile_history WHERE member_id=$1",
           [receipt.memberId],
         )
-      ).rows[0].n,
+      ).rows[0]?.n,
       1,
     );
   } finally {
@@ -842,7 +868,7 @@ test("edição: allowlist, isolamento, versão, persistência e histórico/audit
   assert.equal((await edit({ ...profile, version: 2 })).status, 403);
 });
 
-test("onboarding: contatos da igreja opcionais persistem normalizados e são isolados", async () => {
+void test("onboarding: contatos da igreja opcionais persistem normalizados e são isolados", async () => {
   const who = await account({
     churchAddress: " Endereço sintético ",
     churchPhone: " 00 0000-0000 ",
@@ -850,11 +876,20 @@ test("onboarding: contatos da igreja opcionais persistem normalizados e são iso
   });
   const response = await request("/api/churches", undefined, who.cookie);
   assert.equal(response.status, 200);
-  const result = await response.json();
+  const result = readObject(await response.json());
   assert.equal(result.organizationId, who.organizationId);
-  assert.equal(result.churches[0].address, "Endereço sintético");
-  assert.equal(result.churches[0].phone, "00 0000-0000");
-  assert.equal(result.churches[0].email, "igreja@example.test");
+  assert.equal(
+    readObject(readObjects(result.churches)[0]).address,
+    "Endereço sintético",
+  );
+  assert.equal(
+    readObject(readObjects(result.churches)[0]).phone,
+    "00 0000-0000",
+  );
+  assert.equal(
+    readObject(readObjects(result.churches)[0]).email,
+    "igreja@example.test",
+  );
   const other = await account();
   assert.equal(
     (await request(`/api/churches/${who.churchId}`, undefined, other.cookie))
@@ -863,10 +898,23 @@ test("onboarding: contatos da igreja opcionais persistem normalizados e são iso
   );
   assert.equal(
     (
-      await observer.client.query("SELECT address FROM churches WHERE id=$1", [
-        other.churchId,
-      ])
-    ).rows[0].address,
+      await observer.client.query<Record<string, unknown>>(
+        "SELECT address FROM churches WHERE id=$1",
+        [other.churchId],
+      )
+    ).rows[0]?.address,
     null,
   );
 });
+
+function readObject(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+
+function readObjects(value: unknown): Record<string, unknown>[] {
+  assert.ok(Array.isArray(value));
+  return value.map((item: unknown) => readObject(item));
+}

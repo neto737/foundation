@@ -25,20 +25,32 @@ provisionamento atômico de organização/igreja/membership/auditoria, contexto
 organizacional, gestão de membros e interface React. Os testes usam PostgreSQL
 descartável e runtime workerd local.
 
-O repositório original mantém main, CI e deploy DEV sem alterações. Esta cópia
-possui um [publicador manual preparado](../../.github/workflows/deploy-levi-dev.yml)
-para `t00ls-dev/foundation/master`, ainda sem capacidade operacional: o Environment
-`levi-dev`, suas credenciais e o interruptor de repositório não foram provisionados.
-Os arquivos em [.github](.github/README.md) continuam históricos. Preparar esse
-código não transfere o controle nem autoriza publicação; ver [Deploy DEV](docs/deploy-dev.md).
+O Foundation é o publicador DEV autorizado; o repositório original permanece
+preservado e contido. O [publicador manual](../../.github/workflows/deploy-levi-dev.yml)
+usa `t00ls-dev/foundation/master` e o Environment `levi-dev`, com token Cloudflare
+único. Esta revisão adota cadastros canônicos LEVI_ e o gate `LEVI_DEPLOY_READY`;
+a migração administrativa dos nomes ainda precisa ser realizada antes de qualquer
+execução da nova definição. Os arquivos em [.github](.github/README.md) continuam
+históricos. Esta padronização não altera cadastros reais nem autoriza publicação;
+ver [Deploy DEV](docs/deploy-dev.md).
 Worker, domínio, PostgreSQL/Neon, Hyperdrive, e-mail e credenciais permanecem
 independentes do Links. Produção não está implementada.
 
 Migrations persistentes exigem operação independente e autorizada. Importar,
 instalar, compilar ou iniciar a aplicação não aplica migrations persistentes.
 Replays de migrations em containers sintéticos isolados continuam permitidos.
-A documentação histórica de DEV não atesta o schema/ACLs ou o recorte organizacional
-remoto atual; conferi-los antes de qualquer transferência operacional.
+A documentação histórica de DEV não atesta o schema/ACLs ou a configuração
+remota atual; conferi-los antes de qualquer transferência operacional.
+
+## Administração global
+
+A [administração global](docs/administracao-global.md) usa sessão autenticada,
+e-mail verificado e correspondência com o secret LEVI_ADMIN_EMAIL. O backend
+protege `/admin` e suas APIs antes da entrega de HTML. Concessões históricas não
+concedem acesso e não há gestão de administradores pelo painel. Tabelas e dados
+existentes são preservados, assim como auditoria, flags, permissões e isolamento.
+A configuração exige sincronização privada em publicação posteriormente autorizada.
+Não altera a disponibilidade atual de membros.
 
 ## Workspace e validação
 
@@ -79,16 +91,13 @@ executar outro aplicativo simultaneamente.
 ## Versões, licença e separação futura
 
 A versão própria permanece no manifest; deploy não implica nova release.
-Versionamento privado automático e tags continuam desabilitados no Changesets.
-O plano npm continua restrito aos nove pacotes públicos. A publicação de
-`auth@0.3.2` foi adiada; a futura integração desta incorporação altera entradas
-protegidas e pode exigir revisão posterior do plano antigo, sem dispensar gates
-ou editar seu record para acomodar a importação.
+Todos os pacotes Foundation são privados e consumidos com `workspace:*`.
+A distribuição npm e o versionamento por Changesets foram encerrados.
 
 O código próprio adota [MIT](LICENSE). [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
 preservam as licenças de ícones e dependências. A licença do repositório original
 não foi alterada. Extração futura leva a aplicação com seu histórico/proveniência
-e seu fecho de dependências, ou consome versões públicas realmente disponíveis;
+e seu fecho de dependências;
 não exige banco, sessão ou deploy compartilhado com outro aplicativo.
 
 ## Documentação

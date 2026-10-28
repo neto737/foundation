@@ -17,11 +17,11 @@ próprios. Compartilham mecanismos pelos exports dos pacotes, com dependências
 dependem de aplicações. A estrutura deve permitir extração futura com seu fecho
 de dependências, sem exigir banco ou implantação conjunta.
 
-O planejamento de versões já distingue componentes privados e o subconjunto npm
-publicável. A automação de versões privadas continua desabilitada; o
-[runbook](../runbooks/packages.md#planos-de-componentes-e-publicação) registra
-os limites da preparação. Release de componente, publicação npm e deploy são
-operações distintas, com versões independentes.
+Os pacotes Foundation são privados e consumidos exclusivamente no monorepo por
+dependências `workspace:*`, resolvidas como links locais pelo pnpm. A
+distribuição npm foi encerrada; não há automação de publicação ou versionamento
+por Changesets. Versões e changelogs existentes são históricos. Builds, APIs,
+testes e deploys das aplicações permanecem independentes.
 
 O projeto é Cloudflare-first, internal-first, modular e seguro por padrão. Os
 pacotes podem ser reutilizados por consumidores autorizados, mas não há
@@ -136,17 +136,11 @@ Regras de dependência:
 
 ## Publicação e consumo
 
-Na v0.1, exemplos e tooling consomem pacotes com o protocolo `workspace:`. Os
-nove pacotes oficiais em `packages/*` estão publicados no npmjs.com público no
-scope do usuário `t00ls-dev`, com Changesets e versões independentes. Os pacotes
-privados duplicados do GitHub Packages foram excluídos em 15/10/2026; não há
-publicação dupla. Os registros adicionais `0.0.0-stage` são placeholders de
-staging do npm, mantidos por não haver impacto operacional demonstrado; não
-representam staging da aplicação, e a operação exata que os criou não foi
-determinada. A configuração externa do Trusted Publishing e a validação remota
-de OIDC permanecem pendentes para a próxima release legítima, sem ativação ou
-teste antecipado; a publicação existente não comprova esse fluxo. Veja o
-[runbook de pacotes](../runbooks/packages.md).
+Os pacotes Foundation são privados e consumidos exclusivamente no monorepo por
+dependências `workspace:*`, resolvidas como links locais pelo pnpm. A
+distribuição npm foi encerrada; não há automação de publicação ou versionamento
+por Changesets. Versões e changelogs existentes são históricos. Builds, APIs,
+testes e deploys das aplicações permanecem independentes.
 
 ## Ambientes e entrega
 
@@ -180,7 +174,7 @@ A v0.1 entrega uma fundação pequena e executável:
 - testes unitários, PostgreSQL em container e smoke Hyperdrive opcional;
 - `create-app` e `doctor` básicos, se necessários para validar o caminho do
   consumidor;
-- CI, publicação workspace-first e deploy DEV do exemplo conforme os ADRs.
+- CI, consumo interno pelo workspace e deploy DEV do exemplo conforme os ADRs.
 
 ## Não objetivos da v0.1
 
@@ -199,6 +193,6 @@ sofisticados permanecem direções futuras, não entregas implícitas.
 - [ADR-002: Tenancy, autorização e convites](../decisions/002-tenancy-access-invitations.md)
 - [ADR-003: Better Auth](../decisions/003-better-auth.md)
 - [ADR-004: Bancos e testes de integração](../decisions/004-databases-and-integration-tests.md)
-- [ADR-005: Publicação workspace-first](../decisions/005-workspace-first-publication.md)
+- [ADR-005: Consumo interno pelo workspace](../decisions/005-workspace-first-publication.md)
 - [ADR-006: Foundation DEV-only](../decisions/006-deployment-environments.md)
 - [ADR-007: Escopo da v0.1](../decisions/007-v01-scope.md)

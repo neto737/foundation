@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { parse } from "yaml";
-import { workspaceManifests } from "./release-planning.mjs";
-import { names } from "./release-core.mjs";
+import { workspaceManifests } from "./workspace.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const application = join(root, "apps/levi");
@@ -22,14 +21,14 @@ const files = (directory) =>
     return entry.isDirectory() ? files(file) : [file];
   });
 
-test("Levi privado resolve os sete pacotes locais sem ampliar o plano npm", () => {
+test("Levi privado resolve os sete pacotes locais com todos os workspaces privados", () => {
   const manifests = workspaceManifests(root);
   assert.deepEqual(
     manifests
       .filter(({ pkg }) => !pkg.private)
       .map(({ pkg }) => pkg.name)
       .sort(),
-    [...names].sort(),
+    [],
   );
   const { pkg } = manifests.find(({ path }) => path === "apps/levi");
   assert.equal(pkg.name, "levi");
@@ -57,10 +56,6 @@ test("Levi privado resolve os sete pacotes locais sem ampliar o plano npm", () =
     json(join(root, "packages/auth/node_modules/better-auth/package.json"))
       .version,
   );
-  assert.deepEqual(json(join(root, ".changeset/config.json")).privatePackages, {
-    tag: false,
-    version: false,
-  });
 });
 
 test("build do Levi depende dos exports compilados dos sete pacotes", () => {
@@ -188,7 +183,7 @@ test("CI do Levi não recebe Environment, secrets ou entrada operacional", () =>
   );
 });
 
-test("publicador Levi manual permanece isolado e fechado antes do Environment", () => {
+test("publicador Levi manual permanece isolado e bloqueia readiness antes de credenciais", () => {
   const workflow = parse(
     readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
   );
@@ -213,7 +208,6 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
   assert.equal(deploy.needs, "validate");
   const sha = "a".repeat(40);
   const trusted = {
-    vars: { LEVI_DEV_DEPLOY_ENABLED: "true" },
     github: {
       repository: "t00ls-dev/foundation",
       event_name: "workflow_dispatch",
@@ -227,8 +221,6 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     const allows = (context) => runInNewContext(job.if, context);
     assert.equal(allows(trusted), true);
     for (const context of [
-      { ...trusted, vars: {} },
-      { ...trusted, vars: { LEVI_DEV_DEPLOY_ENABLED: "false" } },
       { ...trusted, inputs: {} },
       { ...trusted, inputs: { execution_sha: "b".repeat(40) } },
       ...["workflow_run", "pull_request", "push"].map((event_name) => ({
@@ -269,8 +261,37 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     "node .github/scripts/ci-evidence.mjs deploy",
   );
   assert.equal(JSON.stringify(validate).includes("secrets."), false);
-  assert.equal(deploy.steps[0].with.ref, "${{ needs.validate.outputs.sha }}");
-  assert.equal(deploy.steps[0].with["persist-credentials"], false);
+  const readiness = deploy.steps[0];
+  assert.equal(readiness.id, "readiness");
+  assert.deepEqual(readiness.env, {
+    DEPLOY_READY: "${{ vars.LEVI_DEPLOY_READY }}",
+  });
+  assert.equal(readiness.if, undefined);
+  assert.equal(readiness["continue-on-error"], undefined);
+  for (const value of [
+    undefined,
+    "",
+    "false",
+    "TRUE",
+    "1",
+    " true ",
+    "invalid",
+    "true",
+  ]) {
+    const result = spawnSync(
+      "bash",
+      ["--noprofile", "--norc", "-eo", "pipefail", "-c", readiness.run],
+      {
+        encoding: "utf8",
+        env: value === undefined ? {} : { DEPLOY_READY: value },
+      },
+    );
+    assert.equal(result.status, value === "true" ? 0 : 1);
+    if (value !== "true")
+      assert.match(result.stdout, /::error::Deploy Levi DEV bloqueado/);
+  }
+  assert.equal(deploy.steps[1].with.ref, "${{ needs.validate.outputs.sha }}");
+  assert.equal(deploy.steps[1].with["persist-credentials"], false);
   assert.equal(
     deploy.steps.find((step) => step.id === "install").uses,
     "./.github/actions/setup",
@@ -294,11 +315,8 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     publish.env.LEVI_DEPLOY_SHA,
     "${{ needs.validate.outputs.sha }}",
   );
-  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.LEVI_DEV_READY }}");
-  assert.equal(
-    publish.env.LEVI_MEMBERS_DEV_ORGANIZATIONS,
-    "${{ vars.LEVI_MEMBERS_DEV_ORGANIZATIONS }}",
-  );
+  assert.equal(publish.env.LEVI_DEV_READY, "${{ vars.LEVI_DEPLOY_READY }}");
+  assert.equal("LEVI_MEMBERS_DEV_ORGANIZATIONS" in publish.env, false);
   assert.deepEqual(
     Object.values(publish.env)
       .filter((value) => value.includes("secrets."))
@@ -306,19 +324,37 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
     [
       "CLOUDFLARE_ACCOUNT_ID",
       "CLOUDFLARE_API_TOKEN",
-      "CLOUDFLARE_READ_TOKEN",
-      "LEVI_AUTH_SECRET",
       "RESEND_API_KEY",
+      "LEVI_AUTH_SECRET",
+      "LEVI_ADMIN_EMAIL",
     ]
       .map((name) => "${{ secrets." + name + " }}")
       .sort(),
   );
+  for (const [internal, configured] of Object.entries({
+    LEVI_HYPERDRIVE_ID: "vars.LEVI_HYPERDRIVE_ID",
+    LEVI_DEV_DATABASE_HOST: "vars.LEVI_DATABASE_HOST",
+    LEVI_DEV_DATABASE_NAME: "vars.LEVI_DATABASE_NAME",
+    LEVI_EMAIL_FROM: "vars.LEVI_EMAIL_FROM",
+  }))
+    assert.equal(publish.env[internal], "${{ " + configured + " }}");
+  assert.equal(publish.env.LEVI_AUTH_SECRET, "${{ secrets.LEVI_AUTH_SECRET }}");
+  assert.equal(publish.env.AUTH_SECRET, undefined);
+  assert.equal(publish.env.RESEND_API_KEY, "${{ secrets.RESEND_API_KEY }}");
+  assert.equal(publish.if, undefined);
+  assert.equal(publish["continue-on-error"], undefined);
+  for (const step of deploy.steps.slice(1, deploy.steps.indexOf(publish))) {
+    assert.equal(step.if, undefined);
+    assert.equal(step["continue-on-error"], undefined);
+  }
   for (const step of deploy.steps.filter((step) => step !== publish))
     assert.equal(JSON.stringify(step).includes("secrets."), false);
   const operations = JSON.stringify(workflow);
   for (const forbidden of [
     "workflow_run",
     "workflow_call",
+    "LEVI_DEV_DEPLOY_ENABLED",
+    "CLOUDFLARE_READ_TOKEN",
     "download-artifact",
     "npm run",
     "db:migrate",
@@ -331,4 +367,56 @@ test("publicador Levi manual permanece isolado e fechado antes do Environment", 
   ])
     assert.equal(operations.includes(forbidden), false, forbidden);
   assert.equal(deploy.steps.filter((step) => step.id === "publish").length, 1);
+});
+
+test("publicador lê apenas variables canônicas e não aproveita gate ou aliases legados", () => {
+  const workflow = parse(
+    readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
+  );
+  const deploy = workflow.jobs.deploy;
+  const publish = deploy.steps.find((step) => step.id === "publish");
+  const mappings = {
+    LEVI_EMAIL_FROM: "LEVI_EMAIL_FROM",
+    LEVI_HYPERDRIVE_ID: "LEVI_HYPERDRIVE_ID",
+    LEVI_DEV_DATABASE_HOST: "LEVI_DATABASE_HOST",
+    LEVI_DEV_DATABASE_NAME: "LEVI_DATABASE_NAME",
+    LEVI_DEV_READY: "LEVI_DEPLOY_READY",
+  };
+  const variables = {
+    LEVI_EMAIL_FROM: "Levi <hi@levi.t00ls.dev>",
+    LEVI_HYPERDRIVE_ID: "c".repeat(32),
+    LEVI_DATABASE_HOST: "ep-synthetic.us-east-2.aws.neon.tech",
+    LEVI_DATABASE_NAME: "levi_dev",
+    LEVI_DEPLOY_READY: "true",
+    EMAIL_FROM: "legacy-not-consumed",
+    HYPERDRIVE_ID: "legacy-not-consumed",
+    DATABASE_HOST: "legacy-not-consumed",
+    DATABASE_NAME: "legacy-not-consumed",
+    DEPLOY_READY: "true",
+  };
+  const evaluate = (expression, vars) =>
+    runInNewContext(expression.slice(3, -2), { vars }) ?? "";
+  for (const [internal, canonical] of Object.entries(mappings)) {
+    assert.equal(
+      evaluate(publish.env[internal], variables),
+      variables[canonical],
+    );
+    const missing = { ...variables, [canonical]: undefined };
+    assert.equal(evaluate(publish.env[internal], missing), "");
+  }
+  const readiness = deploy.steps[0];
+  for (const canonical of [undefined, "false", "true"]) {
+    const resolved = evaluate(readiness.env.DEPLOY_READY, {
+      ...variables,
+      LEVI_DEPLOY_READY: canonical,
+    });
+    const result = spawnSync(
+      "bash",
+      ["--noprofile", "--norc", "-eo", "pipefail", "-c", readiness.run],
+      { encoding: "utf8", env: { DEPLOY_READY: resolved } },
+    );
+    assert.equal(result.status, canonical === "true" ? 0 : 1);
+    if (canonical !== "true")
+      assert.ok(result.stdout.includes("LEVI_DEPLOY_READY"));
+  }
 });

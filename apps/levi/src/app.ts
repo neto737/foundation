@@ -1,5 +1,18 @@
-import { membersAvailable } from "./member-access.js";
+import { administrativePath } from "./admin-paths.js";
+import {
+  administrativeNotFound,
+  requireGlobalAdministrator,
+} from "./admin-access.js";
+import { administrativeDirectory } from "./admin-directory.js";
+import { administrativeEmail } from "./admin-config.js";
+import { listFeatureFlags, updateFeatureFlag } from "./feature-flags.js";
+import {
+  featureKeys,
+  invalidAdministrativeInput,
+  readExpectedVersion,
+} from "./feature-contracts.js";
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 import {
   createMember,
   editMember,
@@ -72,33 +85,80 @@ export function createApp(options: AppOptions) {
   });
   // Executa antes na volta do middleware; a política mais restrita fica por último.
   app.use("*", foundationSecurityHeaders());
-  const csrf = csrfProtection({ trustedOrigins: [origin] });
+  // Guarda antes de CSRF, bodyLimit, quotas e matching dos endpoints/HTML.
   app.use("*", async (c, next) => {
-    const denied = await csrf(c, next);
-    if (denied)
-      return c.json(
-        {
-          erro: "ORIGEM_INVALIDA",
-          mensagem: "A origem da solicitação não é permitida.",
-        },
-        403,
-      );
+    if (!administrativePath(c.req.path)) return next();
+    if (!administrativeEmail(options.adminEmail) || !c.req.header("cookie"))
+      administrativeNotFound();
+    let database: Database | undefined;
+    try {
+      try {
+        database = await createPostgresDatabase(options.databaseUrl);
+        const auth = createAuth(database, options);
+        const resolved = await auth.resolveSession(c.req.raw.headers);
+        await requireGlobalAdministrator(
+          database,
+          resolved.data,
+          options.adminEmail,
+        );
+        c.set("database", database);
+        c.set("auth", auth);
+        c.set("identity", resolved.data);
+        c.set("abuse", createAbuseProtection(database.client, options.secret));
+        for (const cookie of resolved.headers.getSetCookie())
+          c.header("Set-Cookie", cookie, { append: true });
+      } catch {
+        administrativeNotFound();
+      }
+      // Variantes codificadas, caixa diferente e prefixos não são aliases.
+      if (!(
+        c.req.path === "/admin" ||
+        c.req.path === "/api/admin" ||
+        c.req.path.startsWith("/api/admin/")
+      ))
+        return c.notFound();
+      await next();
+    } finally {
+      await database?.client.end().catch(() => {});
+    }
   });
+  const csrf = csrfProtection({ trustedOrigins: [origin] });
   app.use(
     "*",
-    bodyLimit({
-      maxSize: 16_384,
-      onError: (c) =>
-        c.json(
+    createMiddleware<Environment>(async (c, next) => {
+      const denied = await csrf(c, next);
+      if (denied)
+        return c.json(
           {
-            erro: "ENTRADA_INVALIDA",
-            mensagem: "A solicitação excede o tamanho permitido.",
+            erro: "ORIGEM_INVALIDA",
+            mensagem: "A origem da solicitação não é permitida.",
           },
-          413,
-        ),
+          403,
+        );
     }),
   );
+  app.use(
+    "*",
+    createMiddleware<Environment>((c, next) =>
+      bodyLimit({
+        // A seleção já admite 1000 UUIDs; os demais contratos mantêm 16 KiB.
+        maxSize:
+          c.req.method === "PUT" && c.req.path === "/api/admin/features/members"
+            ? 65_536
+            : 16_384,
+        onError: (c) =>
+          c.json(
+            {
+              erro: "ENTRADA_INVALIDA",
+              mensagem: "A solicitação excede o tamanho permitido.",
+            },
+            413,
+          ),
+      })(c, next),
+    ),
+  );
   app.use("/api/*", async (c, next) => {
+    if (administrativePath(c.req.path)) return next();
     const database = await createPostgresDatabase(options.databaseUrl);
     try {
       c.set("database", database);
@@ -118,13 +178,18 @@ export function createApp(options: AppOptions) {
       await database.client.end();
     }
   });
-  app.use("/api/*", async (c, next) => {
-    const abuse = c.get("abuse");
-    if (abuse) return abuse.beforeSession(c, next);
-    await next();
-  });
+  app.use(
+    "/api/*",
+    createMiddleware<Environment>(async (c, next) => {
+      if (administrativePath(c.req.path)) return next();
+      const abuse = c.get("abuse");
+      if (abuse) return abuse.beforeSession(c, next);
+      await next();
+    }),
+  );
   // Resolve uma vez por request, inclusive para a quota autenticada de logout.
   app.use("/api/*", async (c, next) => {
+    if (administrativePath(c.req.path)) return next();
     c.set("identity", null);
     if (
       (!c.req.path.startsWith("/api/auth/") ||
@@ -142,10 +207,79 @@ export function createApp(options: AppOptions) {
     }
     await next();
   });
-  app.use("/api/*", async (c, next) => {
-    const abuse = c.get("abuse");
-    if (abuse) return abuse.middleware(c.get("identity"))(c, next);
-    await next();
+  app.use(
+    "/api/*",
+    createMiddleware<Environment>(async (c, next) => {
+      const abuse = c.get("abuse");
+      if (abuse)
+        return administrativePath(c.req.path)
+          ? abuse.administrative(c.get("identity"))(c, next)
+          : abuse.middleware(c.get("identity"))(c, next);
+      await next();
+    }),
+  );
+
+  app.get("/api/admin/session", (c) => {
+    const identity = c.get("identity");
+    if (!identity) administrativeNotFound();
+    return c.json({ userId: identity.user.id, sessionId: identity.session.id });
+  });
+  app.get("/api/admin/organizations", async (c) => {
+    const after = c.req.query("after");
+    const items = await administrativeDirectory({
+      database: c.get("database"),
+      identity: c.get("identity"),
+      adminEmail: options.adminEmail,
+      ...(after ? { after } : {}),
+    });
+    return c.json({
+      items,
+      next: items.length === 100 ? (items.at(-1)?.id ?? null) : null,
+    });
+  });
+  app.get("/api/admin/features", async (c) => {
+    const stored = await listFeatureFlags({
+      database: c.get("database"),
+      identity: c.get("identity"),
+      adminEmail: options.adminEmail,
+    });
+    return c.json({
+      features: featureKeys.map((key) => {
+        const row = stored.find((flag) => flag.key === key);
+        return {
+          key,
+          policy: row?.policy ?? "disabled",
+          version: row?.version ?? 0,
+          organizationIds: row?.organizationIds ?? [],
+        };
+      }),
+    });
+  });
+  app.put("/api/admin/features/:key", async (c) => {
+    const input = await readObject(c.req.raw, [
+      "policy",
+      "expectedVersion",
+      "confirmAll",
+    ]);
+    if (typeof input.expectedVersion !== "number") invalidAdministrativeInput();
+    if (
+      input.policy &&
+      typeof input.policy === "object" &&
+      "kind" in input.policy &&
+      input.policy.kind === "all" &&
+      input.confirmAll !== true
+    )
+      invalidAdministrativeInput();
+    const result = await updateFeatureFlag({
+      database: c.get("database"),
+      identity: c.get("identity"),
+      adminEmail: options.adminEmail,
+      key: c.req.param("key"),
+      policy: input.policy,
+      expectedVersion: readExpectedVersion(input.expectedVersion),
+      operationId: crypto.randomUUID(),
+    });
+    return c.json({ feature: result });
   });
 
   app.post("/api/onboarding/email", async (c) => {
@@ -311,7 +445,7 @@ export function createApp(options: AppOptions) {
     return c.json({
       organizationId: context.tenantId,
       role: context.role,
-      membersEnabled: membersAvailable(options, context.tenantId),
+      membersEnabled: true,
     });
   });
   app.get("/api/churches", async (c) =>
@@ -332,16 +466,10 @@ export function createApp(options: AppOptions) {
     ),
   );
   app.use("/api/members*", async (c, next) => {
-    if (
-      options.membersEnabled !== true &&
-      !options.membersDevOrganizations?.length
-    )
-      return c.notFound();
-    const context = await organizationContext(
+    await organizationContext(
       c.get("database"),
       await readySession(c.get("database"), c.get("identity")),
     );
-    if (!membersAvailable(options, context.tenantId)) return c.notFound();
     await next();
   });
   app.post("/api/members", async (c) => {
@@ -352,7 +480,6 @@ export function createApp(options: AppOptions) {
         identity,
         await readMember(c.req.raw),
         readMemberRequestKey(c.req.raw),
-        options,
       ),
       201,
     );
@@ -364,7 +491,6 @@ export function createApp(options: AppOptions) {
         c.get("database"),
         identity,
         readMemberFilters(new URL(c.req.url)),
-        options,
       ),
     );
   });
@@ -377,9 +503,7 @@ export function createApp(options: AppOptions) {
         "ENTRADA_INVALIDA",
         "A tentativa informada é inválida.",
       );
-    return c.json(
-      await findMemberRequest(c.get("database"), identity, key, options),
-    );
+    return c.json(await findMemberRequest(c.get("database"), identity, key));
   });
   app.patch("/api/members/:id", async (c) => {
     const identity = await readySession(c.get("database"), c.get("identity"));
@@ -389,7 +513,6 @@ export function createApp(options: AppOptions) {
         identity,
         requireUuid(c.req.param("id")),
         await readMemberEdit(c.req.raw),
-        options,
       ),
     );
   });
@@ -400,7 +523,6 @@ export function createApp(options: AppOptions) {
         c.get("database"),
         identity,
         requireUuid(c.req.param("id")),
-        options,
       ),
     );
   });

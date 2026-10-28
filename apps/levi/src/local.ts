@@ -27,11 +27,11 @@ if (
   );
 }
 const app = createApp({
-  membersEnabled: process.env.LEVI_LOCAL_DATABASE === "1",
   databaseUrl,
   baseURL: publicOrigin,
   onboardingReturnPath: "/onboarding",
   secret,
+  adminEmail: process.env.LEVI_ADMIN_EMAIL,
   email: {
     async send(message) {
       // Transporte de desenvolvimento: arquivos privados, sem endpoint de leitura.

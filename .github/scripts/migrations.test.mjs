@@ -797,7 +797,7 @@ test("DEV coordination serializes independent phases; deploy never applies; CI h
     );
     assert.equal(deploy.jobs[phase].with.phase, phase);
   }
-  for (const name of ["ci", "release"])
+  for (const name of ["ci"])
     assert(
       !/CLOUDFLARE_D1_|migrations\.mjs (expand|backfill|contract|recover)/.test(
         readFileSync(`.github/workflows/${name}.yml`, "utf8"),

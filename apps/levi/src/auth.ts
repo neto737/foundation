@@ -8,13 +8,15 @@ import type { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { account, session, user, verification } from "./data/schema.js";
-import type { MemberAccessOptions } from "./member-access.js";
 import { RequestError } from "./contracts.js";
 
 export type Database = Awaited<ReturnType<typeof createPostgresDatabase>>;
-export interface AppOptions extends MemberAccessOptions {
+export interface AppOptions {
+  baseURL: string;
   databaseUrl: string;
   secret: string;
+  /** Configuração privada; nunca derivada da requisição ou da concessão histórica. */
+  adminEmail?: string | undefined;
   email: FoundationEmail;
   /** Destino fixo de apresentação; não vem da requisição do usuário. */
   onboardingReturnPath?: "/onboarding";

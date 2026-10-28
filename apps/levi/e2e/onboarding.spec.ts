@@ -7,7 +7,6 @@ import {
   emailLink,
   provision,
   readyAccount,
-  syntheticEmail,
   verifyEmail,
 } from "./helpers.js";
 
@@ -339,7 +338,10 @@ test("resposta perdida após commit recupera o resultado sem outro provisionamen
     page.getByRole("heading", { name: "Suas organizações" }),
   ).toBeVisible();
   expect(posts).toBe(1);
-  const result = await observer.client.query(
+  const result = await observer.client.query<{
+    provisions: number;
+    audit: number;
+  }>(
     'SELECT (SELECT count(*)::int FROM onboarding_provisions p WHERE p.user_id=u.id) provisions, (SELECT count(*)::int FROM audit_events a WHERE a.actor=u.id) audit FROM "user" u WHERE email=$1',
     [email],
   );
@@ -352,13 +354,16 @@ test("troca real entre organizações não conserva igrejas anteriores e revoga�
   const email = await readyAccount(page);
   await provision(page, "Organização inicial");
   const user = (
-    await observer.client.query('SELECT id FROM "user" WHERE email=$1', [email])
-  ).rows[0];
+    await observer.client.query<{ id: string }>(
+      'SELECT id FROM "user" WHERE email=$1',
+      [email],
+    )
+  ).rows[0]!;
   const second = (
-    await observer.client.query(
+    await observer.client.query<{ id: string }>(
       "INSERT INTO tenants(name) VALUES('Outra organização permitida') RETURNING id",
     )
-  ).rows[0];
+  ).rows[0]!;
   await observer.client.query(
     "INSERT INTO churches(tenant_id,name) VALUES($1,'Igreja da outra organização')",
     [second.id],
@@ -368,10 +373,10 @@ test("troca real entre organizações não conserva igrejas anteriores e revoga�
     [second.id, user.id],
   );
   const foreign = (
-    await observer.client.query(
+    await observer.client.query<{ id: string }>(
       "INSERT INTO tenants(name) VALUES('Organização sem vínculo') RETURNING id",
     )
-  ).rows[0];
+  ).rows[0]!;
   await observer.client.query(
     "INSERT INTO churches(tenant_id,name) VALUES($1,'Igreja sem vínculo')",
     [foreign.id],
@@ -430,13 +435,16 @@ test("mudança de tenant entre leituras não mistura o nome da organização e s
   const email = await readyAccount(page);
   await provision(page, "Organização escolhida");
   const user = (
-    await observer.client.query('SELECT id FROM "user" WHERE email=$1', [email])
-  ).rows[0];
+    await observer.client.query<{ id: string }>(
+      'SELECT id FROM "user" WHERE email=$1',
+      [email],
+    )
+  ).rows[0]!;
   const second = (
-    await observer.client.query(
+    await observer.client.query<{ id: string }>(
       "INSERT INTO tenants(name) VALUES('Outra aba') RETURNING id",
     )
-  ).rows[0];
+  ).rows[0]!;
   await observer.client.query(
     "INSERT INTO churches(tenant_id,name) VALUES($1,'Igreja da outra aba')",
     [second.id],

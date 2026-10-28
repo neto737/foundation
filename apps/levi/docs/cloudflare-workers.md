@@ -52,14 +52,14 @@ O processo automático após CI, com guardas e mecanismo de suspensão, está em
 | `RESEND_API_KEY`     | Secret exclusivo DEV, somente envio e com domínio restrito quando disponível  |
 | `LEVI_EMAIL_FROM`    | Remetente de domínio/subdomínio verificado                                    |
 
-Não há allowlist de destinatários no DEV público. A allowlist de organizações
-sintéticas de membros é independente e permanece vazia até autorização específica;
-ver [Gestão de membros](gestao-membros.md#habilitação-e-limites).
+Não há allowlist de destinatários no DEV público. O módulo de membros está
+disponível para todas as organizações, preservando autorização por usuário e
+isolamento; ver [Gestão de membros](gestao-membros.md#habilitação-e-limites).
 `.dev.vars.example` contém somente nomes vazios; arquivos locais com valores são
 ignorados. Configuração incompleta resulta em 503 sanitizado antes de acessar
 banco/provider.
 
-O contrato publicado `@t00ls-dev/email@0.1.2` fornece `createResendEmail`, usando
+O contrato local `@t00ls-dev/email` fornece `createResendEmail`, usando
 fetch HTTPS. Não há SDK adicional. Mantêm-se os dois e-mails, callbacks fixos e
 validação de tokens no Better Auth. Não há envio na transação de provisionamento.
 Um aceite HTTP do Resend não comprova entrega ao destinatário.
@@ -267,8 +267,8 @@ de qualquer uso real.
 O ambiente preparado é DEV público: sem Cloudflare Access ou allowlist de
 endereços. Consultar [Deploy DEV](deploy-dev.md) para recursos, CI automática,
 secrets, habilitação e guardas do SHA/Hyperdrive. O mecanismo de suspensão é
-`LEVI_DEV_DEPLOY_ENABLED=false`; somente pré-requisitos conferidos permitem
-mantê-lo ativo para publicação automática.
+`DEPLOY_READY=false` no Environment `levi-dev`; somente pré-requisitos conferidos
+e autorização específica permitem publicação manual pelo Foundation.
 
 Banco/roles exclusivos, TLS, migrations administrativas explícitas, Hyperdrive
 sem cache, remetente verificado e tracking desabilitado são pré-requisitos.

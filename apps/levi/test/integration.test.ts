@@ -17,16 +17,19 @@ after(async () => {
   await observer.client.end();
 });
 
-test("DEV público: limites duráveis por IP/destinatário, concorrência e respostas sem enumeração", async () => {
+void test("DEV público: limites duráveis por IP/destinatário, concorrência e respostas sem enumeração", async (t) => {
+  const fixedNow = Date.now() + 60_000;
+  t.mock.method(Date, "now", () => fixedNow);
   const messages: Array<{ to: string }> = [];
   const publicApp = createApp({
-    databaseUrl: applicationDatabaseUrl(databaseUrl!),
+    databaseUrl: applicationDatabaseUrl(databaseUrl),
     baseURL: origin,
     secret: "synthetic-public-secret-with-more-than-32-characters",
     publicAbuseProtection: true,
     email: {
       send: async (input) => {
         messages.push(input);
+        return Promise.resolve();
       },
     },
   });
@@ -45,14 +48,16 @@ test("DEV público: limites duráveis por IP/destinatário, concorrência e resp
       }),
     );
   const results = await Promise.all(
-    Array.from({ length: 7 }, (_, i) => sendPublic(email, `198.51.100.${i}`)),
+    Array.from({ length: 7 }, (_, i) =>
+      Promise.resolve(sendPublic(email, `198.51.100.${i}`)),
+    ),
   );
   assert.equal(results.filter((r) => r.status === 200).length, 5);
   assert.equal(results.filter((r) => r.status === 429).length, 2);
   assert.equal(messages.length, 3);
   const denied = results.find((r) => r.status === 429)!;
   assert.ok(Number(denied.headers.get("retry-after")) > 0);
-  assert.equal((await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
+  assert.equal(readObject(await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
   const allowedBodies = await Promise.all(
     results.filter((r) => r.status === 200).map((r) => r.json()),
   );
@@ -61,15 +66,15 @@ test("DEV público: limites duráveis por IP/destinatário, concorrência e resp
       (value) => JSON.stringify(value) === JSON.stringify(allowedBodies[0]),
     ),
   );
-  const counters = await observer.client.query(
+  const counters = await observer.client.query<Record<string, unknown>>(
     "SELECT key FROM abuse_counters",
   );
   assert.ok(!JSON.stringify(counters.rows).includes(email));
   assert.ok(!JSON.stringify(counters.rows).includes("192.0.2.220"));
 });
 
-test("DEV público: orçamento diário atômico entre conexões, expiração e falha fechada", async () => {
-  const other = await createPostgresDatabase(databaseUrl!);
+void test("DEV público: orçamento diário atômico entre conexões, expiração e falha fechada", async () => {
+  const other = await createPostgresDatabase(databaseUrl);
   const key = `email-day:${Math.floor(Date.now() / 86_400_000) * 86_400_000}`;
   try {
     await observer.client.query(
@@ -81,6 +86,7 @@ test("DEV público: orçamento diário atômico entre conexões, expiração e f
       createAbuseProtection(database.client, "synthetic-secret").protectEmail({
         send: async (input) => {
           messages.push(input);
+          return Promise.resolve();
         },
       }),
     );
@@ -97,11 +103,11 @@ test("DEV público: orçamento diário atômico entre conexões, expiração e f
     assert.equal(messages.length, 2);
     assert.equal(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT count FROM abuse_counters WHERE key=$1",
           [key],
         )
-      ).rows[0].count,
+      ).rows[0]?.count,
       100,
     );
     await observer.client.query(
@@ -152,6 +158,7 @@ const app = createApp({
   email: {
     send: async (input) => {
       sent.push(input);
+      return Promise.resolve();
     },
   },
 });
@@ -200,7 +207,7 @@ async function verifiedAccount() {
     [email],
   );
   assert.ok(result.rows[0]);
-  return { email, cookie: cookies(response), id: result.rows[0].id };
+  return { email, cookie: cookies(response), id: result.rows[0]?.id };
 }
 
 async function passwordToken(account: { cookie: string; email: string }) {
@@ -251,17 +258,20 @@ async function provisionedAccount() {
   return { ...account, key, ...result };
 }
 
-test("rate limiting contextual: sessões reais, mesmo IP, tenant, revogação e falsificação", async () => {
+void test("rate limiting contextual: sessões reais, mesmo IP, tenant, revogação e falsificação", async () => {
   const account = await provisionedAccount();
   const other = await provisionedAccount();
   const secret = "synthetic-test-secret-with-more-than-32-characters";
   const publicApp = createApp({
-    databaseUrl: applicationDatabaseUrl(databaseUrl!),
+    databaseUrl: applicationDatabaseUrl(databaseUrl),
     baseURL: origin,
     secret,
     publicAbuseProtection: true,
-    membersEnabled: true,
-    email: { send: async () => {} },
+    email: {
+      send: async () => {
+        return Promise.resolve();
+      },
+    },
   });
   const send = (
     path: string,
@@ -389,15 +399,15 @@ test("rate limiting contextual: sessões reais, mesmo IP, tenant, revogação e 
   }
 });
 
-test("store contextual: incremento atômico entre conexões e limpeza não espera expirados bloqueados", async () => {
+void test("store contextual: incremento atômico entre conexões e limpeza não espera expirados bloqueados", async () => {
   const connections = await Promise.all(
     Array.from({ length: 4 }, () =>
-      createPostgresDatabase(applicationDatabaseUrl(databaseUrl!)),
+      createPostgresDatabase(applicationDatabaseUrl(databaseUrl)),
     ),
   );
   const key = `synthetic-concurrent:${randomUUID()}`;
   const expired = `synthetic-locked:${randomUUID()}`;
-  const locker = await createPostgresDatabase(databaseUrl!);
+  const locker = await createPostgresDatabase(databaseUrl);
   try {
     const stores = connections.map(
       (db) => createAbuseProtection(db.client, "synthetic").store,
@@ -449,7 +459,7 @@ test("store contextual: incremento atômico entre conexões e limpeza não esper
   }
 });
 
-test("prova pública: Magic Link verifica antes da primeira senha e permite retomada", async () => {
+void test("prova pública: Magic Link verifica antes da primeira senha e permite retomada", async () => {
   const email = `${randomUUID()}@example.test`;
   assert.equal((await request("/api/onboarding/email", { email })).status, 200);
   assert.equal(
@@ -516,7 +526,7 @@ test("prova pública: Magic Link verifica antes da primeira senha e permite reto
   assert.equal(cookies(replay), "");
 });
 
-test("e-mail e sessão sem senha não podem provisionar nem contornar a allowlist", async () => {
+void test("e-mail e sessão sem senha não podem provisionar nem contornar a allowlist", async () => {
   assert.equal((await provision("")).status, 401);
   const account = await verifiedAccount();
   assert.equal((await provision(account.cookie)).status, 403);
@@ -583,7 +593,7 @@ test("e-mail e sessão sem senha não podem provisionar nem contornar a allowlis
   assert.equal((await provision(account.cookie)).status, 403);
 });
 
-test("conta existente retoma o fluxo e sessão com credencial perdida volta à etapa de senha", async () => {
+void test("conta existente retoma o fluxo e sessão com credencial perdida volta à etapa de senha", async () => {
   const account = await readyAccount();
   assert.equal(
     (await request("/api/onboarding/email", { email: account.email })).status,
@@ -596,12 +606,12 @@ test("conta existente retoma o fluxo e sessão com credencial perdida volta à e
     await (await request("/api/onboarding", undefined, cookie)).json(),
     { etapa: "organizacao" },
   );
-  const rows = await observer.client.query(
+  const rows = await observer.client.query<Record<string, unknown>>(
     'SELECT id FROM "user" WHERE email=$1',
     [account.email],
   );
   assert.equal(rows.rowCount, 1);
-  assert.equal(rows.rows[0].id, account.id);
+  assert.equal(rows.rows[0]?.id, account.id);
   // Simula estado anterior não verificado usando apenas dados sintéticos.
   await observer.client.query(
     'UPDATE "user" SET email_verified=false WHERE id=$1',
@@ -620,7 +630,7 @@ test("conta existente retoma o fluxo e sessão com credencial perdida volta à e
   assert.equal((await provision(cookie)).status, 401); // Better Auth revogou a sessão anterior
 });
 
-test("Magic Links inválidos, expirados e concorrentes não concedem duas sessões", async () => {
+void test("Magic Links inválidos, expirados e concorrentes não concedem duas sessões", async () => {
   const invalid = await request("/api/auth/magic-link/verify?token=invalido");
   assert.equal(cookies(invalid), "");
   assert.ok(invalid.headers.get("location")?.includes("error="));
@@ -670,7 +680,7 @@ test("Magic Links inválidos, expirados e concorrentes não concedem duas sessõ
   );
 });
 
-test("primeira senha exige sessão correspondente e token nativo válido de uso único", async () => {
+void test("primeira senha exige sessão correspondente e token nativo válido de uso único", async () => {
   const account = await verifiedAccount();
   const other = await verifiedAccount();
   const token = await passwordToken(account);
@@ -731,14 +741,14 @@ test("primeira senha exige sessão correspondente e token nativo válido de uso 
   );
 });
 
-test("provisionamento é atômico, gera UUIDs e grava somente auditoria mínima", async () => {
+void test("provisionamento é atômico, gera UUIDs e grava somente auditoria mínima", async () => {
   const account = await provisionedAccount();
   const uuid =
     /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
   for (const id of [account.id, account.organizationId, account.churchId])
     assert.match(id, uuid);
   // Observador é outra conexão, sem compartilhar a transação da aplicação.
-  const counts = await observer.client.query(
+  const counts = await observer.client.query<Record<string, unknown>>(
     `SELECT
     (SELECT count(*)::int FROM tenants WHERE id=$1) AS tenants,
     (SELECT count(*)::int FROM churches WHERE tenant_id=$1) AS churches,
@@ -754,11 +764,12 @@ test("provisionamento é atômico, gera UUIDs e grava somente auditoria mínima"
     receipts: 1,
     audit: 1,
   });
-  const events = await observer.client.query(
+  const events = await observer.client.query<Record<string, unknown>>(
     "SELECT * FROM audit_events WHERE tenant=$1",
     [account.organizationId],
   );
   const event = events.rows[0];
+  assert.ok(event);
   assert.deepEqual(event.metadata, {});
   assert.equal(event.actor, account.id);
   assert.equal(event.target, account.organizationId);
@@ -774,16 +785,18 @@ test("provisionamento é atômico, gera UUIDs e grava somente auditoria mínima"
     "tenant_memberships",
     "audit_events",
   ]) {
-    const rows = await observer.client.query(`SELECT id FROM "${table}"`);
+    const rows = await observer.client.query<{ id: string }>(
+      `SELECT id FROM "${table}"`,
+    );
     for (const row of rows.rows) assert.match(row.id, uuid);
   }
   assert.equal(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT count(*)::int AS members FROM members WHERE tenant_id=$1",
         [account.organizationId],
       )
-    ).rows[0].members,
+    ).rows[0]?.members,
     0,
   );
   await assert.rejects(
@@ -803,16 +816,18 @@ test("provisionamento é atômico, gera UUIDs e grava somente auditoria mínima"
   );
 });
 
-test("repetições concorrentes serializam o primeiro onboarding sem duplicar resultados", async () => {
+void test("repetições concorrentes serializam o primeiro onboarding sem duplicar resultados", async () => {
   const account = await readyAccount();
   const key = randomUUID();
   const results = await Promise.all(
-    Array.from({ length: 5 }, () => provision(account.cookie, key)),
+    Array.from({ length: 5 }, () =>
+      Promise.resolve(provision(account.cookie, key)),
+    ),
   );
   for (const response of results) assert.equal(response.status, 201);
   const bodies = await Promise.all(results.map((response) => response.json()));
   for (const body of bodies) assert.deepEqual(body, bodies[0]);
-  const receipt = await observer.client.query(
+  const receipt = await observer.client.query<Record<string, unknown>>(
     "SELECT tenant_id FROM onboarding_provisions WHERE user_id=$1",
     [account.id],
   );
@@ -821,7 +836,7 @@ test("repetições concorrentes serializam o primeiro onboarding sem duplicar re
     (
       await observer.client.query(
         "SELECT id FROM audit_events WHERE tenant=$1",
-        [receipt.rows[0].tenant_id],
+        [receipt.rows[0]?.tenant_id],
       )
     ).rowCount,
     1,
@@ -843,9 +858,9 @@ test("repetições concorrentes serializam o primeiro onboarding sem duplicar re
 });
 
 for (const failure of ["audit", "domain"] as const) {
-  test(`rollback observado por outra conexão após falha real de ${failure}`, async () => {
+  void test(`rollback observado por outra conexão após falha real de ${failure}`, async () => {
     const account = await readyAccount();
-    const countsBefore = await observer.client.query(
+    const countsBefore = await observer.client.query<Record<string, unknown>>(
       "SELECT (SELECT count(*)::int FROM tenants) tenants, (SELECT count(*)::int FROM churches) churches, (SELECT count(*)::int FROM audit_events) audit",
     );
     // A falha de domínio acontece depois das escritas de organização/igreja/vínculo.
@@ -894,7 +909,7 @@ for (const failure of ["audit", "domain"] as const) {
       );
       assert.deepEqual(
         (
-          await observer.client.query(
+          await observer.client.query<Record<string, unknown>>(
             "SELECT (SELECT count(*)::int FROM tenants) tenants, (SELECT count(*)::int FROM churches) churches, (SELECT count(*)::int FROM audit_events) audit",
           )
         ).rows,
@@ -916,10 +931,10 @@ for (const failure of ["audit", "domain"] as const) {
   });
 }
 
-test("duas organizações ficam isoladas e administrador acessa múltiplas igrejas da sua organização", async () => {
+void test("duas organizações ficam isoladas e administrador acessa múltiplas igrejas da sua organização", async () => {
   const first = await provisionedAccount();
   const second = await provisionedAccount();
-  const church = await observer.client.query(
+  const church = await observer.client.query<Record<string, unknown>>(
     "INSERT INTO churches(tenant_id,name) VALUES($1,'Segunda igreja sintética') RETURNING id",
     [first.organizationId],
   );
@@ -932,7 +947,7 @@ test("duas organizações ficam isoladas e administrador acessa múltiplas igrej
   assert.equal(listing.organizationId, first.organizationId);
   assert.deepEqual(
     new Set(listing.churches.map((c) => c.id)),
-    new Set([first.churchId, church.rows[0].id]),
+    new Set([first.churchId, church.rows[0]?.id]),
   );
   assert.equal(
     (await request(`/api/churches/${second.churchId}`, undefined, first.cookie))
@@ -958,7 +973,7 @@ test("duas organizações ficam isoladas e administrador acessa múltiplas igrej
     {
       organizationId: first.organizationId,
       role: "admin",
-      membersEnabled: false,
+      membersEnabled: true,
     },
   );
   // Contexto adulterado no banco também não concede autoridade sem vínculo.
@@ -1015,7 +1030,7 @@ test("duas organizações ficam isoladas e administrador acessa múltiplas igrej
   );
 });
 
-test("nova sessão retoma organização existente; revogação e roles desconhecidas nunca concedem acesso", async () => {
+void test("nova sessão retoma organização existente; revogação e roles desconhecidas nunca concedem acesso", async () => {
   const account = await provisionedAccount();
   const login = await request("/api/auth/sign-in/email", {
     email: account.email,
@@ -1069,7 +1084,7 @@ test("nova sessão retoma organização existente; revogação e roles desconhec
   );
 });
 
-test("CSRF, falha de autenticação e falha de banco não viram autorização", async () => {
+void test("CSRF, falha de autenticação e falha de banco não viram autorização", async () => {
   const account = await provisionedAccount();
   const malicious = await request(
     "/api/tenant",
@@ -1134,14 +1149,18 @@ test("CSRF, falha de autenticação e falha de banco não viram autorização", 
 });
 
 for (const failDelete of [false, true])
-  test(`logout direto com sessão renovável: ${failDelete ? "falha não confirma revogação" : "limpa cookies nativos e revoga"}`, async () => {
+  void test(`logout direto com sessão renovável: ${failDelete ? "falha não confirma revogação" : "limpa cookies nativos e revoga"}`, async () => {
     const account = await provisionedAccount();
     const publicApp = createApp({
-      databaseUrl: applicationDatabaseUrl(databaseUrl!),
+      databaseUrl: applicationDatabaseUrl(databaseUrl),
       baseURL: origin,
       secret: "synthetic-test-secret-with-more-than-32-characters",
       publicAbuseProtection: true,
-      email: { send: async () => {} },
+      email: {
+        send: async () => {
+          return Promise.resolve();
+        },
+      },
     });
     await observer.client.query(
       "UPDATE session SET updated_at=now()-interval '2 days', expires_at=now()+interval '1 day' WHERE user_id=$1",
@@ -1190,7 +1209,7 @@ for (const failDelete of [false, true])
           "Nenhum cookie positivo de renovação no logout",
         );
       }
-      const sessions = await observer.client.query(
+      const sessions = await observer.client.query<Record<string, unknown>>(
         "SELECT id FROM session WHERE user_id=$1",
         [account.id],
       );
@@ -1219,15 +1238,19 @@ for (const failDelete of [false, true])
     }
   });
 
-test("HEAD autenticado consome a leitura de GET e não contorna seu limite", async () => {
+void test("HEAD autenticado consome a leitura de GET e não contorna seu limite", async () => {
   const account = await readyAccount();
   const secret = "synthetic-test-secret-with-more-than-32-characters";
   const publicApp = createApp({
-    databaseUrl: applicationDatabaseUrl(databaseUrl!),
+    databaseUrl: applicationDatabaseUrl(databaseUrl),
     baseURL: origin,
     secret,
     publicAbuseProtection: true,
-    email: { send: async () => {} },
+    email: {
+      send: async () => {
+        return Promise.resolve();
+      },
+    },
   });
   const digest = createHmac("sha256", secret)
     .update(`user:${account.id}`)
@@ -1272,7 +1295,7 @@ test("HEAD autenticado consome a leitura de GET e não contorna seu limite", asy
   }
 });
 
-test("cookies de renovação e logout nativos são preservados", async () => {
+void test("cookies de renovação e logout nativos são preservados", async () => {
   const account = await provisionedAccount();
   await observer.client.query(
     "UPDATE session SET updated_at=now()-interval '2 days', expires_at=now()+interval '1 day' WHERE user_id=$1",
@@ -1305,9 +1328,9 @@ test("cookies de renovação e logout nativos são preservados", async () => {
   );
 });
 
-test("API executa por HTTP Node e não executa migrations na inicialização", async () => {
+void test("API executa por HTTP Node e não executa migrations na inicialização", async () => {
   await observer.client.query("CREATE DATABASE levi_empty_startup");
-  const emptyUrl = new URL(databaseUrl!);
+  const emptyUrl = new URL(databaseUrl);
   emptyUrl.pathname = "/levi_empty_startup";
   const empty = await createPostgresDatabase(emptyUrl.toString());
   const emptyApp = createApp({
@@ -1316,7 +1339,7 @@ test("API executa por HTTP Node e não executa migrations na inicialização", a
     secret: "synthetic-test-secret-with-more-than-32-characters",
     email: {
       send: async () => {
-        throw new Error("Envio não esperado");
+        return Promise.reject(new Error("Envio não esperado"));
       },
     },
   });
@@ -1336,21 +1359,22 @@ test("API executa por HTTP Node e não executa migrations na inicialização", a
     assert.deepEqual(await response.json(), { etapa: "email" });
     assert.equal(
       (
-        await empty.client.query(
+        await empty.client.query<Record<string, unknown>>(
           "SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'",
         )
-      ).rows[0].count,
+      ).rows[0]?.count,
       0,
     );
     // Depois da prova de não-migração, exerce o fluxo inteiro via HTTP real.
     const httpOrigin = `http://127.0.0.1:${address.port}`;
     executableApp = createApp({
-      databaseUrl: applicationDatabaseUrl(databaseUrl!),
+      databaseUrl: applicationDatabaseUrl(databaseUrl),
       baseURL: httpOrigin,
       secret: "synthetic-test-secret-with-more-than-32-characters",
       email: {
         send: async (input) => {
           sent.push(input);
+          return Promise.resolve();
         },
       },
     });
@@ -1420,9 +1444,9 @@ test("API executa por HTTP Node e não executa migrations na inicialização", a
   }
 });
 
-test("sessão revogada enquanto o provisionamento aguarda lock não pode criar organização", async () => {
+void test("sessão revogada enquanto o provisionamento aguarda lock não pode criar organização", async () => {
   const account = await readyAccount();
-  const blocker = await createPostgresDatabase(databaseUrl!);
+  const blocker = await createPostgresDatabase(databaseUrl);
   await blocker.client.query("BEGIN");
   await blocker.client.query('SELECT id FROM "user" WHERE id=$1 FOR UPDATE', [
     account.id,
@@ -1431,7 +1455,7 @@ test("sessão revogada enquanto o provisionamento aguarda lock não pode criar o
   try {
     let waiting = false;
     for (let attempt = 0; attempt < 200; attempt++) {
-      const locks = await observer.client.query(
+      const locks = await observer.client.query<Record<string, unknown>>(
         "SELECT pid FROM pg_stat_activity WHERE wait_event_type='Lock' AND query ILIKE '%for update%'",
       );
       if (locks.rowCount) {
@@ -1471,3 +1495,142 @@ test("sessão revogada enquanto o provisionamento aguarda lock não pode criar o
     0,
   );
 });
+
+void test("troca do segredo invalida cookie antigo sem perder senha, vínculos ou tokens aleatórios persistidos", async () => {
+  const account = await provisionedAccount();
+  const resetToken = await passwordToken(account);
+  assert.equal(
+    (await request("/api/onboarding/email", { email: account.email })).status,
+    200,
+  );
+  const oldMagicLink = mailUrl(account.email);
+  const snapshot = async () =>
+    (
+      await observer.client.query<Record<string, unknown>>(
+        `SELECT
+      (SELECT to_jsonb(t) FROM tenants t WHERE id=$1) AS organization,
+      (SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM churches c WHERE tenant_id=$1) AS churches,
+      (SELECT jsonb_agg(to_jsonb(m) ORDER BY m.id) FROM tenant_memberships m WHERE tenant_id=$1) AS memberships,
+      (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM audit_events a WHERE tenant=$1) AS audit`,
+        [account.organizationId],
+      )
+    ).rows;
+  const persisted = await snapshot();
+  const passwordHash = async () =>
+    (
+      await observer.client.query<{ password: string }>(
+        `SELECT password FROM account WHERE user_id=$1 AND provider_id='credential'`,
+        [account.id],
+      )
+    ).rows[0]?.password;
+  const previousHash = await passwordHash();
+  assert.ok(previousHash);
+  const rotated = createApp({
+    databaseUrl: applicationDatabaseUrl(databaseUrl),
+    baseURL: origin,
+    secret: "synthetic-rotated-secret-with-more-than-32-characters",
+    email: {
+      send: async (input) => {
+        sent.push(input);
+        return Promise.resolve();
+      },
+    },
+  });
+  const rotatedRequest = (path: string, body?: object, cookie = "") =>
+    rotated.request(
+      new Request(new URL(path, origin), {
+        method: body ? "POST" : "GET",
+        headers: { origin, cookie, "content-type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+  assert.equal(
+    (await rotatedRequest("/api/organizations", undefined, account.cookie))
+      .status,
+    401,
+  );
+  assert.equal(
+    (await rotatedRequest("/admin", undefined, account.cookie)).status,
+    404,
+  );
+  // A assinatura deixou de ser aceita; não houve DELETE/revogação durável das sessões.
+  assert.equal(
+    (await request("/api/organizations", undefined, account.cookie)).status,
+    200,
+  );
+  const login = await rotatedRequest("/api/auth/sign-in/email", {
+    email: account.email,
+    password: "synthetic-password",
+  });
+  assert.equal(login.status, 200);
+  const cookie = cookies(login);
+  assert.ok(cookie.includes("session_token="));
+  assert.equal(
+    (await rotatedRequest("/api/organizations", undefined, cookie)).status,
+    200,
+  );
+  assert.equal(
+    (await request("/api/organizations", undefined, cookie)).status,
+    401,
+  );
+  assert.equal(await passwordHash(), previousHash);
+  assert.deepEqual(await snapshot(), persisted);
+  // Os tokens de link são aleatórios e persistidos; a troca de segredo não os revoga.
+  const magic = await rotatedRequest(
+    oldMagicLink.pathname + oldMagicLink.search,
+  );
+  assert.equal(magic.status, 302);
+  assert.ok(cookies(magic).includes("session_token="));
+  const replay = await rotatedRequest(
+    oldMagicLink.pathname + oldMagicLink.search,
+  );
+  assert.equal(replay.status, 302);
+  assert.equal(cookies(replay), "");
+  assert.ok(replay.headers.get("location")?.includes("error="));
+  assert.equal(
+    (
+      await rotatedRequest(
+        "/api/onboarding/password",
+        { token: resetToken, newPassword: "synthetic-password" },
+        cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await rotatedRequest(
+        "/api/onboarding/password",
+        { token: resetToken, newPassword: "synthetic-password" },
+        cookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await rotatedRequest("/api/auth/sign-in/email", {
+        email: account.email,
+        password: "synthetic-password",
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(await snapshot(), persisted);
+  assert.equal(
+    (
+      await observer.client.query<Record<string, unknown>>(
+        'SELECT id FROM "user" WHERE email=$1',
+        [account.email],
+      )
+    ).rows[0]?.id,
+    account.id,
+  );
+});
+
+function readObject(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import type { FoundationSession } from "@t00ls-dev/auth";
 import { createAbuseProtection } from "../src/abuse.js";
 import { authRequest, type Database } from "../src/auth.js";
@@ -16,13 +16,13 @@ function fixture() {
   let resolutions = 0;
   const counts = new Map<string, number>();
   const client = {
-    async query(sql: string, params: unknown[]) {
+    query(sql: string, params: unknown[]) {
       statements++;
       if (sql.includes("WITH expired")) cleanups++;
       const key = String(params[0]);
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
-      return { rows: [{ count }] };
+      return Promise.resolve({ rows: [{ count }] });
     },
   } as unknown as Pick<Database["client"], "query">;
   const protection = createAbuseProtection(
@@ -32,10 +32,11 @@ function fixture() {
   );
   const app = new Hono();
   app.use("*", protection.beforeSession);
-  app.use("*", (c, next) => {
+  const resolveIdentity: MiddlewareHandler = (c, next) => {
     resolutions++;
     return protection.middleware(current)(c, next);
-  });
+  };
+  app.use("*", resolveIdentity);
   app.all("*", () => Response.json({ ok: true }));
   return {
     counts,
@@ -77,7 +78,7 @@ for (const [path, method, limit, windowMs] of [
   ["/api/onboarding/password", "POST", 5, 900_000],
   ["/api/auth/sign-out", "POST", 30, 60_000],
 ] as const) {
-  test(`categoria ${method} ${path}: limite, janela e identidade compartilhada entre sessões/IPs`, async () => {
+  await test(`categoria ${method} ${path}: limite, janela e identidade compartilhada entre sessões/IPs`, async () => {
     const f = fixture();
     for (let i = 0; i < limit; i++) {
       f.setIdentity(identity("user-a", `session-${i % 2}`));
@@ -88,7 +89,11 @@ for (const [path, method, limit, windowMs] of [
     const denied = await f.send(path, method);
     assert.equal(denied.status, 429);
     assert.equal(denied.headers.get("retry-after"), String(windowMs / 1_000));
-    assert.equal((await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
+    const payload: unknown = await denied.json();
+    assert.ok(
+      payload !== null && typeof payload === "object" && "erro" in payload,
+    );
+    assert.equal(payload.erro, "LIMITE_DE_SOLICITACOES");
     f.setIdentity(identity("user-b"));
     assert.equal((await f.send(path, method)).status, 200);
     f.setIdentity(identity("user-a"));
@@ -99,7 +104,7 @@ for (const [path, method, limit, windowMs] of [
   });
 }
 
-test("leitura, escrita, seleção, provisionamento, senha e logout são independentes", async () => {
+await test("leitura, escrita, seleção, provisionamento, senha e logout são independentes", async () => {
   const f = fixture();
   f.setIdentity(identity("user-a"));
   for (let i = 0; i < 300; i++) assert.equal((await f.send()).status, 200);
@@ -123,7 +128,7 @@ for (const [path, limit] of [
   ["/api/auth/magic-link/verify?token=synthetic", 60],
   ["/api/auth/reset-password/synthetic", 60],
 ] as const) {
-  test(`HEAD compartilha a categoria e janela de GET em ${path}`, async () => {
+  await test(`HEAD compartilha a categoria e janela de GET em ${path}`, async () => {
     const f = fixture();
     f.setIdentity(identity("user-head"));
     for (let i = 0; i < limit; i++) {
@@ -148,7 +153,7 @@ for (const [path, limit] of [
   });
 }
 
-test("vinte contas no mesmo IP navegam; leitura aceita custa dois statements", async () => {
+await test("vinte contas no mesmo IP navegam; leitura aceita custa dois statements", async () => {
   const f = fixture();
   for (let user = 0; user < 20; user++) {
     f.setIdentity(identity(`user-${user}`));
@@ -158,7 +163,7 @@ test("vinte contas no mesmo IP navegam; leitura aceita custa dois statements", a
   assert.equal(f.cleanups, 600);
 });
 
-test("sem identidade validada, headers/cookie/tenant falsificados não concedem quota de usuário", async () => {
+await test("sem identidade validada, headers/cookie/tenant falsificados não concedem quota de usuário", async () => {
   const f = fixture();
   for (let i = 0; i < 60; i++)
     assert.equal(
@@ -191,7 +196,7 @@ test("sem identidade validada, headers/cookie/tenant falsificados não concedem 
   assert.equal((await f.send()).status, 200);
 });
 
-test("guarda ampla nega antes de resolver sessão e permanece separada dos limites funcionais", async () => {
+await test("guarda ampla nega antes de resolver sessão e permanece separada dos limites funcionais", async () => {
   const f = fixture();
   for (let i = 0; i < 1_200; i++) {
     f.setIdentity(identity(`user-${i}`));
@@ -204,7 +209,7 @@ test("guarda ampla nega antes de resolver sessão e permanece separada dos limit
   assert.equal(f.statements, 2_401);
 });
 
-test("pedidos de e-mail e login conservam quotas e buckets anteriores mesmo com sessão", async () => {
+await test("pedidos de e-mail e login conservam quotas e buckets anteriores mesmo com sessão", async () => {
   const f = fixture();
   f.setIdentity(identity("user-a"));
   for (let i = 0; i < 5; i++)
@@ -226,22 +231,22 @@ test("pedidos de e-mail e login conservam quotas e buckets anteriores mesmo com 
   assert.ok([...f.counts.keys()].some((key) => key.startsWith("login:")));
 });
 
-test("429 nativo de auth é sanitizado, normaliza X-Retry-After e preserva cookies/headers", async () => {
+await test("429 nativo de auth é sanitizado, normaliza X-Retry-After e preserva cookies/headers", async () => {
   const result = await authRequest(
     {
-      handler: async () =>
-        new Response("private-upstream", {
-          status: 429,
-          headers: [
-            ["X-Retry-After", "12"],
-            ["Cache-Control", "private, no-store"],
-            ["Set-Cookie", "synthetic-a=1; HttpOnly"],
-            ["Set-Cookie", "synthetic-b=2; HttpOnly"],
-          ],
-        }),
-      resolveSession: async () => {
-        throw new Error("Não utilizado");
-      },
+      handler: () =>
+        Promise.resolve(
+          new Response("private-upstream", {
+            status: 429,
+            headers: [
+              ["X-Retry-After", "12"],
+              ["Cache-Control", "private, no-store"],
+              ["Set-Cookie", "synthetic-a=1; HttpOnly"],
+              ["Set-Cookie", "synthetic-b=2; HttpOnly"],
+            ],
+          }),
+        ),
+      resolveSession: () => Promise.reject(new Error("Não utilizado")),
     },
     {
       baseURL: "https://example.test",

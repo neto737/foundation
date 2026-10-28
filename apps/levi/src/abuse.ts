@@ -1,6 +1,6 @@
 import { fixedWindowRateLimit } from "@t00ls-dev/security";
 import type { FoundationEmail, FoundationSession } from "@t00ls-dev/auth";
-import type { Context, MiddlewareHandler, Next } from "hono";
+import type { MiddlewareHandler, Next } from "hono";
 import type { Database } from "./auth.js";
 
 // Limites conservadores do DEV público; não são quotas comerciais do produto.
@@ -104,7 +104,7 @@ export function createAbuseProtection(
   const callbacks = limiter("v2:callback", publicAbuseLimits.callbackPerMinute);
   const emailRequests = limiter("email", publicAbuseLimits.emailPerMinute);
   const login = limiter("login", publicAbuseLimits.loginPerMinute);
-  function credentialLimiter(c: Context) {
+  function credentialLimiter(c: Parameters<MiddlewareHandler>[0]) {
     if (
       c.req.method === "POST" &&
       ["/api/onboarding/email", "/api/onboarding/password-email"].includes(
@@ -115,7 +115,11 @@ export function createAbuseProtection(
     if (c.req.path === "/api/auth/sign-in/email") return login;
     return null;
   }
-  async function apply(limited: MiddlewareHandler, c: Context, next: Next) {
+  async function apply(
+    limited: MiddlewareHandler,
+    c: Parameters<MiddlewareHandler>[0],
+    next: Next,
+  ) {
     const response = await limited(c, async () => {
       // Respostas nativas do handler auth podem substituir os headers preparados do Hono.
       const quotaHeaders = [
@@ -242,5 +246,21 @@ export function createAbuseProtection(
       },
     };
   }
-  return { beforeSession, middleware, protectEmail, store };
+  function administrative(
+    identity: FoundationSession | null,
+  ): MiddlewareHandler {
+    return (c, next) =>
+      apply(
+        limiter(
+          "v2:admin",
+          60,
+          () => digest(`user:${identity?.user.id}`),
+          60_000,
+          store,
+        ),
+        c,
+        next,
+      );
+  }
+  return { beforeSession, middleware, administrative, protectEmail, store };
 }

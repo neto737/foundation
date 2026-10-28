@@ -2,10 +2,11 @@
 
 Cada produto possui deploy independente. O Foundation valida somente o fluxo DEV
 usando `examples/links`. O
-[publicador manual Levi preparado](../../.github/workflows/deploy-levi-dev.yml)
-é independente, usa `levi-dev` ainda não provisionado e não chama o coordenador
-D1. Seu interruptor de repositório permanece ausente/fechado. Não há
-transferência operacional nem autorização de dispatch; ver
+[publicador manual Levi](../../.github/workflows/deploy-levi-dev.yml) é
+independente, usa o Environment `levi-dev` e não chama o coordenador D1. A
+transferência DEV já foi concluída. O gate canônico `LEVI_DEPLOY_READY` exige
+migração administrativa do cadastro legado antes de usar esta revisão. Esta
+alteração não muda gates reais nem autoriza dispatch; ver
 [Deploy Levi DEV](../../apps/levi/docs/deploy-dev.md).
 
 A política aprovada exige migrations persistentes em operação independente e
@@ -23,14 +24,14 @@ O workflow `Deploy DEV` aceita exclusivamente `workflow_dispatch`, com
 incluindo conclusões antigas da CI e suas reexecuções. Os jobs operacionais
 dependem dessa validação e da cadeia de sucesso existente.
 
-Na conferência de 25/10/2026, o workflow remoto permanece `disabled_manually`.
-Esta preparação não o reativa, não executa dispatch e não autoriza deploy ou
-migrations persistentes. Após revisão e integração, a reativação exige
-autorização própria e conferência da definição efetiva em master, CI e ausência
-de operações pendentes; não disparar o ciclo como teste de reativação. Cada
-execução futura também exige autorização específica para o ciclo completo,
-incluindo as fases persistentes. O modo manual não implementa o desacoplamento
-permanente de migrations.
+Como registro histórico, na conferência de 25/10/2026 o workflow remoto estava
+`disabled_manually`. Na consulta via `gh api` de 27/10/2026, os publicadores
+`deploy-dev.yml` e `deploy-levi-dev.yml` estavam `active`. Esse estado permite
+receber eventos; suas definições exigem `workflow_dispatch`, sem deploy
+automático por push. A consulta não determina quando ou por quem foram ativados
+nem autoriza dispatch. Cada execução futura também exige autorização específica
+para o ciclo completo, incluindo as fases persistentes. O modo manual não
+implementa o desacoplamento permanente de migrations.
 
 Como registro histórico anterior ao modo manual, em 16/10/2026 a execução
 automática pós-reativação foi confirmada: o

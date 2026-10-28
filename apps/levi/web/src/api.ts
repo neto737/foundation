@@ -306,15 +306,14 @@ export const memberApi = {
     for (const field of ["birthDate", "joinedOn", "baptismDate"])
       if (
         value[field] !== null &&
-        (typeof value[field] !== "string" ||
-          !isCivilDate(value[field] as string))
+        (typeof value[field] !== "string" || !isCivilDate(value[field]))
       )
         return contractError();
     for (const field of ["phone", "email", "address", "churchRole"])
       if (
         value[field] !== null &&
         (typeof value[field] !== "string" ||
-          (value[field] as string).length >
+          value[field].length >
             memberTextLimits[
               field as "phone" | "email" | "address" | "churchRole"
             ])

@@ -94,7 +94,13 @@ export async function readMemberEdit(
   return { ...readProfile(input), version: Number(input.version) };
 }
 
-export function readMemberFilters(url: URL) {
+export function readMemberFilters(url: URL): {
+  name: string;
+  churchId: string | null;
+  status: MemberStatus | null;
+  page: number;
+  pageSize: number;
+} {
   const params = url.searchParams;
   for (const key of params.keys()) {
     if (
@@ -122,7 +128,7 @@ export function readMemberFilters(url: URL) {
   return {
     name,
     churchId: churchId === null ? null : requireUuid(churchId),
-    status: status as MemberStatus | null,
+    status,
     page: integer("page", 1, 10000),
     pageSize: integer("pageSize", 20, 100),
   };

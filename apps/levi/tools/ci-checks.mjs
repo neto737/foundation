@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import console from "node:console";
+import process from "node:process";
 
 // Adaptado de Foundation .github/scripts/ci-checks.mjs (22a4aa0).
 try {

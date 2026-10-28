@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { test } from "node:test";
 import { createPostgresDatabase } from "@t00ls-dev/db/postgres";
 import { inspectMigrationHistory } from "../tools/migration-history.js";
@@ -12,22 +13,28 @@ if (
 )
   throw new Error("Use o harness PostgreSQL descartável.");
 
-test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas antes de migrar", async () => {
+void test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas antes de migrar", async () => {
   const observer = await createPostgresDatabase(databaseUrl);
   try {
     const before = (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
       )
     ).rows;
     await observer.client.query("BEGIN READ ONLY");
     try {
       const status = await inspectMigrationHistory(observer.client);
-      assert.equal(status.applied.length, 5);
+      assert.equal(
+        status.applied.length,
+        readMigrationFiles({ migrationsFolder: "migrations" }).length,
+      );
       assert.deepEqual(status.pending, []);
       assert.equal(
-        (await observer.client.query("SHOW transaction_read_only")).rows[0]
-          .transaction_read_only,
+        (
+          await observer.client.query<Record<string, unknown>>(
+            "SHOW transaction_read_only",
+          )
+        ).rows[0]?.transaction_read_only,
         "on",
       );
     } finally {
@@ -48,7 +55,7 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
     }
     assert.deepEqual(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
         )
       ).rows,
@@ -57,20 +64,23 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
 
     // Banco vazio no mesmo cluster descartável: status não cria schema/journal.
     await observer.client.query("CREATE DATABASE levi_history_empty");
-    const emptyUrl = new URL(databaseUrl!);
+    const emptyUrl = new URL(databaseUrl);
     emptyUrl.pathname = "/levi_history_empty";
     const empty = await createPostgresDatabase(emptyUrl.toString());
     try {
       await empty.client.query("BEGIN READ ONLY");
       const status = await inspectMigrationHistory(empty.client);
-      assert.equal(status.pending.length, 5);
+      assert.equal(
+        status.pending.length,
+        readMigrationFiles({ migrationsFolder: "migrations" }).length,
+      );
       assert.deepEqual(status.applied, []);
       assert.equal(
         (
-          await empty.client.query(
+          await empty.client.query<Record<string, unknown>>(
             "SELECT to_regclass('drizzle.__drizzle_migrations') AS relation",
           )
-        ).rows[0].relation,
+        ).rows[0]?.relation,
         null,
       );
     } finally {

@@ -6,7 +6,7 @@ import {
   prepareRuntimeRoles,
 } from "./runtime-acl-fixture.js";
 
-test("harness ACL: valida destinos antes de qualquer conexão, sem expor a URL inválida", async () => {
+void test("harness ACL: valida destinos antes de qualquer conexão, sem expor a URL inválida", async () => {
   const names = [
     "NODE_ENV",
     "LEVI_LOCAL_DATABASE",

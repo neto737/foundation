@@ -4,10 +4,6 @@
   "type": "module",
   "license": "MIT",
   "repository": "https://github.com/t00ls-dev/foundation",
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public"
-  },
   "files": [
     "dist",
     "README.md"
@@ -45,5 +41,6 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "vitest": "^5.0.5"
-  }
+  },
+  "private": true
 }

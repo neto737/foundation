@@ -1,16 +1,12 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import {
-  membersAvailable,
-  readMembersDevOrganizations,
-} from "../src/member-access.js";
 import { workerOptions, type WorkerEnv } from "../src/worker-config.js";
 import { devMigrationTarget } from "../tools/dev-migration-config.js";
 import { createApp } from "../src/app.js";
 import worker from "../src/worker.js";
 
 const env: WorkerEnv = {
-  ASSETS: { fetch: async () => new Response("synthetic") },
+  ASSETS: { fetch: async () => Promise.resolve(new Response("synthetic")) },
   HYPERDRIVE: { connectionString: "postgresql://synthetic-only" },
   LEVI_PUBLIC_ORIGIN: "https://levi.t00ls.dev",
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
@@ -22,7 +18,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test("política final de headers preserva no-referrer também no runtime Node", async () => {
+void test("política final de headers preserva no-referrer também no runtime Node", async () => {
   const app = createApp(workerOptions(env));
   const response = await app.request("https://levi.t00ls.dev/unknown");
   assert.equal(response.status, 404);
@@ -30,7 +26,7 @@ test("política final de headers preserva no-referrer também no runtime Node", 
   assert.ok(response.headers.has("content-security-policy"));
 });
 
-test("Worker sem secrets/configuração completa responde 503 sanitizado, sem tentar a API", async () => {
+void test("Worker sem secrets/configuração completa responde 503 sanitizado, sem tentar a API", async () => {
   const response = await worker.fetch(new Request("https://levi.t00ls.dev/"), {
     ...env,
     RESEND_API_KEY: "",
@@ -41,8 +37,7 @@ test("Worker sem secrets/configuração completa responde 503 sanitizado, sem te
   assert.ok(!(await response.text()).includes(env.LEVI_AUTH_SECRET));
 });
 
-test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
-  assert.equal(workerOptions(env).membersEnabled, undefined);
+void test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
   assert.equal(workerOptions(env).baseURL, "https://levi.t00ls.dev");
   assert.equal(workerOptions(env).onboardingReturnPath, "/onboarding");
   for (const changes of [
@@ -55,12 +50,16 @@ test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
     assert.throws(() => workerOptions({ ...env, ...changes }));
 });
 
-test("adapter Resend publicado aceita destinatários públicos sem allowlist", async () => {
-  const messages: Array<Record<string, unknown>> = [];
+void test("adapter Resend publicado aceita destinatários públicos sem allowlist", async () => {
+  const messages: Array<{ from: unknown }> = [];
   globalThis.fetch = async (url, init) => {
     assert.equal(url, "https://api.resend.com/emails");
-    messages.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-    return Response.json({ id: "synthetic" });
+    const requestBody = init?.body;
+    assert.ok(typeof requestBody === "string");
+    const message: unknown = JSON.parse(requestBody);
+    assert.ok(message && typeof message === "object" && "from" in message);
+    messages.push(message);
+    return Promise.resolve(Response.json({ id: "synthetic" }));
   };
   const { email } = workerOptions(env);
   await email.send({
@@ -78,8 +77,9 @@ test("adapter Resend publicado aceita destinatários públicos sem allowlist", a
   assert.equal(messages[0]?.from, env.LEVI_EMAIL_FROM);
 });
 
-test("rejeição do provider não é declarada como envio confirmado", async () => {
-  globalThis.fetch = async () => Response.json({}, { status: 429 });
+void test("rejeição do provider não é declarada como envio confirmado", async () => {
+  globalThis.fetch = async () =>
+    Promise.resolve(Response.json({}, { status: 429 }));
   await assert.rejects(
     workerOptions(env).email.send({
       to: "tester@example.test",
@@ -89,7 +89,7 @@ test("rejeição do provider não é declarada como envio confirmado", async () 
   );
 });
 
-test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem conectar", () => {
+void test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem conectar", () => {
   const host = "ep-synthetic-only.us-east-2.aws.neon.tech";
   const valid: NodeJS.ProcessEnv = {
     LEVI_DEV_DATABASE_URL: `postgresql://levi_dev_migrator:synthetic-only@${host}/levi_dev?sslmode=verify-full`,
@@ -135,88 +135,44 @@ test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem
   assert.throws(() => devMigrationTarget({}));
 });
 
-const syntheticOrganization = "8a61d0dd-ea54-4f23-9550-d8ca4b353b71";
-test("recorte DEV: configuração ausente, vazia ou parcialmente inválida falha fechada", () => {
-  for (const value of [
-    undefined,
-    "",
-    " ",
-    "*",
-    "invalid",
-    "[]",
-    syntheticOrganization + ",",
-    syntheticOrganization + ",invalid",
-    "0".repeat(36),
-    (syntheticOrganization + ",").repeat(120),
-    null,
-    [syntheticOrganization],
-  ]) {
-    assert.deepEqual(readMembersDevOrganizations(value), []);
-  }
-  for (const value of [
-    undefined,
-    "",
-    " ",
-    "invalid",
-    syntheticOrganization + ",invalid",
-  ]) {
-    const options = workerOptions({
-      ...env,
-      ...(value === undefined ? {} : { LEVI_MEMBERS_DEV_ORGANIZATIONS: value }),
-    });
-    assert.equal(membersAvailable(options, syntheticOrganization), false);
-  }
-});
-test("recorte DEV: CSV válido normaliza UUIDs, sem conceder acesso a outras organizações/origens", () => {
-  const options = workerOptions({
-    ...env,
-    LEVI_MEMBERS_DEV_ORGANIZATIONS:
-      " " + syntheticOrganization.toUpperCase() + "," + syntheticOrganization,
-  });
-  assert.deepEqual(options.membersDevOrganizations, [syntheticOrganization]);
-  assert.equal(options.membersEnabled, undefined);
-  assert.equal(membersAvailable(options, syntheticOrganization), true);
-  assert.equal(
-    membersAvailable(options, "1a61d0dd-ea54-4f23-9550-d8ca4b353b71"),
-    false,
-  );
-  for (const origin of [
-    "https://other.example.test",
-    "https://levi.t00ls.dev.example.test",
-    "https://www.levi.t00ls.dev",
-    "https://levi.t00ls.dev:8443",
-  ]) {
-    assert.equal(
-      membersAvailable(
-        workerOptions({
-          ...env,
-          LEVI_PUBLIC_ORIGIN: origin,
-          LEVI_MEMBERS_DEV_ORGANIZATIONS: syntheticOrganization,
+void test("Worker sem configuração preserva 404 administrativo antes de qualquer binding ou validação", async () => {
+  for (const path of [
+    "/admin",
+    "/admin/",
+    "/api/admin",
+    "/api/admin/features",
+    "/api/%61dmin",
+  ])
+    for (const method of ["GET", "POST", "DELETE", "OPTIONS"]) {
+      const response = await worker.fetch(
+        new Request("https://levi.t00ls.dev" + path, {
+          method,
+          headers: { origin: "https://hostil.example" },
+          ...(!["GET"].includes(method) ? { body: "invalid" } : {}),
         }),
-        syntheticOrganization,
-      ),
-      false,
+        { ...env, RESEND_API_KEY: "" },
+      );
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), {
+        erro: "NAO_ENCONTRADO",
+        mensagem: "Recurso não encontrado.",
+      });
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(response.headers.get("x-frame-options"), "DENY");
+    }
+});
+
+void test("ausência ou e-mail administrativo inválido não libera APIs nem impede páginas comuns", async () => {
+  for (const email of [undefined, "", "invalid"]) {
+    const configured = { ...env, LEVI_ADMIN_EMAIL: email };
+    assert.equal(workerOptions(configured).adminEmail, email);
+    const response = await worker.fetch(
+      new Request("https://levi.t00ls.dev/admin", {
+        headers: { cookie: "synthetic" },
+      }),
+      configured,
     );
-    assert.equal(
-      membersAvailable(
-        workerOptions(
-          { ...env, LEVI_MEMBERS_DEV_ORGANIZATIONS: syntheticOrganization },
-          origin,
-        ),
-        syntheticOrganization,
-      ),
-      false,
-    );
-    assert.equal(
-      membersAvailable({ ...options, baseURL: origin }, syntheticOrganization),
-      false,
-    );
+    assert.equal(response.status, 404);
+    assert.ok(!(await response.text()).includes("synthetic"));
   }
-  assert.equal(
-    membersAvailable(
-      { ...options, baseURL: "http://localhost:3000", membersEnabled: true },
-      syntheticOrganization,
-    ),
-    true,
-  );
 });

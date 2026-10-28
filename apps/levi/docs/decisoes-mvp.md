@@ -17,23 +17,36 @@ aqui. Fatos técnicos descrevem capacidades e limites; recomendações não se t
 requisitos por repetição. Relatórios históricos permanecem como evidência de suas
 execuções e não são necessários para compreender ou definir o escopo atual.
 
-| Classificação         | Estado                                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                                                                                                                    |
-| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                                                                                                               |
-| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers com DEV publicado, Neon/Hyperdrive e fluxo de CI/deploy próprios. Primeira fatia de membros disponível apenas para validação sintética local, conforme o guia próprio. Demais funcionalidades do MVP pendentes. |
+| Classificação         | Estado                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aprovado              | Regras das seções seguintes, com implementação parcial descrita abaixo.                                                                                                                                                                                                                                                                                                                                                            |
+| Planejado/recomendado | Composição técnica candidata, sujeita a prova e autorização.                                                                                                                                                                                                                                                                                                                                                                       |
+| Implementado          | API local e SPA React de onboarding, provisionamento inicial e navegação organizacional, com migrations, testes PostgreSQL e navegador. Composição Workers com DEV publicado, Neon/Hyperdrive e fluxo de CI/deploy próprios. Primeira fatia de membros disponível a todas as organizações na implementação Foundation, sob autorização por usuário e isolamento, conforme o guia próprio. Demais funcionalidades do MVP pendentes. |
 
 A primeira fatia local de membros (cadastro, listagem e ficha) está descrita em
 [Gestão de membros](gestao-membros.md). Esta etapa foi autorizada em 2026-10-22
 inicialmente para implementação e validação sintética. Operações posteriores
 autorizaram separadamente migrations 0000–0003 e privilégios mínimos no DEV;
-isso não libera o módulo nem o uso de dados reais. A preparação do recorte DEV sintético por
-organização também foi autorizada em 2026-10-22, sem habilitação ou operação remota;
-regras no mesmo guia. A reformulação de interface de 2026-10-24 acrescenta edição
+a liberação de dados reais exige decisão operacional própria. A restrição temporária
+por organização foi removida da implementação Foundation por autorização posterior;
+o módulo está disponível a todas as organizações, preservando permissões e
+isolamento. Isso não autoriza deploy ou altera o publicador original.
+A reformulação de interface de 2026-10-24 acrescenta edição
 cadastral, controle de versão e contatos opcionais da primeira igreja, somente
 validados em bancos descartáveis. Migration 0004 e ACLs incrementais permanecem
 pendentes de autorização operacional. Exclusão, alteração posterior de situação
 e transferências continuam pendentes.
+
+## Administração global interna
+
+A Etapa 1 de [administração global](administracao-global.md) implementa apenas
+persistência e operações internas, separadas das roles organizacionais. O primeiro
+admin depende de bootstrap explícito e assistido, consumido uma única vez; demais
+concessões exigem administrador global atual. A Etapa 2 acrescenta `/admin` e
+`/api/admin`, com HTTP 404 antes do HTML e dos middlewares para quem não possui
+concessão global ativa. O painel gerencia concessões e políticas preparadas, sem
+ativação real ou troca do avaliador de membros. A política de flags não concede
+membership nem autoriza dados de outras organizações.
 
 ## Organização, acesso e identidade
 
@@ -137,7 +150,7 @@ O [Foundation](https://github.com/t00ls-dev/foundation) fornece mecanismos
 genéricos; organização/igrejas, membros, histórico e políticas do produto ficam no
 Levi. Reutilizar os contratos públicos necessários dos nove pacotes oficiais:
 `config`, `db`, `auth`, `tenant`, `access`, `security`, `email`, `observability` e
-`audit`, no scope `@t00ls-dev` do npmjs.com.
+`audit`, no scope `@t00ls-dev`, com dependências locais `workspace:*`.
 
 **Fatos técnicos da referência examinada:** Foundation em
 `22a4aa0dd4a560f86aaa4e3272138799c922e76e`. Seu exemplo Links usa D1 e não demonstra

@@ -10,9 +10,8 @@ e tenant.
 
 ## Instalação
 
-Destino oficial: npmjs.com público no scope do usuário `t00ls-dev`. A primeira
-publicação ainda depende de autorização; no Foundation use `workspace:*`. Após
-publicação confirmada, consumidores usam uma versão disponível no npm.
+Consumo interno no monorepo com `workspace:*`. Compile os pacotes locais com
+`pnpm build` antes de usar seus exports.
 
 ```sh
 pnpm --filter <app> add '@t00ls-dev/access@workspace:*'

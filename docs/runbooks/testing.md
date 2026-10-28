@@ -16,15 +16,13 @@ Miniflare descartável. Não usa credenciais remotas. CI obtém histórico Git
 completo para conferir imutabilidade dos SQL versionados.
 
 Em Actions, o gate completo é dividido entre `static`, `tests`, quatro shards
-`e2e` (com Chromium e ambiente próprios) e duas instalações `distribution`. O
-Levi possui jobs próprios `levi-tests` e `levi-e2e`, sem secrets ou Environment.
-O agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
+`e2e` (com Chromium e ambiente próprios) e contratos de consumo local. O Levi
+possui jobs próprios `levi-tests` e `levi-e2e`, sem secrets ou Environment. O
+agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
 todas as entradas das matrizes; falha, cancelamento ou skip bloqueiam o gate.
-Version Packages depende desse job; Release manual e sua aprovação separada do
-owner validam pela API a CI aprovada do `execution_sha` exato, sem repetir a
-suíte. Não se substituem testes por cache de resultados. Reexecuções explícitas
-da CI e SHAs distintos (PR/merge) continuam sendo validados integralmente. Veja
-[Pacotes](packages.md) para os requisitos da evidência reutilizada.
+Deploy valida a CI aprovada do SHA exato. Não se substituem testes por cache de
+resultados. Reexecuções da CI e SHAs distintos (PR/merge) continuam sendo
+validados integralmente. Veja [Pacotes internos](packages.md).
 
 ### Resumos no GitHub Actions
 
@@ -39,10 +37,8 @@ esperado, incluindo falhas esperadas; Flaky é separado de Passed. Erros de
 coleta/setup são destacados sem transformá-los em falhas de testes fictícias. O
 reporter `github`, os retries e os traces existentes continuam ativos.
 
-Distribuição resume os tarballs, imports públicos e instalações efetivamente
-validados, além da duração. Não atribui contagens de testes a esses contratos.
 As durações dos reporters não incluem setup de Node/dependências nem builds
-anteriores. Release e checks estáticos mantêm os diagnósticos e estados de steps
+anteriores. Os checks estáticos mantêm os diagnósticos e estados de steps
 nativos do Actions. Deploy/migrations apresentam os resultados estruturados e
 outcomes dos steps conforme [Deploy](deployment.md#resumos-do-actions).
 `pnpm test:migrations` inclui os contratos de renderização: execução,
@@ -104,9 +100,7 @@ binding Hyperdrive local aponta somente ao container descartável: não exercita
 pooling/cache do serviço nem comprova compatibilidade remota com Hyperdrive.
 
 As fixtures de auth e o SQL audit existente são aplicados somente no container;
-nenhuma migration de banco persistente é executada por esse harness. Os testes
-de distribuição validam o novo contrato assíncrono e tipos públicos `pg` em
-tarballs isolados, sem instalar Postgres.js como dependência do consumidor.
+nenhuma migration de banco persistente é executada por esse harness.
 
 ## Links (`examples/links`)
 
@@ -122,12 +116,12 @@ CRUD, filtros, isolamento A/B, CSRF, expiração/revogação e múltiplos Set-Co
 Também injeta falhas na execução de queries para verificar confirmação de logout
 sem renovação, retry após recuperação e ausência de tokens/parâmetros nos logs.
 E2E usa um Worker/configuração próprios, captura e-mail em banco temporário e
-valida nove cenários em desktop e mobile, incluindo `401` de mutação antiga após
-login de outra identidade sem recarregar a página. Nenhum teste envia e-mail
-real. A caixa `/__test/mail` pertence apenas a `e2e/worker.ts`, fora do bundle
-DEV. O harness não reutiliza servidor ou estado de desenvolvimento e executa
-migration duas vezes para conferir reaplicação idempotente pelo journal
-Wrangler.
+valida os cenários de `examples/links/e2e` em desktop e mobile, incluindo `401`
+de mutação antiga após login de outra identidade sem recarregar a página. Nenhum
+teste envia e-mail real. A caixa `/__test/mail` pertence apenas a
+`e2e/worker.ts`, fora do bundle DEV. O harness não reutiliza servidor ou estado
+de desenvolvimento e executa migration duas vezes para conferir reaplicação
+idempotente pelo journal Wrangler.
 
 O E2E de security headers usa também o Worker de produção compilado e Workers
 Assets reais em Wrangler local (porta 5175, D1 descartável e chaves Turnstile
@@ -137,14 +131,8 @@ estático e `/health`, incluindo CSP, proteção contra framing e Referrer-Polic
 
 ## Contratos de preparação do workspace
 
-`pnpm test:release` também executa `workspace.test.mjs`: descoberta com `apps/*`
-ausente ou com aplicativo privado sintético, rejeição de publicáveis
-inesperados, nomes duplicados e symlinks, planejamento privado sem upload npm e
-build real de um fecho transitivo pelo Turbo, inclusive através de pacote sem
-script de build. As fixtures vivem em diretórios temporários; não criam
-`apps/levi` no projeto. A suíte de release preserva a recomputação de planos nas
-bases históricas sem `apps/*`. Esses contratos complementam o gate integral, sem
-dispensar jobs ou aceitar `skipped` como sucesso.
+`pnpm test:workspace` verifica manifests privados, dependências locais,
+lockfile, links reais e build transitivo com `^build`.
 
 ## Levi (`apps/levi`)
 
@@ -162,8 +150,8 @@ aplicando/reaplicando migrations somente nesses bancos descartáveis, sem
 credenciais persistentes. Nenhum teste ou build aciona o deploy do repositório
 original.
 
-`pnpm test:release` inclui os contratos de incorporação: árvore e histórico
-subtree originais, exatamente nove publicáveis, sete links locais, grafo de
+`pnpm test:workspace` inclui os contratos de incorporação: árvore e histórico
+subtree originais, todos os workspaces privados, sete links locais, grafo de
 builds, imports públicos e ausência de Environment/deploy nos jobs Levi. Os
 contratos estruturais existentes da CI exigem todos os comandos novos e recusam
 falha, cancelamento, omissão, skip, jobs desligados ou gates mascarados.
