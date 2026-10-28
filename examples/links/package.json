@@ -31,7 +31,7 @@
     "@t00ls-dev/email": "workspace:*",
     "@t00ls-dev/security": "workspace:*",
     "@t00ls-dev/ui": "workspace:*",
-    "better-auth": "^1.7.10",
+    "better-auth": "^1.7.12",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.14",
     "lucide-react": "1.59.0",
