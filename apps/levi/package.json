@@ -10,7 +10,7 @@
     "dev": "tsx tools/dev.ts",
     "build": "tsc -p tsconfig.build.json && vite build",
     "start": "node dist/local.js",
-    "lint:production": "eslint 'src/**/*.ts' 'web/**/*.{ts,tsx}' drizzle.config.ts vite.config.ts eslint.config.js --max-warnings 0",
+    "lint": "eslint 'src/**/*.ts' 'web/**/*.{ts,tsx}' 'tools/**/*.{ts,mjs}' 'test/**/*.ts' 'e2e/**/*.ts' '*.ts' '*.js' --max-warnings 0",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json",
     "format": "prettier --write src web tools test e2e .github '*.json' '*.jsonc' '*.ts' '*.md' docs",
     "format:check": "prettier --check src web tools test e2e .github '*.json' '*.jsonc' '*.ts' '*.md' docs",
