@@ -11,7 +11,7 @@ import {
 } from "@t00ls-dev/tenant/postgres";
 import { readObject } from "../src/contracts.js";
 
-test("entrypoints públicos necessários resolvem fora do workspace Foundation", () => {
+await test("entrypoints públicos necessários resolvem fora do workspace Foundation", () => {
   for (const fn of [
     createFoundationAuth,
     createPostgresDatabase,
@@ -24,7 +24,7 @@ test("entrypoints públicos necessários resolvem fora do workspace Foundation",
     assert.equal(typeof fn, "function");
 });
 
-test("entrada rejeita campos inesperados e JSON malformado", async () => {
+await test("entrada rejeita campos inesperados e JSON malformado", async () => {
   for (const body of [
     '{"email":"test@example.com","role":"admin"}',
     "null",
