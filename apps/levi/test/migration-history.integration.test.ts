@@ -13,11 +13,11 @@ if (
 )
   throw new Error("Use o harness PostgreSQL descartável.");
 
-test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas antes de migrar", async () => {
+void test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas antes de migrar", async () => {
   const observer = await createPostgresDatabase(databaseUrl);
   try {
     const before = (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
       )
     ).rows;
@@ -30,8 +30,11 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
       );
       assert.deepEqual(status.pending, []);
       assert.equal(
-        (await observer.client.query("SHOW transaction_read_only")).rows[0]
-          .transaction_read_only,
+        (
+          await observer.client.query<Record<string, unknown>>(
+            "SHOW transaction_read_only",
+          )
+        ).rows[0]?.transaction_read_only,
         "on",
       );
     } finally {
@@ -52,7 +55,7 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
     }
     assert.deepEqual(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
         )
       ).rows,
@@ -61,7 +64,7 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
 
     // Banco vazio no mesmo cluster descartável: status não cria schema/journal.
     await observer.client.query("CREATE DATABASE levi_history_empty");
-    const emptyUrl = new URL(databaseUrl!);
+    const emptyUrl = new URL(databaseUrl);
     emptyUrl.pathname = "/levi_history_empty";
     const empty = await createPostgresDatabase(emptyUrl.toString());
     try {
@@ -74,10 +77,10 @@ test("journal PostgreSQL: leitura sem alterações e divergências bloqueadas an
       assert.deepEqual(status.applied, []);
       assert.equal(
         (
-          await empty.client.query(
+          await empty.client.query<Record<string, unknown>>(
             "SELECT to_regclass('drizzle.__drizzle_migrations') AS relation",
           )
-        ).rows[0].relation,
+        ).rows[0]?.relation,
         null,
       );
     } finally {

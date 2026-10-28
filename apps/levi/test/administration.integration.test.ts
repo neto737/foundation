@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, beforeEach, test } from "node:test";
+import { after, beforeEach, test, type TestContext } from "node:test";
 import { randomUUID } from "node:crypto";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -89,6 +89,7 @@ const options = {
   email: {
     send: async (message: { to: string; text: string }) => {
       messages.push(message);
+      return Promise.resolve();
     },
   },
 };
@@ -195,9 +196,9 @@ async function restoreAudit() {
 // Contas verificadas pelo fluxo real Better Auth, sem criar identidades pelo runner.
 const owner = await account();
 const second = await account();
-const third = await account();
+await account();
 
-test("bootstrap: identidade inválida, ambiguidade, senha e sessão inadequadas não concedem", async () => {
+void test("bootstrap: identidade inválida, ambiguidade, senha e sessão inadequadas não concedem", async () => {
   const base = confirmation(owner);
   for (const candidate of [
     { ...base, userId: second.userId },
@@ -258,23 +259,23 @@ test("bootstrap: identidade inválida, ambiguidade, senha e sessão inadequadas 
   }
   assert.equal(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT count(*)::int AS n FROM global_administrators",
       )
-    ).rows[0].n,
+    ).rows[0]?.n,
     0,
   );
   assert.equal(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT count(*)::int AS n FROM admin_bootstrap",
       )
-    ).rows[0].n,
+    ).rows[0]?.n,
     0,
   );
 });
 
-test("bootstrap concorrente é único, auditado e nunca restaura acesso pelo e-mail", async () => {
+void test("bootstrap concorrente é único, auditado e nunca restaura acesso pelo e-mail", async () => {
   const other = await createPostgresDatabase(bootstrapUrl.toString());
   try {
     const results = await Promise.all([
@@ -292,10 +293,12 @@ test("bootstrap concorrente é único, auditado e nunca restaura acesso pelo e-m
       "completed",
     ]);
     const receipt = (
-      await observer.client.query("SELECT * FROM admin_bootstrap")
+      await observer.client.query<Record<string, unknown>>(
+        "SELECT * FROM admin_bootstrap",
+      )
     ).rows[0];
     assert.ok(receipt);
-    const event = await observer.client.query(
+    const event = await observer.client.query<Record<string, unknown>>(
       "SELECT actor,target,tenant,metadata FROM audit_events WHERE request_id=$1",
       [receipt.operation_id],
     );
@@ -321,10 +324,10 @@ test("bootstrap concorrente é único, auditado e nunca restaura acesso pelo e-m
     );
     assert.equal(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT count(*)::int AS n FROM global_administrators WHERE revoked_at IS NULL",
         )
-      ).rows[0].n,
+      ).rows[0]?.n,
       0,
     );
     for (const sql of [
@@ -354,10 +357,10 @@ async function waitBlocked(pid: number) {
   assert.fail("A operação não aguardou o lock esperado.");
 }
 
-test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e versões conflitam", async () => {
+void test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e versões conflitam", async () => {
   await boot(owner);
   const orgs = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       "INSERT INTO tenants(name) VALUES('Flag A'),('Flag B') RETURNING id",
     )
   ).rows.map((r) => String(r.id));
@@ -420,10 +423,10 @@ test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e v
   );
   const future = String(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "INSERT INTO tenants(name) VALUES('Flag futura') RETURNING id",
       )
-    ).rows[0].id,
+    ).rows[0]?.id,
   );
   assert.equal(
     await featureAvailable({
@@ -476,10 +479,10 @@ test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e v
   assert.deepEqual(listed[0]?.organizationIds, []);
   assert.equal(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "SELECT count(*)::int AS n FROM feature_flag_organizations",
       )
-    ).rows[0].n,
+    ).rows[0]?.n,
     0,
   );
   await assert.rejects(
@@ -496,24 +499,24 @@ test("flags: catálogo fechado, seleção validada, all inclui tenant futuro e v
   );
 });
 
-test("auditoria e persistência: rollback conjunto e negação diante de banco indisponível", async () => {
+void test("auditoria e persistência: rollback conjunto e negação diante de banco indisponível", async () => {
   await rejectAudit();
   try {
     await assert.rejects(boot(owner));
     assert.equal(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT count(*)::int AS n FROM admin_bootstrap",
         )
-      ).rows[0].n,
+      ).rows[0]?.n,
       0,
     );
     assert.equal(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT count(*)::int AS n FROM global_administrators",
         )
-      ).rows[0].n,
+      ).rows[0]?.n,
       0,
     );
   } finally {
@@ -522,10 +525,10 @@ test("auditoria e persistência: rollback conjunto e negação diante de banco i
   await boot(owner);
   const org = String(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "INSERT INTO tenants(name) VALUES('Flag rollback') RETURNING id",
       )
-    ).rows[0].id,
+    ).rows[0]?.id,
   );
   const selected = await updateFeatureFlag({
     database: runtime,
@@ -551,11 +554,11 @@ test("auditoria e persistência: rollback conjunto e negação diante de banco i
     );
     assert.equal(
       (
-        await observer.client.query(
+        await observer.client.query<Record<string, unknown>>(
           "SELECT version FROM feature_flags WHERE id=$1",
           [selected.id],
         )
-      ).rows[0].version,
+      ).rows[0]?.version,
       1,
     );
     assert.equal(
@@ -604,18 +607,18 @@ test("auditoria e persistência: rollback conjunto e negação diante de banco i
   }
 });
 
-test("escopo da auditoria preserva eventos organizacionais e append-only", async () => {
+void test("escopo da auditoria preserva eventos organizacionais e append-only", async () => {
   const insert = (action: string, tenant: string | null) =>
-    observer.client.query(
+    observer.client.query<Record<string, unknown>>(
       "INSERT INTO audit_events(actor,action,target,tenant,timestamp,metadata,result) VALUES($1,$2,$3,$4,now(),'{}','success')",
       [owner.userId, action, owner.userId, tenant],
     );
   const tenant = String(
     (
-      await observer.client.query(
+      await observer.client.query<Record<string, unknown>>(
         "INSERT INTO tenants(name) VALUES('Audit sintético') RETURNING id",
       )
-    ).rows[0].id,
+    ).rows[0]?.id,
   );
   await insert("member.created", tenant);
   await insert("admin.granted", null);
@@ -633,7 +636,7 @@ test("escopo da auditoria preserva eventos organizacionais e append-only", async
     await assert.rejects(observer.client.query(sql));
 });
 
-test("runner externo no cluster sintético: preflight, confirmação, consumo único e saída sanitizada", async () => {
+void test("runner externo no cluster sintético: preflight, confirmação, consumo único e saída sanitizada", () => {
   const input = confirmation(owner);
   const env = {
     ...process.env,
@@ -667,7 +670,7 @@ test("runner externo no cluster sintético: preflight, confirmação, consumo ú
     assert.ok(!output.includes(privateValue));
 });
 
-test("ACL bootstrap separa privilégios; runtime restrita não altera recibo, chaves ou auditoria", async () => {
+void test("ACL bootstrap separa privilégios; runtime restrita não altera recibo, chaves ou auditoria", async () => {
   await boot(owner);
   for (const statement of [
     "UPDATE global_administrators SET revoked_at=now()",
@@ -707,7 +710,7 @@ test("ACL bootstrap separa privilégios; runtime restrita não altera recibo, ch
   }
 });
 
-test("ACLs administrativas exatas por coluna, sem grant option e sem ampliar as legadas", async () => {
+void test("ACLs administrativas exatas por coluna, sem grant option e sem ampliar as legadas", async () => {
   const globalColumns = [
     "user_id",
     "granted_at",
@@ -833,7 +836,7 @@ test("ACLs administrativas exatas por coluna, sem grant option e sem ampliar as 
   }
 });
 
-test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa funcionalidades", async () => {
+void test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa funcionalidades", async () => {
   const directory = await mkdtemp(join(tmpdir(), "levi-admin-upgrade-"));
   const url = new URL(observerUrl);
   url.pathname = "/levi_admin_upgrade_test";
@@ -857,33 +860,33 @@ test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa
     await migrate(old.db, { migrationsFolder: directory });
     const userId = String(
       (
-        await old.client.query(
+        await old.client.query<Record<string, unknown>>(
           "INSERT INTO \"user\"(name,email,email_verified) VALUES('Conta preservada','upgrade@example.test',true) RETURNING id",
         )
-      ).rows[0].id,
+      ).rows[0]?.id,
     );
     const tenant = String(
       (
-        await old.client.query(
+        await old.client.query<Record<string, unknown>>(
           "INSERT INTO tenants(name) VALUES('Tenant preservado') RETURNING id",
         )
-      ).rows[0].id,
+      ).rows[0]?.id,
     );
     const church = String(
       (
-        await old.client.query(
+        await old.client.query<Record<string, unknown>>(
           "INSERT INTO churches(tenant_id,name) VALUES($1,'Igreja preservada') RETURNING id",
           [tenant],
         )
-      ).rows[0].id,
+      ).rows[0]?.id,
     );
     const member = String(
       (
-        await old.client.query(
+        await old.client.query<Record<string, unknown>>(
           "INSERT INTO members(tenant_id,church_id,name,status) VALUES($1,$2,'Ficha preservada','Ativo') RETURNING id",
           [tenant, church],
         )
-      ).rows[0].id,
+      ).rows[0]?.id,
     );
     await old.client.query(
       "INSERT INTO audit_events(actor,action,target,tenant,timestamp,metadata,result) VALUES($1,'member.created',$2,$3,now(),'{}','success')",
@@ -898,7 +901,13 @@ test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa
         "members",
         "audit_events",
       ])
-        result.push((await old.client.query(`SELECT * FROM "${table}"`)).rows);
+        result.push(
+          (
+            await old.client.query<Record<string, unknown>>(
+              `SELECT * FROM "${table}"`,
+            )
+          ).rows,
+        );
       return result;
     }
     const before = await preservedRows();
@@ -912,8 +921,11 @@ test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa
       "feature_flag_organizations",
     ])
       assert.equal(
-        (await old.client.query(`SELECT count(*)::int AS n FROM ${table}`))
-          .rows[0].n,
+        (
+          await old.client.query<Record<string, unknown>>(
+            `SELECT count(*)::int AS n FROM ${table}`,
+          )
+        ).rows[0]?.n,
         0,
       );
   } finally {
@@ -925,15 +937,18 @@ test("upgrade 0000–0004 para schema administrativo preserva dados e não ativa
 
 // O lock é PostgreSQL real; somente a passagem do tempo é acelerada no teste.
 async function denyAfterAuditWait(input: {
-  context: import("node:test").TestContext;
+  context: TestContext;
   database: Database;
   operation: () => Promise<unknown>;
   advanceTo: number;
   status: number;
 }) {
   const pid = Number(
-    (await input.database.client.query("SELECT pg_backend_pid() AS pid"))
-      .rows[0].pid,
+    (
+      await input.database.client.query<Record<string, unknown>>(
+        "SELECT pg_backend_pid() AS pid",
+      )
+    ).rows[0]?.pid,
   );
   await observer.client.query("BEGIN");
   await observer.client.query("LOCK TABLE audit_events IN SHARE MODE");
@@ -961,7 +976,7 @@ async function denyAfterAuditWait(input: {
   }
 }
 
-test("flag: sessão expirada após autorização e antes do commit desfaz política e auditoria", async (t) => {
+void test("flag: sessão expirada após autorização e antes do commit desfaz política e auditoria", async (t) => {
   await boot(owner);
   const operationId = randomUUID();
   const { rows } = await observer.client.query<{ expires_at: Date }>(
@@ -1000,7 +1015,7 @@ test("flag: sessão expirada após autorização e antes do commit desfaz polít
   );
 });
 
-test("bootstrap: recência vencida durante a auditoria não consome recibo nem concede acesso", async (t) => {
+void test("bootstrap: recência vencida durante a auditoria não consome recibo nem concede acesso", async (t) => {
   const confirmed = confirmation(owner);
   await denyAfterAuditWait({
     context: t,
@@ -1030,7 +1045,7 @@ test("bootstrap: recência vencida durante a auditoria não consome recibo nem c
   );
 });
 
-test("HTTP administrativo oculta HTML, métodos, aliases e validação antes de autorizar", async () => {
+void test("HTTP administrativo oculta HTML, métodos, aliases e validação antes de autorizar", async () => {
   const common = await account();
   const provisioned = await app.request(
     new Request(origin + "/api/organizations", {
@@ -1105,7 +1120,7 @@ test("HTTP administrativo oculta HTML, métodos, aliases e validação antes de 
       }
 });
 
-test("HTTP administrativo permite conta sem organização e não concede acesso ao tenant", async () => {
+void test("HTTP administrativo permite conta sem organização e não concede acesso ao tenant", async () => {
   const actor = await account();
   options.adminEmail = actor.email;
   const protectedApp = createApp(options);
@@ -1196,7 +1211,7 @@ async function adminMutation(
   );
 }
 
-test("API de flags valida catálogo, confirmação all, seleções e versão sem mudar membros", async () => {
+void test("API de flags valida catálogo, confirmação all, seleções e versão sem mudar membros", async () => {
   const actor = await account();
   options.adminEmail = actor.email;
   const owner = await account();
@@ -1313,14 +1328,14 @@ test("API de flags valida catálogo, confirmação all, seleções e versão sem
     (await send("/api/churches", undefined, actor.cookie)).status,
     403,
   );
-  const delta = await observer.client.query(
+  const delta = await observer.client.query<Record<string, unknown>>(
     "SELECT tenant FROM audit_events WHERE action='feature_flag.organization_added' AND tenant=$1",
     [organizationId],
   );
   assert.equal(delta.rowCount, 1);
 });
 
-test("quota administrativa ocorre só após autorização, inclusive quando esgotada", async () => {
+void test("quota administrativa ocorre só após autorização, inclusive quando esgotada", async () => {
   const actor = await account();
   options.adminEmail = actor.email;
   const { createHmac } = await import("node:crypto");
@@ -1344,7 +1359,7 @@ test("quota administrativa ocorre só após autorização, inclusive quando esgo
   );
 });
 
-test("API preserva seleção de 1000 organizações e falha fechada se não pode consultar autoridade", async () => {
+void test("API preserva seleção de 1000 organizações e falha fechada se não pode consultar autoridade", async () => {
   const actor = await account();
   options.adminEmail = actor.email;
   const ids = Array.from({ length: 1000 }, () => randomUUID());
@@ -1380,7 +1395,7 @@ test("API preserva seleção de 1000 organizações e falha fechada se não pode
     );
 });
 
-test("e-mail configurado é a única autoridade; sessão e identidade atuais são obrigatórias", async () => {
+void test("e-mail configurado é a única autoridade; sessão e identidade atuais são obrigatórias", async () => {
   assert.equal(
     await requireGlobalAdministrator(
       runtime,
@@ -1426,7 +1441,7 @@ test("e-mail configurado é a única autoridade; sessão e identidade atuais sã
       : statement.includes("UPDATE session")
         ? "session"
         : "account";
-    const previous = await observer.client.query(
+    const previous = await observer.client.query<Record<string, unknown>>(
       `SELECT * FROM "${table}" WHERE ${table === "user" ? "id" : "user_id"}=$1`,
       [owner.userId],
     );
@@ -1442,8 +1457,8 @@ test("e-mail configurado é a única autoridade; sessão e identidade atuais sã
           'UPDATE "user" SET email=$2,email_verified=$3 WHERE id=$1',
           [
             owner.userId,
-            previous.rows[0].email,
-            previous.rows[0].email_verified,
+            previous.rows[0]?.email,
+            previous.rows[0]?.email_verified,
           ],
         );
       if (table === "session")
@@ -1490,10 +1505,14 @@ test("e-mail configurado é a única autoridade; sessão e identidade atuais sã
   }
 });
 
-test("mudança de identidade enquanto a política aguarda lock nega a mutation sem auditoria", async () => {
+void test("mudança de identidade enquanto a política aguarda lock nega a mutation sem auditoria", async () => {
   await otherConnections(async (a, b) => {
     const pid = Number(
-      (await a.client.query("SELECT pg_backend_pid() AS pid")).rows[0].pid,
+      (
+        await a.client.query<Record<string, unknown>>(
+          "SELECT pg_backend_pid() AS pid",
+        )
+      ).rows[0]?.pid,
     );
     await b.client.query("BEGIN");
     await b.client.query("SELECT pg_advisory_xact_lock(715463,2)");
@@ -1533,7 +1552,7 @@ test("mudança de identidade enquanto a política aguarda lock nega a mutation s
   });
 });
 
-test("identidade ambígua, aliases, sessão removida e identidade forjada não concedem acesso", async () => {
+void test("identidade ambígua, aliases, sessão removida e identidade forjada não concedem acesso", async () => {
   const duplicate = randomUUID();
   await observer.client.query(
     'INSERT INTO "user"(id,name,email,email_verified,created_at,updated_at) VALUES($1,$2,$3,true,now(),now())',

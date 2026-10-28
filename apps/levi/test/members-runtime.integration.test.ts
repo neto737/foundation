@@ -27,42 +27,42 @@ after(async () => {
   );
 });
 
-test("ACLs reais: três logins independentes, journal e ownership corretos", async () => {
+void test("ACLs reais: três logins independentes, journal e ownership corretos", async () => {
   const identities = [];
   for (const [connection, role] of [
     [observer, "levi_test"],
     [migrator, "levi_dev_migrator"],
     [runtime, "levi_dev_runtime"],
   ] as const) {
-    const { rows } = await connection.client.query(
+    const { rows } = await connection.client.query<Record<string, unknown>>(
       "SELECT current_user, session_user, current_database(), pg_backend_pid() AS pid, version()",
     );
-    assert.equal(rows[0].current_user, role);
-    assert.equal(rows[0].session_user, role);
-    assert.equal(rows[0].current_database, "levi_test");
-    identities.push(rows[0].pid);
-    if (role === "levi_test") console.info(rows[0].version);
+    assert.equal(rows[0]?.current_user, role);
+    assert.equal(rows[0]?.session_user, role);
+    assert.equal(rows[0]?.current_database, "levi_test");
+    identities.push(rows[0]?.pid);
+    if (role === "levi_test") console.info(rows[0]?.version);
   }
   assert.equal(new Set(identities).size, 3);
   const journal = JSON.parse(
     await readFile("migrations/meta/_journal.json", "utf8"),
   ) as { entries: { tag: string; when: number }[] };
   const applied = (
-    await observer.client.query(
+    await observer.client.query<Record<string, unknown>>(
       "SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
     )
   ).rows;
   assert.equal(applied.length, journal.entries.length);
   for (const [index, entry] of journal.entries.entries()) {
-    assert.equal(applied[index].created_at, String(entry.when));
+    assert.equal(applied[index]?.created_at, String(entry.when));
     assert.equal(
-      applied[index].hash,
+      applied[index]?.hash,
       createHash("sha256")
         .update(await readFile(`migrations/${entry.tag}.sql`))
         .digest("hex"),
     );
   }
-  const owners = await observer.client.query(
+  const owners = await observer.client.query<Record<string, unknown>>(
     `SELECT relname, pg_get_userbyid(relowner) AS owner FROM pg_class
      WHERE relnamespace='public'::regnamespace AND relkind='r'`,
   );
@@ -70,9 +70,9 @@ test("ACLs reais: três logins independentes, journal e ownership corretos", asy
   for (const row of owners.rows) assert.equal(row.owner, "levi_dev_migrator");
 });
 
-test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privilégio amplo novo", async () => {
+void test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privilégio amplo novo", async () => {
   const tableAcl = (
-    await observer.client.query(`
+    await observer.client.query<{ relname: string; privilege_type: string }>(`
     SELECT c.relname, x.privilege_type FROM pg_class c
     CROSS JOIN LATERAL aclexplode(c.relacl) x
     WHERE c.relnamespace='public'::regnamespace
@@ -166,7 +166,13 @@ test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privil�
       columns.map((column) => `${table}.${column}:${privilege}`),
     )
     .sort();
-  const { rows } = await observer.client.query(`
+  const { rows } = await observer.client.query<{
+    relname: string;
+    attname: string;
+    privilege_type: string;
+    is_grantable: boolean;
+    grantor: string;
+  }>(`
     SELECT c.relname, a.attname, x.privilege_type, x.is_grantable,
            pg_get_userbyid(x.grantor) AS grantor
     FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
@@ -188,20 +194,20 @@ test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privil�
     for (const column of columns)
       assert.equal(
         (
-          await runtime.client.query(
+          await runtime.client.query<Record<string, unknown>>(
             "SELECT has_column_privilege(current_user,$1,$2,$3) AS allowed",
             [`public.${table}`, column, privilege],
           )
-        ).rows[0].allowed,
+        ).rows[0]?.allowed,
         true,
       );
     assert.equal(
       (
-        await runtime.client.query(
+        await runtime.client.query<Record<string, unknown>>(
           "SELECT has_table_privilege(current_user,$1,$2) AS allowed",
           [`public.${table}`, privilege],
         )
-      ).rows[0].allowed,
+      ).rows[0]?.allowed,
       false,
     );
   }
@@ -221,21 +227,21 @@ test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privil�
     ])
       assert.equal(
         (
-          await runtime.client.query(
+          await runtime.client.query<Record<string, unknown>>(
             "SELECT has_table_privilege(current_user,$1,$2) AS allowed",
             [`public.${table}`, privilege],
           )
-        ).rows[0].allowed,
+        ).rows[0]?.allowed,
         false,
       );
   assert.equal(
     (
-      await observer.client.query(`
+      await observer.client.query<Record<string, unknown>>(`
     SELECT count(*)::int AS count FROM pg_class c
     CROSS JOIN LATERAL aclexplode(c.relacl) x
     WHERE x.grantee='levi_dev_runtime'::regrole AND x.is_grantable
   `)
-    ).rows[0].count,
+    ).rows[0]?.count,
     0,
   );
   for (const table of [
@@ -249,36 +255,43 @@ test("ACLs reais: exatamente 63 pares por coluna; nenhum grant option ou privil�
     );
 });
 
-test("ACLs reais: FOR SHARE conserva locks e UPDATE real/no-op/sem linhas é rejeitado pelo trigger", async () => {
+void test("ACLs reais: FOR SHARE conserva locks e UPDATE real/no-op/sem linhas é rejeitado pelo trigger", async () => {
   const tenant = (
-    await migrator.client.query(
+    await migrator.client.query<{ id: string }>(
       "INSERT INTO tenants(name) VALUES('Tenant sintético ACL') RETURNING id",
     )
-  ).rows[0].id;
+  ).rows[0]?.id;
+  assert.ok(typeof tenant === "string");
   const user = (
-    await migrator.client.query(
+    await migrator.client.query<{ id: string }>(
       `INSERT INTO "user"(name,email) VALUES('Conta sintética ACL',$1) RETURNING id`,
       [`${randomUUID()}@example.test`],
     )
-  ).rows[0].id;
+  ).rows[0]?.id;
+  assert.ok(typeof user === "string");
   const church = (
-    await migrator.client.query(
+    await migrator.client.query<{ id: string }>(
       "INSERT INTO churches(tenant_id,name) VALUES($1,'Igreja sintética ACL') RETURNING id",
       [tenant],
     )
-  ).rows[0].id;
+  ).rows[0]?.id;
+  assert.ok(typeof church === "string");
   const membership = (
-    await migrator.client.query(
+    await migrator.client.query<{ id: string }>(
       "INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES($1,$2,'admin') RETURNING id",
       [tenant, user],
     )
-  ).rows[0].id;
+  ).rows[0]?.id;
+  assert.ok(typeof membership === "string");
   for (const [table, id] of [
     ["churches", church],
     ["tenant_memberships", membership],
-  ]) {
+  ] as const) {
     const before = (
-      await observer.client.query(`SELECT * FROM ${table} WHERE id=$1`, [id])
+      await observer.client.query<Record<string, unknown>>(
+        `SELECT * FROM ${table} WHERE id=$1`,
+        [id],
+      )
     ).rows;
     await runtime.client.query("BEGIN");
     try {
@@ -311,8 +324,12 @@ test("ACLs reais: FOR SHARE conserva locks e UPDATE real/no-op/sem linhas é rej
         message: "A runtime DEV não pode atualizar estes registros",
       });
     assert.deepEqual(
-      (await observer.client.query(`SELECT * FROM ${table} WHERE id=$1`, [id]))
-        .rows,
+      (
+        await observer.client.query<Record<string, unknown>>(
+          `SELECT * FROM ${table} WHERE id=$1`,
+          [id],
+        )
+      ).rows,
       before,
     );
     // A mesma instrução legítima da owner continua funcionando.
@@ -328,29 +345,30 @@ test("ACLs reais: FOR SHARE conserva locks e UPDATE real/no-op/sem linhas é rej
   }
 });
 
-test("ACLs reais: runtime não altera proteção, assume roles, cria wrappers ou amplia ACLs", async () => {
+void test("ACLs reais: runtime não altera proteção, assume roles, cria wrappers ou amplia ACLs", async () => {
   const role = (
-    await observer.client.query(`
+    await observer.client.query<Record<string, unknown>>(`
     SELECT rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls
     FROM pg_roles WHERE rolname='levi_dev_runtime'
   `)
   ).rows[0];
+  assert.ok(role);
   assert.ok(Object.values(role).every((value) => value === false));
   assert.equal(
     (
-      await observer.client.query(`
+      await observer.client.query<Record<string, unknown>>(`
     SELECT count(*)::int AS count FROM pg_auth_members
     WHERE member='levi_dev_runtime'::regrole
   `)
-    ).rows[0].count,
+    ).rows[0]?.count,
     0,
   );
   assert.equal(
     (
-      await observer.client.query(`
+      await observer.client.query<Record<string, unknown>>(`
     SELECT count(*)::int AS count FROM pg_proc WHERE prosecdef
   `)
-    ).rows[0].count,
+    ).rows[0]?.count,
     0,
   );
   for (const sql of [
@@ -368,7 +386,9 @@ test("ACLs reais: runtime não altera proteção, assume roles, cria wrappers ou
     "CREATE FUNCTION public.synthetic_wrapper() RETURNS void LANGUAGE sql SECURITY DEFINER AS 'SELECT NULL'",
     "CREATE TEMP TABLE synthetic_shadow(id uuid)",
   ])
-    await assert.rejects(runtime.client.query(sql), { code: "42501" });
+    await assert.rejects(runtime.client.query(sql), {
+      code: "42501",
+    });
   // GRANT sem grant option pode apenas emitir WARNING: verificar efeito, não só erro.
   for (const sql of [
     "GRANT SELECT ON member_history TO levi_dev_runtime",
@@ -388,15 +408,15 @@ test("ACLs reais: runtime não altera proteção, assume roles, cria wrappers ou
   ])
     assert.equal(
       (
-        await runtime.client.query(
+        await runtime.client.query<Record<string, unknown>>(
           "SELECT has_table_privilege(current_user,$1,$2) AS allowed",
           [table, privilege],
         )
-      ).rows[0].allowed,
+      ).rows[0]?.allowed,
       false,
     );
   const protection = (
-    await observer.client.query(`
+    await observer.client.query<Record<string, unknown>>(`
     SELECT t.tgtype,t.tgenabled,p.prosecdef,p.proconfig,
       has_function_privilege('levi_dev_runtime',p.oid,'EXECUTE') AS can_execute
     FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -413,7 +433,7 @@ test("ACLs reais: runtime não altera proteção, assume roles, cria wrappers ou
   }
 });
 
-test("edição ACL: runtime não altera tenant, igreja, situação, identificadores ou histórico", async () => {
+void test("edição ACL: runtime não altera tenant, igreja, situação, identificadores ou histórico", async () => {
   for (const column of ["id", "tenant_id", "church_id", "status", "created_at"])
     await assert.rejects(
       runtime.client.query(
@@ -426,5 +446,7 @@ test("edição ACL: runtime não altera tenant, igreja, situação, identificado
     "DELETE FROM member_profile_history WHERE false",
     "SELECT * FROM member_profile_history",
   ])
-    await assert.rejects(runtime.client.query(sql), { code: "42501" });
+    await assert.rejects(runtime.client.query(sql), {
+      code: "42501",
+    });
 });
