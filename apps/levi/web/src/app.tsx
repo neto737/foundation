@@ -432,13 +432,12 @@ export function App({
             event.preventDefault();
             go(currentOrganization ? "/painel" : "/");
           }}
-          aria-label="Levi, início"
         >
           <span className="brand-mark" aria-hidden="true">
             L
           </span>
           <span>
-            Levi<small>Gestão de igrejas</small>
+            Levi <small>Gestão de igrejas</small>
           </span>
         </a>
         {currentOrganization && (
@@ -787,7 +786,7 @@ export function App({
                             await refresh();
                           })
                         }
-                        aria-label={`Acessar ${item.nome}`}
+                        aria-label={`Acessar organização ${item.nome}`}
                       >
                         Acessar organização <span aria-hidden="true">→</span>
                       </button>

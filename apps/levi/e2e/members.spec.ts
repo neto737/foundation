@@ -21,7 +21,7 @@ async function openMembers(page: Page) {
   await provision(page, "Organização sintética de pessoas");
   await page
     .getByRole("button", {
-      name: "Acessar Organização sintética de pessoas",
+      name: "Acessar organização Organização sintética de pessoas",
       exact: true,
     })
     .click();
@@ -150,7 +150,7 @@ test("membros: cadastro completo, ficha com datas civis, filtros e acessibilidad
     .click();
   await expect(
     page.getByRole("button", {
-      name: "Consultar Pessoa sintética completa",
+      name: "Consultar ficha de Pessoa sintética completa",
       exact: true,
     }),
   ).toBeVisible();
@@ -186,14 +186,14 @@ test("membros: cadastro mínimo, paginação e nenhuma persistência pessoal no 
     .getByRole("button", { name: "Voltar aos membros", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: /^Consultar Pessoa/ }),
+    page.getByRole("button", { name: /^Consultar ficha de Pessoa/ }),
   ).toHaveCount(20);
   await page
     .getByRole("button", { name: "Próxima página", exact: true })
     .click();
   await expect(page.getByText("Página 2", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /^Consultar Pessoa/ }),
+    page.getByRole("button", { name: /^Consultar ficha de Pessoa/ }),
   ).toHaveCount(1);
   await page
     .getByRole("button", { name: "Página anterior", exact: true })
@@ -285,7 +285,7 @@ test("membros: troca organizacional e revogação removem ficha e listagem anter
   ).toHaveCount(0);
   await page
     .getByRole("button", {
-      name: "Acessar Outra organização de pessoas",
+      name: "Acessar organização Outra organização de pessoas",
       exact: true,
     })
     .click();
@@ -347,7 +347,7 @@ test("membros: resposta de tenant divergente e perda de sessão não mantêm dad
   await page.unroute("**/api/members?*");
   await page
     .getByRole("button", {
-      name: "Acessar Organização sintética de pessoas",
+      name: "Acessar organização Organização sintética de pessoas",
       exact: true,
     })
     .click();
@@ -394,7 +394,7 @@ test("membros: capacidade desabilitada remove dados e navegação e impede abert
   ).toHaveCount(0);
   await page
     .getByRole("button", {
-      name: "Acessar Organização sintética de pessoas",
+      name: "Acessar organização Organização sintética de pessoas",
       exact: true,
     })
     .click();
@@ -708,7 +708,7 @@ test("interface: navegação, listas e formulários em largura estreita e texto 
     .click();
   await expect(
     page.getByRole("button", {
-      name: "Consultar Pessoa sintética em tela estreita",
+      name: "Consultar ficha de Pessoa sintética em tela estreita",
       exact: true,
     }),
   ).toBeVisible();

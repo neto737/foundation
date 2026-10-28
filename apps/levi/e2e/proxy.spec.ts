@@ -9,7 +9,7 @@ test("Vite e Hono completam o fluxo real em mesma origem, sem liberar CORS", asy
   await provision(page, "Organização pelo proxy");
   await page
     .getByRole("button", {
-      name: "Acessar Organização pelo proxy",
+      name: "Acessar organização Organização pelo proxy",
       exact: true,
     })
     .click();

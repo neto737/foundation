@@ -362,7 +362,7 @@ export function Members({
                       <button
                         className="primary compact"
                         onClick={() => navigate(`/membros/${item.id}`)}
-                        aria-label={`Consultar ${item.name}`}
+                        aria-label={`Consultar ficha de ${item.name}`}
                       >
                         Consultar ficha
                       </button>
