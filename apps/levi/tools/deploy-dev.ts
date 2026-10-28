@@ -17,6 +17,19 @@ import { requireSuccessfulCI } from "./ci-evidence.js";
 import { DeployDiagnostics } from "./deploy-diagnostics.js";
 import type { DeployCheck } from "./deploy-diagnostics.js";
 
+function asRecord(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  assert.ok(Array.isArray(value));
+  const entries: unknown[] = value;
+  return entries.map((entry) => asRecord(entry));
+}
+
 // Nenhuma migration, criação de banco/Hyperdrive ou alteração de plano.
 const diagnostics = new DeployDiagnostics((message) => console.info(message));
 let directory: string | undefined;
@@ -62,7 +75,10 @@ try {
   }
   await currentMain();
   const account = `/accounts/${settings.account}`;
-  async function cloudflare(check: DeployCheck, path: string): Promise<any> {
+  async function cloudflare(
+    check: DeployCheck,
+    path: string,
+  ): Promise<unknown> {
     const response = await diagnostics.request(check, () =>
       fetch(`https://api.cloudflare.com/client/v4${path}`, {
         headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
@@ -72,8 +88,8 @@ try {
     );
     diagnostics.httpOk(response);
     const body = (await response.json()) as {
-      success: boolean;
-      result: unknown;
+      success?: unknown;
+      result?: unknown;
     };
     assert.equal(body.success, true);
     return body.result;
@@ -82,17 +98,17 @@ try {
     check: "domains-read" | "routes-read",
     shape: "domains-shape" | "routes-shape",
     path: string,
-  ): Promise<Record<string, any>[]> {
-    const entries: Record<string, any>[] = [];
+  ): Promise<Record<string, unknown>[]> {
+    const entries: Record<string, unknown>[] = [];
     for (let page = 1; page <= 10; page++) {
       const result = await cloudflare(
         check,
         `${path}?page=${page}&per_page=100`,
       );
       diagnostics.inspect(shape, "resposta inesperada");
-      assert.ok(Array.isArray(result));
-      entries.push(...result);
-      if (result.length < 100) return entries;
+      const pageEntries = asRecordArray(result);
+      entries.push(...pageEntries);
+      if (pageEntries.length < 100) return entries;
     }
     diagnostics.start("pagination-limit", "resposta inesperada");
     throw new Error();
@@ -104,9 +120,11 @@ try {
       `${account}/hyperdrive/configs/${settings.hyperdrive}`,
     );
     diagnostics.verify("hyperdrive", () => verifyHyperdrive(hyperdrive, env));
-    const alternate = await cloudflare(
-      "subdomain-read",
-      `${account}/workers/scripts/${deployWorker}/subdomain`,
+    const alternate = asRecord(
+      await cloudflare(
+        "subdomain-read",
+        `${account}/workers/scripts/${deployWorker}/subdomain`,
+      ),
     );
     diagnostics.inspect("subdomain");
     assert.equal(alternate.enabled, false);
@@ -139,10 +157,10 @@ try {
     const zoneId = env.CLOUDFLARE_ZONE_ID;
     diagnostics.start("zone-id");
     assert.match(zoneId ?? "", /^[a-f0-9]{32}$/);
-    const zone = await cloudflare("zone-read", `/zones/${zoneId}`);
+    const zone = asRecord(await cloudflare("zone-read", `/zones/${zoneId}`));
     diagnostics.inspect("zone");
     assert.equal(zone.name, "t00ls.dev");
-    assert.equal(zone.account?.id, settings.account);
+    assert.equal(asRecord(zone.account).id, settings.account);
     assert.ok(zones.every((id) => id === zoneId));
     const routes = await list(
       "routes-read",
@@ -154,35 +172,45 @@ try {
   }
   await protections();
   async function activeVersion(phase: "previous" | "published") {
-    const deployments = await cloudflare(
-      "deployments-read",
-      `${account}/workers/scripts/${deployWorker}/deployments`,
+    const deployments = asRecord(
+      await cloudflare(
+        "deployments-read",
+        `${account}/workers/scripts/${deployWorker}/deployments`,
+      ),
     );
     diagnostics.inspect("deployment-shape", "resposta inesperada");
-    const versions = deployments.deployments?.[0]?.versions;
-    assert.ok(Array.isArray(versions));
+    const deployment = asRecordArray(deployments.deployments)[0];
+    assert.ok(deployment);
+    const versions = asRecordArray(deployment.versions);
     diagnostics.inspect("deployment-traffic");
-    assert.ok(versions.length === 1 && versions[0].percentage === 100);
-    const versionId: unknown = versions[0].version_id;
+    assert.equal(versions.length, 1);
+    const versionEntry = versions[0];
+    assert.ok(versionEntry);
+    assert.equal(versionEntry.percentage, 100);
+    const versionId = versionEntry.version_id;
     assert.ok(typeof versionId === "string");
     assert.match(
       versionId,
       /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
     );
     // Wrangler herda secrets da última versão enviada, que pode não ter tráfego.
-    const uploaded = await cloudflare(
-      "versions-read",
-      `${account}/workers/scripts/${deployWorker}/versions`,
+    const uploaded = asRecord(
+      await cloudflare(
+        "versions-read",
+        `${account}/workers/scripts/${deployWorker}/versions`,
+      ),
     );
     diagnostics.inspect("version-latest");
-    assert.ok(Array.isArray(uploaded.items));
-    assert.equal(uploaded.items[0]?.id, versionId);
-    const version = await cloudflare(
-      "version-read",
-      `${account}/workers/scripts/${deployWorker}/versions/${versionId}`,
+    const uploadedItems = asRecordArray(uploaded.items);
+    assert.equal(uploadedItems[0]?.id, versionId);
+    const version = asRecord(
+      await cloudflare(
+        "version-read",
+        `${account}/workers/scripts/${deployWorker}/versions/${versionId}`,
+      ),
     );
     diagnostics.inspect("version-tag");
-    const sha: unknown = version.annotations?.["workers/tag"];
+    const sha = asRecord(version.annotations)["workers/tag"];
     assert.ok(typeof sha === "string");
     assert.match(sha, /^[a-f0-9]{40}$/);
     const sender = diagnostics.verify("version-binding", () => {
@@ -190,12 +218,13 @@ try {
         return verifyPreviousWorkerBindings(version, env, { versionId, sha });
       verifyWorkerBindings(version, env);
       if (phase === "published") {
-        const matches = version.resources?.bindings?.filter(
-          (binding: { name?: string; type?: string }) =>
-            binding.name === "LEVI_ADMIN_EMAIL",
-        );
-        assert.equal(matches?.length, 1);
-        assert.equal(matches[0].type, "secret_text");
+        const matches = asRecordArray(
+          asRecord(version.resources).bindings,
+        ).filter((binding) => binding.name === "LEVI_ADMIN_EMAIL");
+        assert.equal(matches.length, 1);
+        const match = matches[0];
+        assert.ok(match);
+        assert.equal(match.type, "secret_text");
       }
       return "current";
     });
@@ -212,8 +241,9 @@ try {
   diagnostics.start("bundle-parse", "resposta inesperada");
   const parsed = ts.parseConfigFileTextToJson("wrangler.jsonc", baseConfig);
   assert.ok(!parsed.error);
+  const parsedConfig: unknown = parsed.config;
   const config = diagnostics.verify("bundle-config", () =>
-    deploymentConfig(parsed.config, settings.hyperdrive),
+    deploymentConfig(parsedConfig, settings.hyperdrive),
   );
   config.vars.LEVI_EMAIL_FROM = env.LEVI_EMAIL_FROM;
   // Secrets só podem existir em memória volátil no runner Linux, nunca no checkout.

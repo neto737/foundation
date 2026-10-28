@@ -1,4 +1,6 @@
+import console from "node:console";
 import { appendFileSync } from "node:fs";
+import process from "node:process";
 
 // Mesmo padrão de resumo em melhor esforço do Foundation, sem evidência D1.
 try {
