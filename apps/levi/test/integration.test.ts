@@ -17,7 +17,9 @@ after(async () => {
   await observer.client.end();
 });
 
-void test("DEV público: limites duráveis por IP/destinatário, concorrência e respostas sem enumeração", async () => {
+void test("DEV público: limites duráveis por IP/destinatário, concorrência e respostas sem enumeração", async (t) => {
+  const fixedNow = Date.now() + 60_000;
+  t.mock.method(Date, "now", () => fixedNow);
   const messages: Array<{ to: string }> = [];
   const publicApp = createApp({
     databaseUrl: applicationDatabaseUrl(databaseUrl),

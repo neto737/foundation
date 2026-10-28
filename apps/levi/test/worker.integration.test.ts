@@ -10,16 +10,27 @@ import {
   cookieFrom,
 } from "./worker-harness.js";
 import { resourceProbe } from "./worker-resources.js";
+import { withWorkerCleanup } from "./worker-harness-diagnostics.js";
 
 const databaseUrl = process.env.LEVI_DATABASE_URL;
 if (!databaseUrl || process.env.LEVI_LOCAL_DATABASE !== "1")
   throw new Error("Use npm run test:worker.");
 const harness = await workerHarness(databaseUrl);
 const { mf, send, email, link, sent } = harness;
-const observer = await createPostgresDatabase(databaseUrl);
+const observer = await createPostgresDatabase(databaseUrl).catch(
+  (error: unknown) =>
+    withWorkerCleanup(() => {
+      throw error;
+    }, [{ resource: "runtime", close: () => mf.dispose() }]),
+);
 after(async () => {
-  await mf.dispose();
-  await observer.client.end();
+  await withWorkerCleanup(
+    () => undefined,
+    [
+      { resource: "runtime", close: () => mf.dispose() },
+      { resource: "observer", close: () => observer.client.end() },
+    ],
+  );
 });
 const body = {
   organizationName: "Organização sintética Worker",
@@ -342,17 +353,18 @@ void test("workerd: inicialização em banco vazio não executa migrations", asy
   const url = new URL(databaseUrl);
   url.pathname = "/levi_worker_empty";
   const empty = await createPostgresDatabase(url.toString());
-  const runtime = await workerHarness(url.toString());
-  try {
+  let runtime: Awaited<ReturnType<typeof workerHarness>> | undefined;
+  await withWorkerCleanup(async () => {
+    runtime = await workerHarness(url.toString());
     assert.equal((await runtime.send("/api/onboarding")).status, 503);
     const tables = await empty.client.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'",
     );
     assert.equal(tables.rows[0]!.count, 0);
-  } finally {
-    await runtime.mf.dispose();
-    await empty.client.end();
-  }
+  }, [
+    { resource: "runtime", close: () => runtime?.mf.dispose() },
+    { resource: "fixture", close: () => empty.client.end() },
+  ]);
 });
 
 void test("workerd: onboarding público, dois e-mails, prontidão, cookies e callbacks nativos", async () => {
@@ -796,7 +808,7 @@ void test("workerd: schema anterior preserva onboarding e igrejas e falha fechad
   url.pathname = "/levi_worker_previous";
   const previous = await createPostgresDatabase(url.toString());
   let runtime: Awaited<ReturnType<typeof workerHarness>> | undefined;
-  try {
+  await withWorkerCleanup(async () => {
     // Somente as migrations anteriores, no mesmo container sintético do harness.
     for (const path of [
       "migrations/0000_onboarding.sql",
@@ -913,10 +925,10 @@ void test("workerd: schema anterior preserva onboarding e igrejas e falha fechad
       history: null,
       receipts: null,
     });
-  } finally {
-    await runtime?.mf.dispose();
-    await previous.client.end();
-  }
+  }, [
+    { resource: "runtime", close: () => runtime?.mf.dispose() },
+    { resource: "fixture", close: () => previous.client.end() },
+  ]);
 });
 
 void test("workerd: todas as organizações têm membros, com autorização e isolamento após troca/revogação", async () => {
@@ -924,7 +936,7 @@ void test("workerd: todas as organizações têm membros, com autorização e is
   const formerlySelected = await provisioned();
   const formerlyUnselected = await provisioned();
   const runtime = await workerHarness(databaseUrl);
-  try {
+  await withWorkerCleanup(async () => {
     for (const path of [
       "/api/context",
       "/api/members",
@@ -1145,9 +1157,7 @@ void test("workerd: todas as organizações têm membros, com autorização e is
       ).status,
       403,
     );
-  } finally {
-    await runtime.mf.dispose();
-  }
+  }, [{ resource: "runtime", close: () => runtime.mf.dispose() }]);
 });
 
 void test("workerd: guard administrativo protege HTML antes de Assets, API e validação", async () => {
@@ -1172,26 +1182,17 @@ void test("workerd: guard administrativo protege HTML antes de Assets, API e val
         "DELETE",
         "OPTIONS",
       ]) {
-        const response = await mf
-          .dispatchFetch(workerOrigin + path, {
-            method,
-            headers: {
-              cookie,
-              origin: "https://hostil.example",
-              "content-type": "text/plain",
-            },
-            ...(!["GET", "HEAD"].includes(method)
-              ? { body: "x".repeat(20_000) }
-              : {}),
-          })
-          .catch((error: unknown) => {
-            const cause = error instanceof Error ? error.cause : null;
-            const code =
-              cause && typeof cause === "object" && "code" in cause
-                ? String(cause.code)
-                : "unknown";
-            throw new Error(`${method} ${path}: ${code}`, { cause: error });
-          });
+        const response = await mf.dispatchFetch(workerOrigin + path, {
+          method,
+          headers: {
+            cookie,
+            origin: "https://hostil.example",
+            "content-type": "text/plain",
+          },
+          ...(!["GET", "HEAD"].includes(method)
+            ? { body: "x".repeat(20_000) }
+            : {}),
+        });
         assert.equal(response.status, 404, `${method} ${path}`);
         assert.equal(
           response.headers.get("cache-control"),
@@ -1210,7 +1211,7 @@ void test("workerd: guard administrativo protege HTML antes de Assets, API e val
   const configured = await workerHarness(databaseUrl, {
     adminEmail: common.email,
   });
-  try {
+  await withWorkerCleanup(async () => {
     const html = await configured.send("/admin", undefined, common.cookie);
     assert.equal(html.status, 200);
     assert.match(html.headers.get("content-type") ?? "", /text\/html/);
@@ -1245,13 +1246,17 @@ void test("workerd: guard administrativo protege HTML antes de Assets, API e val
         .status,
       404,
     );
-  } finally {
-    await observer.client.query(
-      'UPDATE "user" SET email_verified=true WHERE id=$1',
-      [common.id],
-    );
-    await configured.mf.dispose();
-  }
+  }, [
+    {
+      resource: "restore-fixture",
+      close: () =>
+        observer.client.query(
+          'UPDATE "user" SET email_verified=true WHERE id=$1',
+          [common.id],
+        ),
+    },
+    { resource: "runtime", close: () => configured.mf.dispose() },
+  ]);
 });
 
 function readObject(value: unknown): Record<string, unknown> {
