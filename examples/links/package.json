@@ -24,7 +24,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.9.2",
+    "@hookform/resolvers": "^6.0.0",
     "@t00ls-dev/auth": "workspace:*",
     "@t00ls-dev/config": "workspace:*",
     "@t00ls-dev/db": "workspace:*",
