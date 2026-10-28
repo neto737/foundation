@@ -30,24 +30,28 @@ async function openMembers(page: Page) {
     page.getByText("Nenhum membro encontrado.", { exact: true }),
   ).toBeVisible();
   const user = (
-    await observer.client.query('SELECT id FROM "user" WHERE email=$1', [email])
-  ).rows[0];
+    await observer.client.query<{ id: string }>(
+      'SELECT id FROM "user" WHERE email=$1',
+      [email],
+    )
+  ).rows[0]!;
   const tenant = (
-    await observer.client.query(
+    await observer.client.query<{ tenant_id: string }>(
       "SELECT tenant_id FROM tenant_memberships WHERE user_id=$1",
       [user.id],
     )
-  ).rows[0];
+  ).rows[0]!;
   const church = (
-    await observer.client.query("SELECT id FROM churches WHERE tenant_id=$1", [
-      tenant.tenant_id,
-    ])
-  ).rows[0];
+    await observer.client.query<{ id: string }>(
+      "SELECT id FROM churches WHERE tenant_id=$1",
+      [tenant.tenant_id],
+    )
+  ).rows[0]!;
   return {
     email,
-    userId: user.id as string,
-    organizationId: tenant.tenant_id as string,
-    churchId: church.id as string,
+    userId: user.id,
+    organizationId: tenant.tenant_id,
+    churchId: church.id,
   };
 }
 async function startCreate(page: Page, name: string) {
@@ -241,11 +245,11 @@ test("membros: resposta perdida após commit é recuperada no refresh sem duplic
     page.getByText("Pessoa com resposta perdida", { exact: true }),
   ).toBeVisible();
   const count = (
-    await observer.client.query(
+    await observer.client.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM members WHERE tenant_id=$1",
       [who.organizationId],
     )
-  ).rows[0].count;
+  ).rows[0]!.count;
   expect(count).toBe(1);
 });
 
@@ -261,10 +265,10 @@ test("membros: troca organizacional e revogação removem ficha e listagem anter
     page.getByText("Pessoa da primeira organização", { exact: true }),
   ).toBeVisible();
   const tenant = (
-    await observer.client.query(
+    await observer.client.query<{ id: string }>(
       "INSERT INTO tenants(name) VALUES('Outra organização de pessoas') RETURNING id",
     )
-  ).rows[0];
+  ).rows[0]!;
   await observer.client.query(
     "INSERT INTO churches(tenant_id,name) VALUES($1,'Outra igreja de pessoas')",
     [tenant.id],
@@ -325,7 +329,7 @@ test("membros: resposta de tenant divergente e perda de sessão não mantêm dad
   ).toBeVisible();
   await page.route("**/api/members?*", async (route) => {
     const response = await route.fetch();
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, unknown>;
     await route.fulfill({
       response,
       json: { ...data, organizationId: randomUUID() },
@@ -375,7 +379,7 @@ test("membros: capacidade desabilitada remove dados e navegação e impede abert
   // Teste do contrato visual: a política real por organização é exercitada em workerd.
   await page.route("**/api/context", async (route) => {
     const response = await route.fetch();
-    const context = await response.json();
+    const context = (await response.json()) as Record<string, unknown>;
     await route.fulfill({
       response,
       json: { ...context, membersEnabled: false },
@@ -437,11 +441,11 @@ test("membros: Enter não grava, confirmação explícita, erros locais e ediç�
   expect(writes).toBe(0);
   expect(
     (
-      await observer.client.query(
+      await observer.client.query<{ n: number }>(
         "SELECT count(*)::int n FROM members WHERE tenant_id=$1",
         [who.organizationId],
       )
-    ).rows[0].n,
+    ).rows[0]!.n,
   ).toBe(0);
   // Voltar de outro app mantém o rascunho, mas o envio revalida autoridade no servidor.
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -510,14 +514,16 @@ test("membros: Enter não grava, confirmação explícita, erros locais e ediç�
     }),
   ).toBeVisible();
   const saved = (
-    await observer.client.query("SELECT * FROM members WHERE tenant_id=$1", [
-      who.organizationId,
-    ])
+    await observer.client.query<{
+      version: number;
+      phone: string | null;
+      church_id: string;
+    }>("SELECT * FROM members WHERE tenant_id=$1", [who.organizationId])
   ).rows;
   expect(saved).toHaveLength(1);
-  expect(saved[0].version).toBe(2);
-  expect(saved[0].phone).toBeNull();
-  expect(saved[0].church_id).toBe(who.churchId);
+  expect(saved[0]!.version).toBe(2);
+  expect(saved[0]!.phone).toBeNull();
+  expect(saved[0]!.church_id).toBe(who.churchId);
   await page
     .getByRole("button", { name: "Editar membro", exact: true })
     .click();
@@ -536,11 +542,11 @@ test("membros: Enter não grava, confirmação explícita, erros locais e ediç�
   await expect(name).toHaveValue("Rascunho em conflito");
   expect(
     (
-      await observer.client.query(
+      await observer.client.query<{ name: string }>(
         "SELECT name FROM members WHERE tenant_id=$1",
         [who.organizationId],
       )
-    ).rows[0].name,
+    ).rows[0]!.name,
   ).toBe("Pessoa com cadastro atualizado");
   // Somente fixtures sintéticas, sem tokens ou credenciais nas evidências.
   const { mkdir } = await import("node:fs/promises");
@@ -597,11 +603,11 @@ test("membros: cliques repetidos produzem uma única gravação e uma única fic
   expect(posts).toBe(1);
   expect(
     (
-      await observer.client.query(
+      await observer.client.query<{ n: number }>(
         "SELECT count(*)::int n FROM members WHERE tenant_id=$1",
         [who.organizationId],
       )
-    ).rows[0].n,
+    ).rows[0]!.n,
   ).toBe(1);
 });
 
@@ -748,11 +754,11 @@ test("membros: edição com vínculo revogado é negada e remove o rascunho prot
     page.getByRole("form", { name: "Editar membro", exact: true }),
   ).toHaveCount(0);
   const stored = (
-    await observer.client.query(
+    await observer.client.query<{ name: string; version: number }>(
       "SELECT name,version FROM members WHERE tenant_id=$1",
       [who.organizationId],
     )
-  ).rows[0];
+  ).rows[0]!;
   expect(stored.name).toBe("Pessoa preservada após revogação");
   expect(stored.version).toBe(1);
 });

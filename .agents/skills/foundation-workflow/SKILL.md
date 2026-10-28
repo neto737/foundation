@@ -66,7 +66,8 @@ permanecem vigentes.
 ## Entrega e operações protegidas
 
 - Merge, publicação/release e deploy manual exigem autorização explícita.
-- Avançar master pode acionar deploy DEV: leia `docs/runbooks/deployment.md`.
+- Deploys DEV são manuais e exigem os gates existentes; avançar master executa
+  CI, sem iniciar deploy. Leia `docs/runbooks/deployment.md`.
 - Pacotes Foundation são internos e privados; use `workspace:*` e consulte
   `docs/runbooks/packages.md`. Não há distribuição npm ou Changesets.
 - Não contorne gates nem reescreva branches protegidas.

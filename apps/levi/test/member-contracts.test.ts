@@ -16,7 +16,7 @@ const request = (value: unknown) =>
     body: JSON.stringify(value),
   });
 
-test("membros: contrato mínimo normaliza opcionais ausentes e vazios", async () => {
+await test("membros: contrato mínimo normaliza opcionais ausentes e vazios", async () => {
   const value = await readMember(request(body));
   assert.equal(value.birthDate, null);
   assert.equal(value.address, null);
@@ -28,7 +28,7 @@ test("membros: contrato mínimo normaliza opcionais ausentes e vazios", async ()
     value,
   );
 });
-test("membros: campos pessoais inválidos e extras nunca são ignorados", async () => {
+await test("membros: campos pessoais inválidos e extras nunca são ignorados", async () => {
   for (const change of [
     { name: " " },
     { churchId: "x" },
@@ -51,7 +51,7 @@ test("membros: campos pessoais inválidos e extras nunca são ignorados", async 
     await assert.rejects(readMember(request({ ...body, ...change })));
   }
 });
-test("membros: datas civis gregorianas mantêm dia em fusos diferentes", () => {
+await test("membros: datas civis gregorianas mantêm dia em fusos diferentes", () => {
   const previous = process.env.TZ;
   try {
     for (const zone of [
@@ -72,7 +72,7 @@ test("membros: datas civis gregorianas mantêm dia em fusos diferentes", () => {
     else process.env.TZ = previous;
   }
 });
-test("membros: paginação limitada, parâmetros desconhecidos e repetidos recusados", () => {
+await test("membros: paginação limitada, parâmetros desconhecidos e repetidos recusados", () => {
   for (const query of [
     "page=0",
     "page=-1",
@@ -101,40 +101,46 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
-test("membros: cliente não aceita listas ou fichas sem tenant e contrato válido", async () => {
-  globalThis.fetch = async () =>
-    Response.json({ members: [], page: 1, pageSize: 20, hasNext: false });
+await test("membros: cliente não aceita listas ou fichas sem tenant e contrato válido", async () => {
+  globalThis.fetch = () =>
+    Promise.resolve(
+      Response.json({ members: [], page: 1, pageSize: 20, hasNext: false }),
+    );
   await assert.rejects(
     memberApi.list(),
     (error: unknown) => error instanceof ApiError && error.status === 502,
   );
-  globalThis.fetch = async () =>
-    Response.json({
-      organizationId: churchId,
-      member: {
-        ...body,
-        id: churchId,
-        churchName: "Igreja",
-        createdAt: "2026-10-22T00:00:00Z",
-        birthDate: "2025-02-29",
-      },
-    });
+  globalThis.fetch = () =>
+    Promise.resolve(
+      Response.json({
+        organizationId: churchId,
+        member: {
+          ...body,
+          id: churchId,
+          churchName: "Igreja",
+          createdAt: "2026-10-22T00:00:00Z",
+          birthDate: "2025-02-29",
+        },
+      }),
+    );
   await assert.rejects(memberApi.find(churchId));
 });
-test("membros: criação usa cookies de mesma origem e chave opaca", async () => {
+await test("membros: criação usa cookies de mesma origem e chave opaca", async () => {
   let headers: Headers | undefined;
-  globalThis.fetch = async (path, options) => {
+  globalThis.fetch = (path, options) => {
     assert.equal(path, "/api/members");
     assert.equal(options?.credentials, "same-origin");
     assert.equal(options?.cache, "no-store");
     headers = new Headers(options?.headers);
-    return Response.json({ organizationId: churchId, memberId: churchId });
+    return Promise.resolve(
+      Response.json({ organizationId: churchId, memberId: churchId }),
+    );
   };
   await memberApi.create({ ...body, status: "Ativo" }, "synthetic-request-key");
   assert.equal(headers?.get("Idempotency-Key"), "synthetic-request-key");
 });
 
-test("edição exige versão e rejeita campos de vínculo e metadados", async () => {
+await test("edição exige versão e rejeita campos de vínculo e metadados", async () => {
   const profile = { name: "Pessoa atualizada", version: 1 };
   const result = await readMemberEdit(request(profile));
   assert.equal(result.version, 1);

@@ -9,6 +9,13 @@ import { readFile } from "node:fs/promises";
 import ts from "typescript";
 import { randomUUID } from "node:crypto";
 import { applicationDatabaseUrl } from "./runtime-acl-fixture.js";
+import {
+  workerOperation,
+  workerRequestContext,
+  withWorkerCleanup,
+} from "./worker-harness-diagnostics.js";
+
+let runtimeSequence = 0;
 
 export const workerOrigin = "https://levi.t00ls.dev";
 export const password = "synthetic-worker-password";
@@ -50,46 +57,82 @@ export async function workerHarness(
   let next = 0;
   const sent: CapturedEmail[] = [];
   let providerStatus = 200;
-  const mf = new Miniflare(
-    convertV4MiniflareOptions({
-      name: "levi-worker-test",
-      modules: true,
-      scriptPath: "dist/worker/worker.js",
-      compatibilityDate: config.compatibility_date,
-      compatibilityFlags: config.compatibility_flags,
-      cf: false,
-      log: new Log(LogLevel.NONE),
-      inspectorPort: 0,
-      assets: { ...config.assets, routerConfig: { has_user_worker: true } },
-      bindings: {
-        LEVI_PUBLIC_ORIGIN: origin,
-        LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
-        RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
-        LEVI_EMAIL_FROM: "Levi <levi@example.test>",
-        LEVI_ADMIN_EMAIL: options.adminEmail ?? "",
-      },
-      hyperdrives: {
-        HYPERDRIVE:
-          url.pathname === "/levi_test"
-            ? applicationDatabaseUrl(databaseUrl)
-            : databaseUrl,
-      },
-      outboundService: async (request) => {
-        if (
-          request.url !== "https://api.resend.com/emails" ||
-          request.method !== "POST"
-        )
-          throw new Error("Saída de rede não autorizada no teste.");
-        const input = (await request.json()) as CapturedEmail;
-        if (providerStatus === 200) sent.push(input);
-        return LocalResponse.json(
-          { id: "synthetic" },
-          { status: providerStatus },
-        );
-      },
-    }),
+  const runtimeId = ++runtimeSequence;
+  const mf = await workerOperation(
+    { phase: "create", runtimeId },
+    () =>
+      new Miniflare(
+        convertV4MiniflareOptions({
+          name: "levi-worker-test",
+          modules: true,
+          scriptPath: "dist/worker/worker.js",
+          compatibilityDate: config.compatibility_date,
+          compatibilityFlags: config.compatibility_flags,
+          cf: false,
+          log: new Log(LogLevel.NONE),
+          inspectorPort: 0,
+          assets: { ...config.assets, routerConfig: { has_user_worker: true } },
+          bindings: {
+            LEVI_PUBLIC_ORIGIN: origin,
+            LEVI_AUTH_SECRET:
+              "synthetic-only-secret-with-more-than-32-characters",
+            RESEND_API_KEY: "synthetic-only-not-a-real-api-key",
+            LEVI_EMAIL_FROM: "Levi <levi@example.test>",
+            LEVI_ADMIN_EMAIL: options.adminEmail ?? "",
+          },
+          hyperdrives: {
+            HYPERDRIVE:
+              url.pathname === "/levi_test"
+                ? applicationDatabaseUrl(databaseUrl)
+                : databaseUrl,
+          },
+          outboundService: async (request) => {
+            if (
+              request.url !== "https://api.resend.com/emails" ||
+              request.method !== "POST"
+            )
+              throw new Error("Saída de rede não autorizada no teste.");
+            const input = (await request.json()) as CapturedEmail;
+            if (providerStatus === 200) sent.push(input);
+            return LocalResponse.json(
+              { id: "synthetic" },
+              { status: providerStatus },
+            );
+          },
+        }),
+      ),
   );
-  await mf.ready;
+  const dispatchFetch = mf.dispatchFetch.bind(mf);
+  const dispose = mf.dispose.bind(mf);
+  let requestId = 0;
+  mf.dispatchFetch = (input, init) => {
+    const requestUrl =
+      typeof input === "string"
+        ? input
+        : "url" in input
+          ? input.url
+          : input.href;
+    const method =
+      init?.method ??
+      (typeof input === "object" && "method" in input ? input.method : "GET");
+    return workerOperation(
+      {
+        phase: "dispatch",
+        runtimeId,
+        requestId: ++requestId,
+        request: workerRequestContext(requestUrl, method),
+      },
+      () => dispatchFetch(input, init),
+    );
+  };
+  mf.dispose = () => workerOperation({ phase: "dispose", runtimeId }, dispose);
+  try {
+    await workerOperation({ phase: "ready", runtimeId }, () => mf.ready);
+  } catch (error) {
+    await withWorkerCleanup(() => {
+      throw error;
+    }, [{ resource: "runtime", close: () => mf.dispose() }]);
+  }
   let clientNumber = 0;
   const send = async (
     path: string,

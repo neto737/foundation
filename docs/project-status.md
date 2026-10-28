@@ -21,10 +21,10 @@ O foundation fornece pacotes, convenções e ferramentas reutilizáveis para app
 da `t00ls-dev` e será a base principal do monorepo. O workspace está preparado
 para `apps/*`, incluindo o Levi em `apps/levi`, sob MIT com histórico subtree
 sem squash e preservação das atribuições. Links permanece em `examples/links`. A
-incorporação não transfere o deploy do Levi; o repositório original permanece
-independente e operacionalmente inalterado. Aplicações mantêm versões, deploys,
-bancos e recursos próprios, compartilhando contratos públicos dos pacotes via
-workspace.
+transferência DEV do Levi foi concluída; sua operação está integrada ao
+Foundation, sem dependência operacional do repositório original. Aplicações
+mantêm versões, deploys, bancos e recursos próprios, compartilhando contratos
+públicos dos pacotes via workspace.
 
 A v0.1 valida um caminho completo e pequeno:
 
@@ -141,9 +141,9 @@ package é `@t00ls-dev/example-links`. Demonstra:
   `@t00ls-dev/auth`, com propagação de cookies e verificação de e-mail
   obrigatória;
 - headers privados e CSRF nas mutações autenticadas por cookie;
-- 15 testes unitários e 11 testes D1 reais do exemplo, incluindo falhas de
+- testes unitários e testes D1 reais do exemplo, incluindo falhas de
   revogação/confirmação, logs sanitizados e gerações de sessão;
-- nove cenários Playwright em desktop e mobile (18 execuções), incluindo
+- cenários Playwright em desktop e mobile, incluindo
   cadastro/verificação/login/logout, persistência, isolamento e respostas
   atrasadas;
 - harness E2E com banco temporário e e-mails capturados, sem providers externos.
@@ -223,20 +223,22 @@ A cobertura atual inclui:
 - Better Auth PostgreSQL com IDs textuais e e-mails capturados, mais execução
   `pg`/Drizzle/audit em Workers local; Hyperdrive remoto não comprovado;
 - integrações de Links com isolamento por usuário em D1;
-- nove cenários Playwright em desktop e mobile, totalizando 18 execuções;
+- cenários Playwright em desktop e mobile;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
-Pacotes sem testes próprios não executam Vitest vazio. A CI usa o reporter
-normal do Vitest para evitar dezenas de summaries fragmentados no GitHub.
+Pacotes sem testes próprios não executam Vitest vazio. A CI combina o reporter
+`default` do Vitest com `.github/scripts/vitest-summary.mjs`; Playwright usa
+reporters GitHub e `.github/scripts/playwright-summary.mjs` em CI. As suítes e
+os resumos de cada execução são a referência para cobertura e contagens.
 
 ### Automação
 
 - `CI`: executa o gate completo em PRs e pushes para `master`; execuções antigas
   da mesma ref são canceladas.
 - `Deploy DEV`: aceita somente `workflow_dispatch`, com SHA atual de master e CI
-  push/master aprovada; não recebe mais eventos `workflow_run`. Permanece
-  `disabled_manually` até autorização posterior. A reativação não autoriza um
-  dispatch. Faz checkout do SHA validado e coordena
+  push/master aprovada; não recebe mais eventos `workflow_run`. Na consulta
+  remota de 27/10/2026 estava `active`; isso não implica execução automática nem
+  autoriza dispatch. Faz checkout do SHA validado e coordena
   expand/deploy/backfill/contract em jobs independentes. Migration DEV é
   workflow reutilizável; deploy não aplica SQL e verifica `/health` com SHA/D1
   obrigatórios. Verifica evento push/master, repositório de origem, identidade

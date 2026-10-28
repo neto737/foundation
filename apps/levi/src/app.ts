@@ -12,6 +12,7 @@ import {
   readExpectedVersion,
 } from "./feature-contracts.js";
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 import {
   createMember,
   editMember,
@@ -122,33 +123,39 @@ export function createApp(options: AppOptions) {
     }
   });
   const csrf = csrfProtection({ trustedOrigins: [origin] });
-  app.use("*", async (c, next) => {
-    const denied = await csrf(c, next);
-    if (denied)
-      return c.json(
-        {
-          erro: "ORIGEM_INVALIDA",
-          mensagem: "A origem da solicitação não é permitida.",
-        },
-        403,
-      );
-  });
-  app.use("*", (c, next) =>
-    bodyLimit({
-      // A seleção já admite 1000 UUIDs; os demais contratos mantêm 16 KiB.
-      maxSize:
-        c.req.method === "PUT" && c.req.path === "/api/admin/features/members"
-          ? 65_536
-          : 16_384,
-      onError: (c) =>
-        c.json(
+  app.use(
+    "*",
+    createMiddleware<Environment>(async (c, next) => {
+      const denied = await csrf(c, next);
+      if (denied)
+        return c.json(
           {
-            erro: "ENTRADA_INVALIDA",
-            mensagem: "A solicitação excede o tamanho permitido.",
+            erro: "ORIGEM_INVALIDA",
+            mensagem: "A origem da solicitação não é permitida.",
           },
-          413,
-        ),
-    })(c, next),
+          403,
+        );
+    }),
+  );
+  app.use(
+    "*",
+    createMiddleware<Environment>((c, next) =>
+      bodyLimit({
+        // A seleção já admite 1000 UUIDs; os demais contratos mantêm 16 KiB.
+        maxSize:
+          c.req.method === "PUT" && c.req.path === "/api/admin/features/members"
+            ? 65_536
+            : 16_384,
+        onError: (c) =>
+          c.json(
+            {
+              erro: "ENTRADA_INVALIDA",
+              mensagem: "A solicitação excede o tamanho permitido.",
+            },
+            413,
+          ),
+      })(c, next),
+    ),
   );
   app.use("/api/*", async (c, next) => {
     if (administrativePath(c.req.path)) return next();
@@ -171,12 +178,15 @@ export function createApp(options: AppOptions) {
       await database.client.end();
     }
   });
-  app.use("/api/*", async (c, next) => {
-    if (administrativePath(c.req.path)) return next();
-    const abuse = c.get("abuse");
-    if (abuse) return abuse.beforeSession(c, next);
-    await next();
-  });
+  app.use(
+    "/api/*",
+    createMiddleware<Environment>(async (c, next) => {
+      if (administrativePath(c.req.path)) return next();
+      const abuse = c.get("abuse");
+      if (abuse) return abuse.beforeSession(c, next);
+      await next();
+    }),
+  );
   // Resolve uma vez por request, inclusive para a quota autenticada de logout.
   app.use("/api/*", async (c, next) => {
     if (administrativePath(c.req.path)) return next();
@@ -197,14 +207,17 @@ export function createApp(options: AppOptions) {
     }
     await next();
   });
-  app.use("/api/*", async (c, next) => {
-    const abuse = c.get("abuse");
-    if (abuse)
-      return administrativePath(c.req.path)
-        ? abuse.administrative(c.get("identity"))(c, next)
-        : abuse.middleware(c.get("identity"))(c, next);
-    await next();
-  });
+  app.use(
+    "/api/*",
+    createMiddleware<Environment>(async (c, next) => {
+      const abuse = c.get("abuse");
+      if (abuse)
+        return administrativePath(c.req.path)
+          ? abuse.administrative(c.get("identity"))(c, next)
+          : abuse.middleware(c.get("identity"))(c, next);
+      await next();
+    }),
+  );
 
   app.get("/api/admin/session", (c) => {
     const identity = c.get("identity");

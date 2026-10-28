@@ -7,7 +7,7 @@ import { knownFeature, readFeaturePolicy } from "../src/feature-contracts.js";
 import { readBootstrapInput } from "../tools/bootstrap-admin-operation.js";
 import { bootstrapTarget } from "../tools/bootstrap-admin-config.js";
 
-test("contratos administrativos: catálogo fechado e três políticas sem estados contraditórios", () => {
+await test("contratos administrativos: catálogo fechado e três políticas sem estados contraditórios", () => {
   const id = randomUUID();
   assert.ok(knownFeature("members"));
   assert.equal(knownFeature("unknown"), false);
@@ -37,7 +37,7 @@ test("contratos administrativos: catálogo fechado e três políticas sem estado
     assert.throws(() => readFeaturePolicy(input));
 });
 
-test("bootstrap exige confirmação assistida e não aceita alvo de conexão ambíguo", () => {
+await test("bootstrap exige confirmação assistida e não aceita alvo de conexão ambíguo", () => {
   const userId = randomUUID();
   const input = {
     ADMIN_EMAIL: "  Owner@Example.test  ",
@@ -95,7 +95,7 @@ test("bootstrap exige confirmação assistida e não aceita alvo de conexão amb
     assert.throws(() => bootstrapTarget({ ...env, ...override }));
 });
 
-test("painel preserva allowlist pública e runner operacional sem avaliar flags nos membros", async () => {
+await test("painel preserva allowlist pública e runner operacional sem avaliar flags nos membros", async () => {
   for (const path of ["src/app.ts", "src/worker.ts", "src/local.ts"])
     assert.ok(!(await readFile(path, "utf8")).includes("bootstrap-admin"));
   assert.ok(
@@ -105,7 +105,7 @@ test("painel preserva allowlist pública e runner operacional sem avaliar flags 
   assert.ok(!paths.includes('"/admin"'));
 });
 
-test("e-mail administrativo único: normalização, ausência e entradas inválidas", () => {
+await test("e-mail administrativo único: normalização, ausência e entradas inválidas", () => {
   assert.equal(
     administrativeEmail("  Owner@Example.test  "),
     "owner@example.test",

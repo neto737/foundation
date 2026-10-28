@@ -10,16 +10,27 @@ import {
   cookieFrom,
 } from "./worker-harness.js";
 import { resourceProbe } from "./worker-resources.js";
+import { withWorkerCleanup } from "./worker-harness-diagnostics.js";
 
 const databaseUrl = process.env.LEVI_DATABASE_URL;
 if (!databaseUrl || process.env.LEVI_LOCAL_DATABASE !== "1")
   throw new Error("Use npm run test:worker.");
 const harness = await workerHarness(databaseUrl);
 const { mf, send, email, link, sent } = harness;
-const observer = await createPostgresDatabase(databaseUrl);
+const observer = await createPostgresDatabase(databaseUrl).catch(
+  (error: unknown) =>
+    withWorkerCleanup(() => {
+      throw error;
+    }, [{ resource: "runtime", close: () => mf.dispose() }]),
+);
 after(async () => {
-  await mf.dispose();
-  await observer.client.end();
+  await withWorkerCleanup(
+    () => undefined,
+    [
+      { resource: "runtime", close: () => mf.dispose() },
+      { resource: "observer", close: () => observer.client.end() },
+    ],
+  );
 });
 const body = {
   organizationName: "Organização sintética Worker",
@@ -106,7 +117,7 @@ async function provisioned() {
   return { ...account, ...result, key };
 }
 
-test("workerd: leitura contextual usa sessão real, não bloqueia outra conta no NAT e permite logout", async () => {
+void test("workerd: leitura contextual usa sessão real, não bloqueia outra conta no NAT e permite logout", async () => {
   const first = await ready();
   const second = await ready();
   const ip = { "cf-connecting-ip": "192.0.2.249" };
@@ -164,7 +175,7 @@ test("workerd: leitura contextual usa sessão real, não bloqueia outra conta no
 });
 
 for (const failDelete of [false, true])
-  test(`workerd: logout direto renovável ${failDelete ? "não confirma falha" : "limpa cookies e revoga"}`, async () => {
+  void test(`workerd: logout direto renovável ${failDelete ? "não confirma falha" : "limpa cookies e revoga"}`, async () => {
     const account = await provisioned();
     await observer.client.query(
       "UPDATE session SET updated_at=now()-interval '2 days', expires_at=now()+interval '1 day' WHERE user_id=$1",
@@ -233,7 +244,7 @@ for (const failDelete of [false, true])
     }
   });
 
-test("workerd: HEAD usa leitura de GET, preserva corpo vazio e não contorna quota", async () => {
+void test("workerd: HEAD usa leitura de GET, preserva corpo vazio e não contorna quota", async () => {
   const account = await ready();
   const digest = createHmac(
     "sha256",
@@ -282,7 +293,7 @@ test("workerd: HEAD usa leitura de GET, preserva corpo vazio e não contorna quo
   }
 });
 
-test("workerd: Static Assets reais, SPA, API e headers de segurança", async () => {
+void test("workerd: Static Assets reais, SPA, API e headers de segurança", async () => {
   const metafile = JSON.parse(
     await readFile(".local/worker-metafile.json", "utf8"),
   ) as { inputs: Record<string, unknown> };
@@ -312,7 +323,7 @@ test("workerd: Static Assets reais, SPA, API e headers de segurança", async () 
     assert.equal(response.headers.get("cache-control"), "private, no-store");
     const html = await response.text();
     assert.ok(html.includes('<html lang="pt-BR">'));
-    const asset = html.match(/src="(\/assets\/[^\"]+\.js)"/)?.[1];
+    const asset = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
     assert.ok(asset);
     const result = await send(asset);
     assert.equal(result.status, 200);
@@ -337,25 +348,26 @@ test("workerd: Static Assets reais, SPA, API e headers de segurança", async () 
   }
 });
 
-test("workerd: inicialização em banco vazio não executa migrations", async () => {
+void test("workerd: inicialização em banco vazio não executa migrations", async () => {
   await observer.client.query("CREATE DATABASE levi_worker_empty");
-  const url = new URL(databaseUrl!);
+  const url = new URL(databaseUrl);
   url.pathname = "/levi_worker_empty";
   const empty = await createPostgresDatabase(url.toString());
-  const runtime = await workerHarness(url.toString());
-  try {
+  let runtime: Awaited<ReturnType<typeof workerHarness>> | undefined;
+  await withWorkerCleanup(async () => {
+    runtime = await workerHarness(url.toString());
     assert.equal((await runtime.send("/api/onboarding")).status, 503);
     const tables = await empty.client.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'",
     );
     assert.equal(tables.rows[0]!.count, 0);
-  } finally {
-    await runtime.mf.dispose();
-    await empty.client.end();
-  }
+  }, [
+    { resource: "runtime", close: () => runtime?.mf.dispose() },
+    { resource: "fixture", close: () => empty.client.end() },
+  ]);
 });
 
-test("workerd: onboarding público, dois e-mails, prontidão, cookies e callbacks nativos", async () => {
+void test("workerd: onboarding público, dois e-mails, prontidão, cookies e callbacks nativos", async () => {
   const count = sent.length;
   assert.equal(
     (await send("/api/onboarding/email", { email: "not-allowed@example.test" }))
@@ -433,7 +445,7 @@ test("workerd: onboarding público, dois e-mails, prontidão, cookies e callback
   );
 });
 
-test("workerd: provisionamento concorrente, UUID, isolamento, múltiplas igrejas e revogação", async () => {
+void test("workerd: provisionamento concorrente, UUID, isolamento, múltiplas igrejas e revogação", async () => {
   const first = await ready();
   const key = randomUUID();
   const results = await Promise.all(
@@ -535,11 +547,13 @@ test("workerd: provisionamento concorrente, UUID, isolamento, múltiplas igrejas
 });
 
 for (const table of ["audit_events", "onboarding_provisions"])
-  test(`workerd: rollback real após falha em ${table}, observado por outra conexão`, async () => {
+  void test(`workerd: rollback real após falha em ${table}, observado por outra conexão`, async () => {
     const account = await ready();
     const before = (
-      await observer.client.query("SELECT count(*)::int AS count FROM tenants")
-    ).rows[0].count;
+      await observer.client.query<Record<string, unknown>>(
+        "SELECT count(*)::int AS count FROM tenants",
+      )
+    ).rows[0]?.count;
     await observer.client.query(
       "CREATE FUNCTION worker_reject_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic failure'; END $$",
     );
@@ -558,10 +572,10 @@ for (const table of ["audit_events", "onboarding_provisions"])
       );
       assert.equal(
         (
-          await observer.client.query(
+          await observer.client.query<Record<string, unknown>>(
             "SELECT count(*)::int AS count FROM tenants",
           )
-        ).rows[0].count,
+        ).rows[0]?.count,
         before,
       );
       for (const sql of [
@@ -589,7 +603,7 @@ for (const table of ["audit_events", "onboarding_provisions"])
     );
   });
 
-test("workerd: falha real de banco ou provider não vira autorização/envio confirmado", async () => {
+void test("workerd: falha real de banco ou provider não vira autorização/envio confirmado", async () => {
   harness.provider(429);
   try {
     assert.equal(
@@ -615,7 +629,7 @@ test("workerd: falha real de banco ou provider não vira autorização/envio con
   }
 });
 
-test("workerd: CPU de processo, heap V8, RSS e latência da senha sem reduzir scrypt", async () => {
+void test("workerd: CPU de processo, heap V8, RSS e latência da senha sem reduzir scrypt", async () => {
   const probe = await resourceProbe(mf);
   const rows = [];
   try {
@@ -671,7 +685,7 @@ test("workerd: CPU de processo, heap V8, RSS e latência da senha sem reduzir sc
   }
 });
 
-test("workerd público: limite persiste entre invocações, ignora X-Forwarded-For e mantém erro em português", async () => {
+void test("workerd público: limite persiste entre invocações, ignora X-Forwarded-For e mantém erro em português", async () => {
   const ip = "198.51.100.240";
   const responses = [];
   for (let index = 0; index < 6; index++) {
@@ -688,8 +702,8 @@ test("workerd público: limite persiste entre invocações, ignora X-Forwarded-F
   );
   const denied = responses.at(-1)!;
   assert.ok(Number(denied.headers.get("retry-after")) > 0);
-  assert.equal((await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
-  const counters = await observer.client.query(
+  assert.equal(readObject(await denied.json()).erro, "LIMITE_DE_SOLICITACOES");
+  const counters = await observer.client.query<Record<string, unknown>>(
     "SELECT key FROM abuse_counters",
   );
   assert.ok(!JSON.stringify(counters.rows).includes(ip));
@@ -710,7 +724,7 @@ test("workerd público: limite persiste entre invocações, ignora X-Forwarded-F
   }
 });
 
-test("workerd público: recuperação de senha compartilha limite de e-mails; login limita tentativas sem enumerar contas", async () => {
+void test("workerd público: recuperação de senha compartilha limite de e-mails; login limita tentativas sem enumerar contas", async () => {
   const account = await verified();
   const headers = { "cf-connecting-ip": "198.51.100.241" };
   const before = sent.filter(
@@ -771,10 +785,10 @@ test("workerd público: recuperação de senha compartilha limite de e-mails; lo
   assert.equal(new Set(bodies).size, 1);
 });
 
-test("workerd: módulo disponível por padrão para administrador pronto sem binding de rollout", async () => {
+void test("workerd: módulo disponível por padrão para administrador pronto sem binding de rollout", async () => {
   const account = await provisioned();
   const context = await send("/api/context", undefined, account.cookie);
-  assert.equal((await context.json()).membersEnabled, true);
+  assert.equal(readObject(await context.json()).membersEnabled, true);
   assert.equal(
     (await send("/api/members", undefined, account.cookie)).status,
     200,
@@ -788,13 +802,13 @@ test("workerd: módulo disponível por padrão para administrador pronto sem bin
   assert.equal(response.status, 201);
 });
 
-test("workerd: schema anterior preserva onboarding e igrejas e falha fechado em membros sem aplicar migration", async () => {
+void test("workerd: schema anterior preserva onboarding e igrejas e falha fechado em membros sem aplicar migration", async () => {
   await observer.client.query("CREATE DATABASE levi_worker_previous");
-  const url = new URL(databaseUrl!);
+  const url = new URL(databaseUrl);
   url.pathname = "/levi_worker_previous";
   const previous = await createPostgresDatabase(url.toString());
   let runtime: Awaited<ReturnType<typeof workerHarness>> | undefined;
-  try {
+  await withWorkerCleanup(async () => {
     // Somente as migrations anteriores, no mesmo container sintético do harness.
     for (const path of [
       "migrations/0000_onboarding.sql",
@@ -903,7 +917,7 @@ test("workerd: schema anterior preserva onboarding e igrejas e falha fechado em 
         },
       ],
     });
-    const tables = await previous.client.query(
+    const tables = await previous.client.query<Record<string, unknown>>(
       "SELECT to_regclass('members') members, to_regclass('member_history') history, to_regclass('member_creation_requests') receipts",
     );
     assert.deepEqual(tables.rows[0], {
@@ -911,18 +925,18 @@ test("workerd: schema anterior preserva onboarding e igrejas e falha fechado em 
       history: null,
       receipts: null,
     });
-  } finally {
-    await runtime?.mf.dispose();
-    await previous.client.end();
-  }
+  }, [
+    { resource: "runtime", close: () => runtime?.mf.dispose() },
+    { resource: "fixture", close: () => previous.client.end() },
+  ]);
 });
 
-test("workerd: todas as organizações têm membros, com autorização e isolamento após troca/revogação", async () => {
+void test("workerd: todas as organizações têm membros, com autorização e isolamento após troca/revogação", async () => {
   // A organização que antes estaria selecionada e a que ficaria fora usam o mesmo Worker sem lista.
   const formerlySelected = await provisioned();
   const formerlyUnselected = await provisioned();
-  const runtime = await workerHarness(databaseUrl!);
-  try {
+  const runtime = await workerHarness(databaseUrl);
+  await withWorkerCleanup(async () => {
     for (const path of [
       "/api/context",
       "/api/members",
@@ -987,7 +1001,7 @@ test("workerd: todas as organizações têm membros, com autorização e isolame
       );
       assert.equal(list.status, 200);
       assert.deepEqual(
-        (await list.json()).members.map((m: { id: string }) => m.id),
+        readObjects(readObject(await list.json()).members).map((m) => m.id),
         [result.memberId],
       );
       assert.equal(
@@ -1000,7 +1014,11 @@ test("workerd: todas as organizações têm membros, com autorização e isolame
         ).status,
         200,
       );
-      results.push({ ...result, key });
+      results.push({
+        memberId: result.memberId,
+        organizationId: result.organizationId,
+        key,
+      });
     }
     const first = results[0]!;
     const foreignHeaders = {
@@ -1075,10 +1093,10 @@ test("workerd: todas as organizações têm membros, com autorização e isolame
       200,
     );
     assert.equal(
-      (
+      readObject(
         await (
           await runtime.send("/api/context", undefined, formerlySelected.cookie)
-        ).json()
+        ).json(),
       ).membersEnabled,
       true,
     );
@@ -1139,12 +1157,10 @@ test("workerd: todas as organizações têm membros, com autorização e isolame
       ).status,
       403,
     );
-  } finally {
-    await runtime.mf.dispose();
-  }
+  }, [{ resource: "runtime", close: () => runtime.mf.dispose() }]);
 });
 
-test("workerd: guard administrativo protege HTML antes de Assets, API e validação", async () => {
+void test("workerd: guard administrativo protege HTML antes de Assets, API e validação", async () => {
   const common = await ready();
   for (const cookie of ["", common.cookie])
     for (const path of [
@@ -1166,26 +1182,17 @@ test("workerd: guard administrativo protege HTML antes de Assets, API e validaç
         "DELETE",
         "OPTIONS",
       ]) {
-        const response = await mf
-          .dispatchFetch(workerOrigin + path, {
-            method,
-            headers: {
-              cookie,
-              origin: "https://hostil.example",
-              "content-type": "text/plain",
-            },
-            ...(!["GET", "HEAD"].includes(method)
-              ? { body: "x".repeat(20_000) }
-              : {}),
-          })
-          .catch((error: unknown) => {
-            const cause = error instanceof Error ? error.cause : null;
-            const code =
-              cause && typeof cause === "object" && "code" in cause
-                ? String(cause.code)
-                : "unknown";
-            throw new Error(`${method} ${path}: ${code}`, { cause: error });
-          });
+        const response = await mf.dispatchFetch(workerOrigin + path, {
+          method,
+          headers: {
+            cookie,
+            origin: "https://hostil.example",
+            "content-type": "text/plain",
+          },
+          ...(!["GET", "HEAD"].includes(method)
+            ? { body: "x".repeat(20_000) }
+            : {}),
+        });
         assert.equal(response.status, 404, `${method} ${path}`);
         assert.equal(
           response.headers.get("cache-control"),
@@ -1201,10 +1208,10 @@ test("workerd: guard administrativo protege HTML antes de Assets, API e validaç
   );
   // Mesmo com concessão histórica, ausência de configuração continua negando.
   assert.equal((await send("/admin", undefined, common.cookie)).status, 404);
-  const configured = await workerHarness(databaseUrl!, {
+  const configured = await workerHarness(databaseUrl, {
     adminEmail: common.email,
   });
-  try {
+  await withWorkerCleanup(async () => {
     const html = await configured.send("/admin", undefined, common.cookie);
     assert.equal(html.status, 200);
     assert.match(html.headers.get("content-type") ?? "", /text\/html/);
@@ -1239,11 +1246,27 @@ test("workerd: guard administrativo protege HTML antes de Assets, API e validaç
         .status,
       404,
     );
-  } finally {
-    await observer.client.query(
-      'UPDATE "user" SET email_verified=true WHERE id=$1',
-      [common.id],
-    );
-    await configured.mf.dispose();
-  }
+  }, [
+    {
+      resource: "restore-fixture",
+      close: () =>
+        observer.client.query(
+          'UPDATE "user" SET email_verified=true WHERE id=$1',
+          [common.id],
+        ),
+    },
+    { resource: "runtime", close: () => configured.mf.dispose() },
+  ]);
 });
+
+function readObject(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+
+function readObjects(value: unknown): Record<string, unknown>[] {
+  assert.ok(Array.isArray(value));
+  return value.map((item: unknown) => readObject(item));
+}

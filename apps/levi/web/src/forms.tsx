@@ -1,3 +1,4 @@
+import { formText } from "./form-data.js";
 import { useDraftGuard } from "./ui.js";
 import { useId, useState, type FormEvent } from "react";
 import type { ProvisionInput } from "./api.js";
@@ -25,8 +26,8 @@ function Form({
   submit: string;
   busy: boolean;
   label: string;
-  onSubmit(values: Values): Promise<void>;
-  validate(values: Values): Values;
+  onSubmit: (values: Values) => Promise<void>;
+  validate: (values: Values) => Values;
 }) {
   const id = useId();
   const draft = useDraftGuard();
@@ -37,7 +38,7 @@ function Form({
     const form = event.currentTarget;
     const data = new FormData(form);
     const values = Object.fromEntries(
-      fields.map((field) => [field.name, String(data.get(field.name) ?? "")]),
+      fields.map((field) => [field.name, formText(data, field.name)]),
     );
     const nextErrors = validate(values);
     setErrors(nextErrors);
@@ -136,7 +137,7 @@ export function AccessForm({
   mode: "email" | "login" | "password" | "organization";
   busy: boolean;
   initial?: ProvisionInput | undefined;
-  onSubmit(values: Values): Promise<void>;
+  onSubmit: (values: Values) => Promise<void>;
 }) {
   if (mode === "organization")
     return (

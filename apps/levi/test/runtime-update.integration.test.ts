@@ -16,7 +16,7 @@ if (
 )
   throw new Error("Use o harness PostgreSQL descartável.");
 
-test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL descartável", async (t) => {
+void test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL descartável", async (t) => {
   const admin = await createPostgresDatabase(databaseUrl);
   const connections: Awaited<ReturnType<typeof createPostgresDatabase>>[] = [];
   const roles: string[] = [];
@@ -48,8 +48,11 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
       const connection = await createPostgresDatabase(url.toString());
       connections.push(connection);
       assert.equal(
-        (await connection.client.query("SELECT current_user")).rows[0]
-          .current_user,
+        (
+          await connection.client.query<Record<string, unknown>>(
+            "SELECT current_user",
+          )
+        ).rows[0]?.current_user,
         role,
       );
       return connection;
@@ -78,33 +81,37 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
       );
     await migrate(owner.db, { migrationsFolder: directory });
     const journalBefore = (
-      await owner.client.query(
+      await owner.client.query<Record<string, unknown>>(
         "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
       )
     ).rows;
     assert.equal(journalBefore.length, 3);
     const tenant = (
-      await owner.client.query(
+      await owner.client.query<Record<string, unknown>>(
         "INSERT INTO tenants(name) VALUES('Organização sintética de locks') RETURNING id",
       )
-    ).rows[0].id as string;
+    ).rows[0]?.id;
+    assert.ok(typeof tenant === "string");
     const user = (
-      await owner.client.query(
+      await owner.client.query<Record<string, unknown>>(
         `INSERT INTO "user"(name,email) VALUES('Conta sintética','update-guard@example.test') RETURNING id`,
       )
-    ).rows[0].id as string;
+    ).rows[0]?.id;
+    assert.ok(typeof user === "string");
     const church = (
-      await owner.client.query(
+      await owner.client.query<Record<string, unknown>>(
         "INSERT INTO churches(tenant_id,name) VALUES($1,'Igreja sintética de locks') RETURNING id",
         [tenant],
       )
-    ).rows[0].id as string;
+    ).rows[0]?.id;
+    assert.ok(typeof church === "string");
     const membership = (
-      await owner.client.query(
+      await owner.client.query<Record<string, unknown>>(
         "INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES($1,$2,'admin') RETURNING id",
         [tenant, user],
       )
-    ).rows[0].id as string;
+    ).rows[0]?.id;
+    assert.ok(typeof membership === "string");
     const tables = [
       {
         name: "churches",
@@ -122,7 +129,7 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         tables.map(
           async ({ name, id }) =>
             (
-              await owner.client.query(
+              await owner.client.query<Record<string, unknown>>(
                 `SELECT * FROM public.${name} WHERE id=$1`,
                 [id],
               )
@@ -146,15 +153,15 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
       async () => {
         assert.deepEqual(await records(), before);
         const after = (
-          await owner.client.query(
+          await owner.client.query<Record<string, unknown>>(
             "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
           )
         ).rows;
         assert.deepEqual(after.slice(0, 3), journalBefore);
         assert.equal(after.length, 4);
-        assert.equal(after[3].created_at, String(journal.entries[3]!.when));
+        assert.equal(after[3]?.created_at, String(journal.entries[3]!.when));
         assert.equal(
-          after[3].hash,
+          after[3]?.hash,
           createHash("sha256")
             .update(
               await readFile("migrations/0003_protecao-update-runtime.sql"),
@@ -164,14 +171,14 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         await migrate(owner.db, { migrationsFolder: directory });
         assert.deepEqual(
           (
-            await owner.client.query(
+            await owner.client.query<Record<string, unknown>>(
               "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
             )
           ).rows,
           after,
         );
         const definition = (
-          await owner.client.query(`
+          await owner.client.query<Record<string, unknown>>(`
           SELECT c.relname, pg_get_userbyid(c.relowner) AS table_owner,
                  pg_get_userbyid(p.proowner) AS function_owner,
                  t.tgtype, t.tgenabled, p.prosecdef, p.proconfig
@@ -193,11 +200,11 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         for (const { name } of tables)
           assert.equal(
             (
-              await runtime.client.query(
+              await runtime.client.query<Record<string, unknown>>(
                 "SELECT has_any_column_privilege(current_user,$1,'UPDATE') AS allowed",
                 [`public.${name}`],
               )
-            ).rows[0].allowed,
+            ).rows[0]?.allowed,
             false,
           );
       },
@@ -223,7 +230,7 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         for (const { name, id } of tables) {
           assert.deepEqual(
             (
-              await runtime.client.query(
+              await runtime.client.query<Record<string, unknown>>(
                 `
             SELECT attname FROM pg_attribute
             WHERE attrelid=$1::regclass AND attnum>0 AND NOT attisdropped
@@ -236,11 +243,11 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
           );
           assert.equal(
             (
-              await runtime.client.query(
+              await runtime.client.query<Record<string, unknown>>(
                 "SELECT has_table_privilege(current_user,$1,'UPDATE') AS allowed",
                 [`public.${name}`],
               )
-            ).rows[0].allowed,
+            ).rows[0]?.allowed,
             false,
           );
           await runtime.client.query("BEGIN");
@@ -388,11 +395,11 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
           );
           assert.equal(
             (
-              await owner.client.query(
+              await owner.client.query<Record<string, unknown>>(
                 `SELECT created_at::text FROM public.${name} WHERE id=$1`,
                 [id],
               )
-            ).rows[0].created_at,
+            ).rows[0]?.created_at,
             "2003-01-01 00:00:00+00",
           );
         }
@@ -430,10 +437,11 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
           "GRANT INSERT(tenant_id,user_id,role) ON public.tenant_memberships TO levi_dev_runtime",
         );
         const otherTenant = (
-          await owner.client.query(
+          await owner.client.query<Record<string, unknown>>(
             "INSERT INTO tenants(name) VALUES('Outra organização sintética') RETURNING id",
           )
-        ).rows[0].id;
+        ).rows[0]?.id;
+        assert.ok(typeof otherTenant === "string");
         assert.equal(
           (
             await runtime.client.query(
@@ -449,7 +457,7 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
       "0004 preserva fichas existentes, inicializa versão e mantém histórico pessoal eliminável",
       async () => {
         const row = (
-          await owner.client.query(
+          await owner.client.query<Record<string, unknown>>(
             "INSERT INTO members(tenant_id,church_id,name,status,phone) VALUES($1,$2,'Perfil anterior','Ativo','Contato anterior') RETURNING *",
             [tenant, church],
           )
@@ -464,16 +472,19 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         );
         await migrate(owner.db, { migrationsFolder: directory });
         await migrate(owner.db, { migrationsFolder: directory });
+        assert.ok(row);
         const upgraded = (
-          await owner.client.query("SELECT * FROM members WHERE id=$1", [
-            row.id,
-          ])
+          await owner.client.query<Record<string, unknown>>(
+            "SELECT * FROM members WHERE id=$1",
+            [row.id],
+          )
         ).rows[0];
+        assert.ok(upgraded);
         const { version, ...preserved } = upgraded;
         assert.equal(version, 1);
         assert.deepEqual(preserved, row);
         const churchContacts = (
-          await owner.client.query(
+          await owner.client.query<Record<string, unknown>>(
             "SELECT address,phone,email FROM churches WHERE id=$1",
             [church],
           )
@@ -497,11 +508,11 @@ test("proteção UPDATE: migration incremental e roles restritas em PostgreSQL d
         await owner.client.query("DELETE FROM members WHERE id=$1", [row.id]);
         assert.equal(
           (
-            await owner.client.query(
+            await owner.client.query<Record<string, unknown>>(
               "SELECT count(*)::int n FROM member_profile_history WHERE member_id=$1",
               [row.id],
             )
-          ).rows[0].n,
+          ).rows[0]?.n,
           0,
         );
       },

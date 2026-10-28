@@ -18,17 +18,17 @@ function executor(history: typeof rows, exists = true) {
     async query<T>(text: string) {
       assert.ok(text.startsWith("SELECT "), "Somente consultas de leitura");
       if (text.includes("to_regclass"))
-        return {
+        return Promise.resolve({
           rows: [
             { relation: exists ? "drizzle.__drizzle_migrations" : null },
           ] as T[],
-        };
-      return { rows: history as T[] };
+        });
+      return Promise.resolve({ rows: history as T[] });
     },
   } as unknown as Parameters<typeof inspectMigrationHistory>[0];
 }
 
-test("histórico compara hashes imutáveis das migrations versionadas e prefixos válidos", async () => {
+void test("histórico compara hashes imutáveis das migrations versionadas e prefixos válidos", async () => {
   assert.deepEqual(
     artifacts.slice(0, 4).map((migration) => migration.hash),
     [
@@ -51,7 +51,7 @@ test("histórico compara hashes imutáveis das migrations versionadas e prefixos
   );
 });
 
-test("histórico recusa hash divergente, lacuna, duplicação, ordem e registro adicional", async () => {
+void test("histórico recusa hash divergente, lacuna, duplicação, ordem e registro adicional", async () => {
   for (const history of [
     [{ ...rows[0]!, hash: "0".repeat(64) }],
     rows.slice(1),
@@ -62,7 +62,7 @@ test("histórico recusa hash divergente, lacuna, duplicação, ordem e registro 
     await assert.rejects(inspectMigrationHistory(executor(history)));
 });
 
-test("status DEV exige confirmação distinta e mantém guardas de identidade e TLS", () => {
+void test("status DEV exige confirmação distinta e mantém guardas de identidade e TLS", () => {
   const host = "ep-synthetic-only.us-east-2.aws.neon.tech";
   const env = {
     LEVI_DEV_DATABASE_URL: `postgresql://levi_dev_migrator:synthetic-only@${host}/levi_dev?sslmode=verify-full`,
@@ -92,7 +92,7 @@ test("status DEV exige confirmação distinta e mantém guardas de identidade e 
   );
 });
 
-test("runner DEV separa status/aplicação, libera conexão e interrompe em identidade, lock ou journal divergente", async () => {
+void test("runner DEV separa status/aplicação, libera conexão e interrompe em identidade, lock ou journal divergente", async () => {
   const source = await readFile("tools/migrate-dev.ts", "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -119,36 +119,41 @@ test("runner DEV separa status/aplicação, libera conexão e interrompe em iden
     };
     const modules: Record<string, unknown> = {
       "@t00ls-dev/db/postgres": {
-        createPostgresDatabase: async () => ({
-          db: {},
-          client: {
-            query: async (sql: string) => {
-              queries.push(sql);
-              if (sql.includes("current_database"))
-                return {
-                  rows: [
-                    {
-                      database: "levi_dev",
-                      role: "levi_dev_migrator",
-                      login:
-                        mode === "identity" ? "other" : "levi_dev_migrator",
-                      schema: "public",
-                    },
-                  ],
-                };
-              if (sql.includes("pg_try_advisory_lock"))
-                return { rows: [{ locked: mode !== "lock" }] };
-              return { rows: [] };
+        createPostgresDatabase: async () =>
+          Promise.resolve({
+            db: {},
+            client: {
+              query: async (sql: string) => {
+                queries.push(sql);
+                if (sql.includes("current_database"))
+                  return Promise.resolve({
+                    rows: [
+                      {
+                        database: "levi_dev",
+                        role: "levi_dev_migrator",
+                        login:
+                          mode === "identity" ? "other" : "levi_dev_migrator",
+                        schema: "public",
+                      },
+                    ],
+                  });
+                if (sql.includes("pg_try_advisory_lock"))
+                  return Promise.resolve({
+                    rows: [{ locked: mode !== "lock" }],
+                  });
+                return Promise.resolve({ rows: [] });
+              },
+              end: async () => {
+                closed++;
+                return Promise.resolve();
+              },
             },
-            end: async () => {
-              closed++;
-            },
-          },
-        }),
+          }),
       },
       "drizzle-orm/node-postgres/migrator": {
         migrate: async () => {
           migrations++;
+          return Promise.resolve();
         },
       },
       "./dev-migration-config.js": {
@@ -161,10 +166,10 @@ test("runner DEV separa status/aplicação, libera conexão e interrompe em iden
         inspectMigrationHistory: async () => {
           inspections++;
           if (mode === "journal") throw new Error("private-database-error");
-          return {
+          return Promise.resolve({
             applied: migrations ? ["0000"] : [],
             pending: migrations ? [] : ["0000"],
-          };
+          });
         },
       },
     };

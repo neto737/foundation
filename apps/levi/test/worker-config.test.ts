@@ -6,7 +6,7 @@ import { createApp } from "../src/app.js";
 import worker from "../src/worker.js";
 
 const env: WorkerEnv = {
-  ASSETS: { fetch: async () => new Response("synthetic") },
+  ASSETS: { fetch: async () => Promise.resolve(new Response("synthetic")) },
   HYPERDRIVE: { connectionString: "postgresql://synthetic-only" },
   LEVI_PUBLIC_ORIGIN: "https://levi.t00ls.dev",
   LEVI_AUTH_SECRET: "synthetic-only-secret-with-more-than-32-characters",
@@ -18,7 +18,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test("política final de headers preserva no-referrer também no runtime Node", async () => {
+void test("política final de headers preserva no-referrer também no runtime Node", async () => {
   const app = createApp(workerOptions(env));
   const response = await app.request("https://levi.t00ls.dev/unknown");
   assert.equal(response.status, 404);
@@ -26,7 +26,7 @@ test("política final de headers preserva no-referrer também no runtime Node", 
   assert.ok(response.headers.has("content-security-policy"));
 });
 
-test("Worker sem secrets/configuração completa responde 503 sanitizado, sem tentar a API", async () => {
+void test("Worker sem secrets/configuração completa responde 503 sanitizado, sem tentar a API", async () => {
   const response = await worker.fetch(new Request("https://levi.t00ls.dev/"), {
     ...env,
     RESEND_API_KEY: "",
@@ -37,7 +37,7 @@ test("Worker sem secrets/configuração completa responde 503 sanitizado, sem te
   assert.ok(!(await response.text()).includes(env.LEVI_AUTH_SECRET));
 });
 
-test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
+void test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
   assert.equal(workerOptions(env).baseURL, "https://levi.t00ls.dev");
   assert.equal(workerOptions(env).onboardingReturnPath, "/onboarding");
   for (const changes of [
@@ -50,12 +50,16 @@ test("DEV compõe somente origem HTTPS fixa e callbacks seguros", () => {
     assert.throws(() => workerOptions({ ...env, ...changes }));
 });
 
-test("adapter Resend publicado aceita destinatários públicos sem allowlist", async () => {
-  const messages: Array<Record<string, unknown>> = [];
+void test("adapter Resend publicado aceita destinatários públicos sem allowlist", async () => {
+  const messages: Array<{ from: unknown }> = [];
   globalThis.fetch = async (url, init) => {
     assert.equal(url, "https://api.resend.com/emails");
-    messages.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-    return Response.json({ id: "synthetic" });
+    const requestBody = init?.body;
+    assert.ok(typeof requestBody === "string");
+    const message: unknown = JSON.parse(requestBody);
+    assert.ok(message && typeof message === "object" && "from" in message);
+    messages.push(message);
+    return Promise.resolve(Response.json({ id: "synthetic" }));
   };
   const { email } = workerOptions(env);
   await email.send({
@@ -73,8 +77,9 @@ test("adapter Resend publicado aceita destinatários públicos sem allowlist", a
   assert.equal(messages[0]?.from, env.LEVI_EMAIL_FROM);
 });
 
-test("rejeição do provider não é declarada como envio confirmado", async () => {
-  globalThis.fetch = async () => Response.json({}, { status: 429 });
+void test("rejeição do provider não é declarada como envio confirmado", async () => {
+  globalThis.fetch = async () =>
+    Promise.resolve(Response.json({}, { status: 429 }));
   await assert.rejects(
     workerOptions(env).email.send({
       to: "tester@example.test",
@@ -84,7 +89,7 @@ test("rejeição do provider não é declarada como envio confirmado", async () 
   );
 });
 
-test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem conectar", () => {
+void test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem conectar", () => {
   const host = "ep-synthetic-only.us-east-2.aws.neon.tech";
   const valid: NodeJS.ProcessEnv = {
     LEVI_DEV_DATABASE_URL: `postgresql://levi_dev_migrator:synthetic-only@${host}/levi_dev?sslmode=verify-full`,
@@ -130,7 +135,7 @@ test("guarda de migrations aceita somente alvo Neon DEV direto e explícito, sem
   assert.throws(() => devMigrationTarget({}));
 });
 
-test("Worker sem configuração preserva 404 administrativo antes de qualquer binding ou validação", async () => {
+void test("Worker sem configuração preserva 404 administrativo antes de qualquer binding ou validação", async () => {
   for (const path of [
     "/admin",
     "/admin/",
@@ -157,7 +162,7 @@ test("Worker sem configuração preserva 404 administrativo antes de qualquer bi
     }
 });
 
-test("ausência ou e-mail administrativo inválido não libera APIs nem impede páginas comuns", async () => {
+void test("ausência ou e-mail administrativo inválido não libera APIs nem impede páginas comuns", async () => {
   for (const email of [undefined, "", "invalid"]) {
     const configured = { ...env, LEVI_ADMIN_EMAIL: email };
     assert.equal(workerOptions(configured).adminEmail, email);

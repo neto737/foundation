@@ -6,6 +6,19 @@ export const deployWorker = "levi-dev";
 const emailFrom = "Levi <hi@levi.t00ls.dev>";
 const previousEmailFrom = "Levi <noreply@levi.t00ls.dev>";
 
+function asRecord(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  assert.ok(Array.isArray(value));
+  const entries: unknown[] = value;
+  return entries.map((entry) => asRecord(entry));
+}
+
 export function deploySettings(env: NodeJS.ProcessEnv) {
   assert.equal(env.GITHUB_ACTIONS, "true");
   assert.equal(env.GITHUB_REPOSITORY, "t00ls-dev/foundation");
@@ -35,35 +48,39 @@ export function deploySettings(env: NodeJS.ProcessEnv) {
   return { sha, account, hyperdrive };
 }
 
-export function verifyHyperdrive(
-  config: Record<string, any>,
-  env: NodeJS.ProcessEnv,
-) {
-  assert.equal(config.id, env.LEVI_HYPERDRIVE_ID);
-  assert.equal(config.name, deployWorker);
-  assert.equal(config.caching?.disabled, true);
-  assert.equal(config.origin?.host, env.LEVI_DEV_DATABASE_HOST);
-  assert.equal(config.origin?.database, env.LEVI_DEV_DATABASE_NAME);
-  assert.equal(config.origin?.user, "levi_dev_runtime");
-  assert.ok(["postgres", "postgresql"].includes(config.origin?.scheme));
-  assert.equal(config.origin?.port, 5432);
-  assert.equal(config.mtls?.sslmode, "verify-full");
+export function verifyHyperdrive(config: unknown, env: NodeJS.ProcessEnv) {
+  const value = asRecord(config);
+  const caching = asRecord(value.caching);
+  const origin = asRecord(value.origin);
+  const mtls = asRecord(value.mtls);
+  assert.equal(value.id, env.LEVI_HYPERDRIVE_ID);
+  assert.equal(value.name, deployWorker);
+  assert.equal(caching.disabled, true);
+  assert.equal(origin.host, env.LEVI_DEV_DATABASE_HOST);
+  assert.equal(origin.database, env.LEVI_DEV_DATABASE_NAME);
+  assert.equal(origin.user, "levi_dev_runtime");
+  const scheme = origin.scheme;
+  assert.ok(
+    typeof scheme === "string" && ["postgres", "postgresql"].includes(scheme),
+  );
+  assert.equal(origin.port, 5432);
+  assert.equal(mtls.sslmode, "verify-full");
   assert.match(
-    config.mtls?.ca_certificate_id ?? "",
+    typeof mtls.ca_certificate_id === "string" ? mtls.ca_certificate_id : "",
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
   );
 }
 
-export function verifyWorkerBindings(
-  version: Record<string, any>,
-  env: NodeJS.ProcessEnv,
-) {
-  const bindings: unknown = version.resources?.bindings;
-  assert.ok(Array.isArray(bindings));
+export function verifyWorkerBindings(version: unknown, env: NodeJS.ProcessEnv) {
+  const value = asRecord(version);
+  const resources = asRecord(value.resources);
+  const bindings = asRecordArray(resources.bindings);
   const hyperdrives = bindings.filter((b) => b.type === "hyperdrive");
   assert.equal(hyperdrives.length, 1);
-  assert.equal(hyperdrives[0].name, "HYPERDRIVE");
-  assert.equal(hyperdrives[0].id, env.LEVI_HYPERDRIVE_ID);
+  const hyperdrive = hyperdrives[0];
+  assert.ok(hyperdrive);
+  assert.equal(hyperdrive.name, "HYPERDRIVE");
+  assert.equal(hyperdrive.id, env.LEVI_HYPERDRIVE_ID);
   for (const [name, type, text] of [
     ["ASSETS", "assets"],
     ["LEVI_AUTH_SECRET", "secret_text"],
@@ -71,27 +88,27 @@ export function verifyWorkerBindings(
     ["LEVI_PUBLIC_ORIGIN", "plain_text", deployOrigin],
     ["LEVI_EMAIL_FROM", "plain_text", env.LEVI_EMAIL_FROM],
   ]) {
-    const matches: { type?: unknown; text?: unknown }[] = bindings.filter(
-      (binding) => binding.name === name,
-    );
+    const matches = bindings.filter((binding) => binding.name === name);
     assert.equal(matches.length, 1);
-    assert.ok(matches[0]);
-    assert.equal(matches[0].type, type);
-    if (type === "plain_text") assert.equal(matches[0].text, text);
+    const match = matches[0];
+    assert.ok(match);
+    assert.equal(match.type, type);
+    if (type === "plain_text") assert.equal(match.text, text);
   }
 }
 
 // Compatibilidade somente com a versão original comprovada para o primeiro corte.
 // Uma versão futura/reenviada com noreply não recebe essa exceção.
 export function verifyPreviousWorkerBindings(
-  version: Parameters<typeof verifyWorkerBindings>[0],
+  version: unknown,
   env: NodeJS.ProcessEnv,
   identity: { versionId: string; sha: string },
 ): "legacy" | "current" {
-  const bindings: unknown = version.resources?.bindings;
-  assert.ok(Array.isArray(bindings));
-  const from: unknown = bindings.find(
-    (binding) => binding?.name === "LEVI_EMAIL_FROM",
+  const value = asRecord(version);
+  const resources = asRecord(value.resources);
+  const bindings = asRecordArray(resources.bindings);
+  const from = bindings.find(
+    (binding) => binding.name === "LEVI_EMAIL_FROM",
   )?.text;
   const legacy = from === previousEmailFrom;
   if (legacy) {
@@ -106,34 +123,45 @@ export function verifyPreviousWorkerBindings(
   return legacy ? "legacy" : "current";
 }
 
-export function deploymentConfig(
-  base: Record<string, any>,
-  hyperdrive: string,
-) {
-  assert.equal(base.name, deployWorker);
-  assert.equal(base.workers_dev, false);
-  assert.equal(base.preview_urls, false);
-  assert.deepEqual(base.routes, []);
-  assert.equal(base.hyperdrive.length, 1);
-  assert.equal(base.hyperdrive[0].binding, "HYPERDRIVE");
-  assert.equal(base.observability.enabled, false);
-  assert.equal(base.observability.logs.enabled, false);
-  assert.equal(base.observability.logs.invocation_logs, false);
-  assert.equal(base.observability.traces.enabled, false);
+export function deploymentConfig(base: unknown, hyperdrive: string) {
+  const value = asRecord(base);
+  const hyperdriveConfigs = asRecordArray(value.hyperdrive);
+  const observability = asRecord(value.observability);
+  const logs = asRecord(observability.logs);
+  const traces = asRecord(observability.traces);
+  const assets = asRecord(value.assets);
+  const vars = asRecord(value.vars);
+  assert.equal(value.name, deployWorker);
+  assert.equal(value.workers_dev, false);
+  assert.equal(value.preview_urls, false);
+  assert.deepEqual(value.routes, []);
+  assert.equal(hyperdriveConfigs.length, 1);
+  const hyperdriveConfig = hyperdriveConfigs[0];
+  assert.ok(hyperdriveConfig);
+  assert.equal(hyperdriveConfig.binding, "HYPERDRIVE");
+  assert.equal(observability.enabled, false);
+  assert.equal(logs.enabled, false);
+  assert.equal(logs.invocation_logs, false);
+  assert.equal(traces.enabled, false);
+  const main = value.main;
+  assert.ok(typeof main === "string");
+  const directory = assets.directory;
+  assert.ok(typeof directory === "string");
+  const configVars: Record<string, unknown> = {
+    ...vars,
+    LEVI_PUBLIC_ORIGIN: deployOrigin,
+  };
   return {
-    ...base,
+    ...value,
     $schema: undefined,
     workers_dev: false,
     preview_urls: false,
-    observability: base.observability,
-    main: resolve(base.main),
-    assets: { ...base.assets, directory: resolve(base.assets.directory) },
+    observability,
+    main: resolve(main),
+    assets: { ...assets, directory: resolve(directory) },
     hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdrive }],
     secrets: { required: ["LEVI_AUTH_SECRET", "RESEND_API_KEY"] },
     routes: [{ pattern: new URL(deployOrigin).hostname, custom_domain: true }],
-    vars: {
-      ...base.vars,
-      LEVI_PUBLIC_ORIGIN: deployOrigin,
-    },
+    vars: configVars,
   };
 }

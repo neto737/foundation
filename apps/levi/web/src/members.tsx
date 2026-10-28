@@ -1,3 +1,4 @@
+import { formText } from "./form-data.js";
 import { EmptyState, Icon, Status, useDraftGuard } from "./ui.js";
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, memberApi, type NamedItem } from "./api.js";
@@ -6,7 +7,6 @@ import {
   formatCivilDate,
   memberTextLimits,
   isCivilDate,
-  type MemberEditInput,
   type Member,
   type MemberInput,
   type MemberFilters,
@@ -33,8 +33,8 @@ export function Members({
   organization: NamedItem;
   churches: NamedItem[];
   path: string;
-  navigate(path: string, success?: string): void;
-  onAccessChanged(): void;
+  navigate: (path: string, success?: string) => void;
+  onAccessChanged: () => void;
 }) {
   const mode = path.endsWith("/editar")
     ? "edit"
@@ -247,8 +247,8 @@ export function Members({
     setFilters({
       page: 1,
       pageSize: 20,
-      name: String(data.get("name") ?? ""),
-      churchId: String(data.get("churchId") ?? ""),
+      name: formText(data, "name"),
+      churchId: formText(data, "churchId"),
       ...(data.get("status")
         ? { status: data.get("status") as MemberStatus }
         : {}),
@@ -451,11 +451,20 @@ export function Members({
             try {
               await validateContext();
               if (sequence !== generation.current) return;
-              const { churchId: _church, status: _status, ...profile } = input;
+              const profile = {
+                name: input.name,
+                birthDate: input.birthDate ?? null,
+                phone: input.phone ?? null,
+                email: input.email ?? null,
+                joinedOn: input.joinedOn ?? null,
+                address: input.address ?? null,
+                baptismDate: input.baptismDate ?? null,
+                churchRole: input.churchRole ?? null,
+              };
               const result = await memberApi.edit(member.id, {
                 ...profile,
                 version: member.version,
-              } as MemberEditInput);
+              });
               check(result.organizationId);
               if (sequence === generation.current)
                 navigate(
@@ -548,7 +557,7 @@ function MemberForm({
   churches: NamedItem[];
   busy: boolean;
   initial?: Member;
-  onSubmit(input: MemberInput): Promise<void>;
+  onSubmit: (input: MemberInput) => Promise<void>;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const draft = useDraftGuard();
@@ -564,19 +573,19 @@ function MemberForm({
     const form = event.currentTarget;
     const data = new FormData(form);
     const input: MemberInput = {
-      churchId: initial?.churchId ?? String(data.get("churchId") ?? ""),
-      name: String(data.get("name") ?? "").trim(),
+      churchId: initial?.churchId ?? formText(data, "churchId"),
+      name: formText(data, "name").trim(),
       status: initial?.status ?? (data.get("status") as MemberStatus),
     };
     const next: Record<string, string> = {};
     if (!input.name) next.name = "Informe o nome do membro.";
     if (!input.churchId) next.churchId = "Selecione uma igreja.";
     for (const [key, , type] of optionalFields) {
-      input[key] = String(data.get(key) ?? "").trim() || null;
+      input[key] = formText(data, key).trim() || null;
       if (
         type === "date" &&
         ((form.elements.namedItem(key) as HTMLInputElement).validity.badInput ||
-          (input[key] && !isCivilDate(input[key]!)))
+          (input[key] && !isCivilDate(input[key])))
       )
         next[key] = "Informe uma data válida.";
     }
