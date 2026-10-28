@@ -173,6 +173,11 @@ as suítes e os checks focados.
   [bypass de cache obrigatório](docs/runbooks/cache.md) e
   [LGPD](docs/runbooks/lgpd.md).
 
+## Acessibilidade
+
+Consulte a [declaração de acessibilidade](ACCESSIBILITY.md) para objetivos,
+avaliações existentes e como comunicar barreiras.
+
 ## Contribuição
 
 Issues e pull requests focados são bem-vindos. Leia

@@ -24,11 +24,11 @@ jobs:
   deploy:
     if: >-
       vars.LEVI_DEV_DEPLOY_ENABLED == 'true' &&
-      github.repository == 't00ls-dev/levi' && github.ref == 'refs/heads/main' &&
+      false && github.ref == 'refs/heads/main' &&
       ((github.event_name == 'workflow_dispatch' && inputs.execution_sha == github.sha) ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == 't00ls-dev/levi' &&
+      false &&
       github.event.workflow_run.head_sha == github.sha))
     runs-on: ubuntu-latest
     timeout-minutes: 10

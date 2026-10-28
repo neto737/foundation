@@ -324,9 +324,12 @@ export function createApp(options: AppOptions) {
   });
   app.post("/api/onboarding/password", async (c) => {
     const input = await readObject(c.req.raw, ["token", "newPassword"]);
-    const token = readString(input, "token", 1, 512, false);
     const newPassword = readString(input, "newPassword", 8, 128, false);
     const identity = verifiedSession(c.get("identity"));
+    if (input.token === undefined) {
+      return c.get("auth").setInitialPassword(c.req.raw.headers, newPassword);
+    }
+    const token = readString(input, "token", 1, 512, false);
     // Associação à sessão é regra do Levi. Validade e consumo continuam nativos.
     const matches = await c
       .get("database")

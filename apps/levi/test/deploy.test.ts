@@ -75,7 +75,7 @@ void test("deploy exige execução confiável manual da master e configuração 
   assert.equal(deploySettings(valid).sha, valid.GITHUB_SHA);
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
-    { GITHUB_REPOSITORY: "t00ls-dev/levi" },
+    { GITHUB_REPOSITORY: "unrelated/levi" },
     { GITHUB_EVENT_NAME: "workflow_run" },
     { GITHUB_EVENT_NAME: "push" },
     { GITHUB_REF: "refs/heads/main" },

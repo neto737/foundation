@@ -40,15 +40,14 @@ local 3000. `src/web.ts` entrega HTML apenas nos caminhos conhecidos da SPA:
 listadas em `src/web-paths.ts`. Rotas desconhecidas da
 API continuam retornando JSON, sem fallback HTML. Migrations continuam explícitas
 e separadas da inicialização e do build. A publicação Worker DEV usa o
-[fluxo automático após CI](deploy-dev.md).
+[fluxo manual com gate de CI](deploy-dev.md).
 
 ## Fluxo e retomada
 
 1. Informe o e-mail e abra o primeiro link recebido. A tela de confirmação não
    informa se uma conta já existe.
-2. O Magic Link nativo verifica o e-mail e estabelece a sessão. A tela solicita
-   explicitamente o **segundo e-mail**, para definir a senha.
-3. Abra o segundo link no mesmo navegador; defina e confirme a senha. A conta
+2. O Magic Link nativo verifica o e-mail e estabelece uma sessão recente.
+3. Defina e confirme a senha diretamente no formulário, sem outro e-mail. A conta
    pronta pode continuar com a sessão já estabelecida. A tela de login permite
    autenticar sessões posteriores.
 4. Informe os nomes da organização e da primeira igreja. Endereço, telefone e
@@ -118,7 +117,7 @@ O build deve preceder o E2E. As portas 4317, 4318 e 5173 precisam estar livres;
 processos existentes não são reutilizados. É possível filtrar casos, por exemplo
 `ppnpm test:e2e -- --project=desktop --grep 'fluxo real completo'`.
 
-O navegador exercita os dois e-mails capturados localmente, cookies reais,
+O navegador exercita a confirmação capturada localmente, links legados, cookies reais,
 login/logout, retomada, seleção, revogação e consultas PostgreSQL. Falhas de rede
 são induzidas antes e depois do commit; outra conexão confere o resultado. Há
 cenários explicitamente interceptados para `401`/`403`/`409`, além dos testes

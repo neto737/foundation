@@ -7,8 +7,8 @@ raiz declaram `MIT`. Os tarballs devem conter o mesmo texto da licença raiz.
 O código próprio do Levi incorporado em `apps/levi` adota MIT por aprovação do
 mantenedor. A cópia inclui [LICENSE](../../apps/levi/LICENSE) e
 [avisos de terceiros](../../apps/levi/THIRD_PARTY_NOTICES.md), preservando os
-avisos de copyright e atribuição aplicáveis. O repositório Levi original e as
-licenças dos demais componentes permanecem inalterados.
+avisos de copyright e atribuição aplicáveis. O histórico incorporado e as
+licenças dos demais componentes permanecem preservados.
 
 ## Copyright
 

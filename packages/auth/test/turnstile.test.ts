@@ -111,7 +111,11 @@ describe("opt-in Turnstile HTTP contract", () => {
     auth = makeAuth(false);
     expect((await post("/sign-up/email", null)).status).toBe(200);
     expect(verify).not.toHaveBeenCalled();
-    expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+    expect(Object.keys(auth).sort()).toEqual([
+      "handler",
+      "resolveSession",
+      "setInitialPassword",
+    ]);
   });
   it.each(paths)(
     "%s rejects missing/invalid/expired tokens before auth effects",

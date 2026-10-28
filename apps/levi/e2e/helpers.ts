@@ -48,22 +48,7 @@ export async function verifyEmail(page: Page, email = syntheticEmail()) {
   ).toBeVisible();
   return email;
 }
-export async function definePassword(page: Page, email: string) {
-  await page
-    .getByRole("button", {
-      name: "Receber e-mail para definir senha",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "O segundo e-mail está a caminho" }),
-  ).toBeVisible();
-  const link = await emailLink(email, "Defina sua senha no Levi");
-  await page.goto(link);
-  await expect(
-    page.getByRole("heading", { name: "Escolha sua senha" }),
-  ).toBeVisible();
-  await expect.poll(() => new URL(page.url()).search).toBe("");
+export async function definePassword(page: Page) {
   await page
     .getByLabel("Nova senha", { exact: true })
     .fill("synthetic-browser-password");
@@ -74,11 +59,10 @@ export async function definePassword(page: Page, email: string) {
   await expect(
     page.getByRole("heading", { name: "Um lugar para sua comunidade" }),
   ).toBeVisible();
-  return link;
 }
 export async function readyAccount(page: Page) {
   const email = await verifyEmail(page);
-  await definePassword(page, email);
+  await definePassword(page);
   return email;
 }
 export async function provision(page: Page, name = "Comunidade sintética") {

@@ -81,9 +81,9 @@ são privadas e não armazenáveis em cache; links não são enviados em `Refere
 | `POST /api/onboarding/email`          | `{ "email": "pessoa@example.test" }`. Solicita Magic Link pelo handler público do Foundation. Não exige nem aceita senha/nome/ID.                                                                                                              |
 | `GET /api/auth/magic-link/verify`     | Link enviado pelo Better Auth; verifica posse do e-mail e cria sessão. Callback fixado pela composição: `/onboarding` na web local, `/api/onboarding` por padrão na API.                                                                       |
 | `GET /api/onboarding`                 | Etapa autoritativa: `email`, `verificar-email`, `senha`, `organizacao` ou `concluido`. Link inválido/expirado/usado informa erro em português.                                                                                                 |
-| `POST /api/onboarding/password-email` | `{}` e sessão verificada. Solicita ao Better Auth o link para primeira senha/recuperação, para o e-mail da própria sessão.                                                                                                                     |
+| `POST /api/onboarding/password-email` | Compatibilidade legada: `{}` e sessão verificada. Solicita ao Better Auth o link para senha/recuperação, para o e-mail da própria sessão.                                                                                                      |
 | `GET /api/auth/reset-password/:token` | Callback público nativo do link; redireciona à etapa com token. Não define senha.                                                                                                                                                              |
-| `POST /api/onboarding/password`       | `{ "token": "...", "newPassword": "..." }` e sessão verificada correspondente. O Better Auth valida e consome o token e cria/atualiza a credencial.                                                                                            |
+| `POST /api/onboarding/password`       | `{ "newPassword": "..." }` e sessão verificada recente para a primeira senha. `token` opcional preserva reset legado, associado à sessão e consumido pelo Better Auth.                                                                         |
 | `POST /api/auth/sign-in/email`        | `{ "email": "...", "password": "..." }`. Login nativo de conta existente.                                                                                                                                                                      |
 | `POST /api/auth/sign-out`             | `{}`. Logout nativo, com confirmação de revogação pelo Foundation.                                                                                                                                                                             |
 | `POST /api/organizations`             | `{ "organizationName": "Organização", "churchName": "Primeira igreja" }`, sessão pronta e header `Idempotency-Key` de 16–128 caracteres alfanuméricos, `_` ou `-`. Retorna `201` com `organizationId` e `churchId`, também em replay idêntico. |
@@ -105,12 +105,14 @@ Rotas convencionais de signup, mudança de senha/e-mail, plugins e chamadas dire
 de emissão/aplicação de reset não são encaminhadas ao Better Auth. A allowlist é
 por método/caminho; uma nova rota upstream não ganha exposição automaticamente.
 
-O caminho público comprovado usa **dois e-mails**: Magic Link antes de existir
-credencial e recuperação nativa para definir a primeira senha. Não chama
-`setPassword`, que é server-only e não é exposto pelo wrapper. A implementação
-consulta somente existência de credencial para prontidão, nunca seu hash. O token
-de reset é associado à sessão do usuário no schema do consumidor; validade,
-expiração e consumo continuam com o Better Auth.
+O cadastro usa um único e-mail: o Magic Link nativo verifica o endereço e
+estabelece uma sessão. Sem token de reset no corpo, a rota de senha usa
+`setInitialPassword` do wrapper, que exige e-mail verificado e chama `setPassword`
+server-only do Better Auth. O wrapper exige sessão recente conforme `freshAge`;
+a biblioteca recusa senha já existente.
+Não expõe `setPassword` diretamente pelo handler HTTP. Links de reset já emitidos
+continuam associados à sessão correspondente, com expiração e consumo nativos.
+Uma sessão antiga exige nova confirmação de e-mail antes da primeira senha.
 
 Uma interrupção pode ser retomada consultando `/api/onboarding` ou solicitando novo
 Magic Link. Conta existente não é duplicada. Em outro dispositivo é necessário

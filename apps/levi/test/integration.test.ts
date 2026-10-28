@@ -485,21 +485,18 @@ void test("prova pública: Magic Link verifica antes da primeira senha e permite
     await (await request("/api/onboarding", undefined, cookie)).json(),
     { etapa: "senha" },
   );
-  assert.equal(
-    (await request("/api/onboarding/password-email", {}, cookie)).status,
-    200,
-  );
-  const token = mailUrl(email).pathname.split("/").at(-1);
+  const sentBeforePassword = sent.length;
   assert.equal(
     (
       await request(
         "/api/onboarding/password",
-        { token, newPassword: "synthetic-password" },
+        { newPassword: "synthetic-password" },
         cookie,
       )
     ).status,
     200,
   );
+  assert.equal(sent.length, sentBeforePassword);
   assert.deepEqual(
     await (await request("/api/onboarding", undefined, cookie)).json(),
     { etapa: "organizacao" },
@@ -514,7 +511,7 @@ void test("prova pública: Magic Link verifica antes da primeira senha e permite
     (
       await request(
         "/api/onboarding/password",
-        { token, newPassword: "other-synthetic-password" },
+        { newPassword: "other-synthetic-password" },
         cookie,
       )
     ).status,
@@ -678,6 +675,94 @@ void test("Magic Links inválidos, expirados e concorrentes não concedem duas s
     ).rowCount,
     1,
   );
+});
+
+void test("primeira senha direta exige sessão verificada recente, CSRF e resiste a concorrência", async () => {
+  const account = await verifiedAccount();
+  const body = { newPassword: "synthetic-direct-password" };
+  assert.equal((await request("/api/onboarding/password", body)).status, 401);
+  assert.equal(
+    (
+      await request("/api/onboarding/password", body, account.cookie, {
+        origin: "https://unrelated.example",
+      })
+    ).status,
+    403,
+  );
+  await observer.client.query(
+    'UPDATE "user" SET email_verified=false WHERE id=$1',
+    [account.id],
+  );
+  assert.equal(
+    (await request("/api/onboarding/password", body, account.cookie)).status,
+    403,
+  );
+  await observer.client.query(
+    'UPDATE "user" SET email_verified=true WHERE id=$1',
+    [account.id],
+  );
+  await observer.client.query(
+    "UPDATE session SET created_at=now()-interval '2 days' WHERE user_id=$1",
+    [account.id],
+  );
+  assert.equal(
+    (await request("/api/onboarding/password", body, account.cookie)).status,
+    400,
+  );
+  await observer.client.query(
+    "UPDATE session SET created_at=now() WHERE user_id=$1",
+    [account.id],
+  );
+  const results = await Promise.all([
+    request("/api/onboarding/password", body, account.cookie),
+    request("/api/onboarding/password", body, account.cookie),
+  ]);
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 400]);
+  assert.equal(
+    (
+      await observer.client.query("SELECT id FROM account WHERE user_id=$1", [
+        account.id,
+      ])
+    ).rowCount,
+    1,
+  );
+  assert.equal(
+    (await request("/api/onboarding/password", body, account.cookie)).status,
+    400,
+  );
+});
+
+void test("primeira senha direta recusa sessão expirada ou revogada sem criar credencial", async () => {
+  for (const revoked of [false, true]) {
+    const account = await verifiedAccount();
+    if (revoked)
+      await observer.client.query("DELETE FROM session WHERE user_id=$1", [
+        account.id,
+      ]);
+    else
+      await observer.client.query(
+        "UPDATE session SET expires_at=now()-interval '1 second' WHERE user_id=$1",
+        [account.id],
+      );
+    assert.equal(
+      (
+        await request(
+          "/api/onboarding/password",
+          { newPassword: "synthetic-expired-password" },
+          account.cookie,
+        )
+      ).status,
+      401,
+    );
+    assert.equal(
+      (
+        await observer.client.query("SELECT id FROM account WHERE user_id=$1", [
+          account.id,
+        ])
+      ).rowCount,
+      0,
+    );
+  }
 });
 
 void test("primeira senha exige sessão correspondente e token nativo válido de uso único", async () => {

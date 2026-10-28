@@ -227,7 +227,7 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
         ...trusted,
         github: { ...trusted.github, event_name },
       })),
-      ...["t00ls-dev/levi", "fork/foundation"].map((repository) => ({
+      ...["unrelated/levi", "fork/foundation"].map((repository) => ({
         ...trusted,
         github: { ...trusted.github, repository },
       })),

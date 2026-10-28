@@ -103,7 +103,7 @@ export async function readySession(
 
 // Chama somente o handler HTTP público. A instância Better Auth não é acessada.
 export async function authRequest(
-  auth: FoundationAuth,
+  auth: Pick<FoundationAuth, "handler" | "resolveSession">,
   options: AppOptions,
   original: Request,
   path: string,

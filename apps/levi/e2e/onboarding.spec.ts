@@ -107,21 +107,6 @@ test("fluxo real completo, login, seleção e retomada por refresh", async ({
   await expect(
     page.getByRole("heading", { name: "E-mail verificado. Agora, sua senha." }),
   ).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: "Receber e-mail para definir senha",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "O segundo e-mail está a caminho" }),
-  ).toBeVisible();
-  const resetLink = await emailLink(email, "Defina sua senha no Levi");
-  await page.goto(resetLink);
-  await expect(
-    page.getByRole("heading", { name: "Escolha sua senha" }),
-  ).toBeVisible();
-  await expect.poll(() => new URL(page.url()).search).toBe("");
   await page.getByLabel("Nova senha", { exact: true }).fill("curta");
   await page
     .getByLabel("Confirme a nova senha", { exact: true })
@@ -204,19 +189,19 @@ test("fluxo real completo, login, seleção e retomada por refresh", async ({
   ).toHaveCount(0);
 });
 
-test("refresh do link de senha exige nova mensagem, sem persistir o segredo", async ({
+test("link legado e refresh permitem definir senha sem outra mensagem", async ({
   page,
 }) => {
   const email = await verifyEmail(page);
-  await page
-    .getByRole("button", {
-      name: "Receber e-mail para definir senha",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "O segundo e-mail está a caminho" }),
-  ).toBeVisible();
+  // Compatibilidade com links de senha já emitidos pelo fluxo anterior.
+  expect(
+    (
+      await page.request.post("/api/onboarding/password-email", {
+        data: {},
+        headers: { origin: new URL(page.url()).origin },
+      })
+    ).ok(),
+  ).toBe(true);
   const link = await emailLink(email, "Defina sua senha no Levi");
   await page.goto(link);
   await expect(
@@ -232,13 +217,27 @@ test("refresh do link de senha exige nova mensagem, sem persistir o segredo", as
   );
   expect(saved.includes(new URL(link).pathname.split("/").at(-1)!)).toBe(false);
   await page.reload();
+  await expect(page.getByLabel("Nova senha", { exact: true })).toBeVisible();
+  await definePassword(page);
+});
+
+test("link legado define a senha diretamente pelo formulário", async ({
+  page,
+}) => {
+  const email = await verifyEmail(page);
+  expect(
+    (
+      await page.request.post("/api/onboarding/password-email", {
+        data: {},
+        headers: { origin: new URL(page.url()).origin },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.goto(await emailLink(email, "Defina sua senha no Levi"));
   await expect(
-    page.getByRole("button", {
-      name: "Receber e-mail para definir senha",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Escolha sua senha" }),
   ).toBeVisible();
-  await definePassword(page, email);
+  await definePassword(page);
 });
 
 test("link nativo reutilizado retorna erro seguro e URL limpa", async ({
@@ -607,8 +606,8 @@ test("responsividade, teclado e acessibilidade básica da interface real", async
     path: `.local/e2e/${info.project.name}.png`,
     fullPage: false,
   });
-  const email = await verifyEmail(page);
-  await definePassword(page, email);
+  await verifyEmail(page);
+  await definePassword(page);
   const form = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
     .analyze();

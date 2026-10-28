@@ -1,5 +1,16 @@
 # `@t00ls-dev/auth`
 
+## Primeira senha após confirmação
+
+`setInitialPassword(headers, newPassword)` é uma operação somente de servidor.
+Ela consulta a sessão persistida sem renovação/cache, exige e-mail verificado e
+usa `auth.api.setPassword` do Better Auth. O wrapper exige sessão recente
+conforme `freshAge` do Better Auth; a biblioteca valida e armazena a senha e
+recusa sobrescrever credencial existente. O consumidor deve proteger seu
+endpoint com CSRF e limitar tentativas; nenhum endpoint público `set-password` é
+adicionado ao handler. O Levi usa essa operação após Magic Link, sem enviar
+outro e-mail. Links de reset antigos continuam no caminho legado.
+
 ## Turnstile opt-in
 
 `createFoundationAuth` aceita

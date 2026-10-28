@@ -8,8 +8,9 @@ preservando `packages/*`, `tooling/*`, `examples/*` e `tests/*`. Links permanece
 em `examples/links`; o Levi está em `apps/levi`, incorporado por subtree sem
 squash, com origem e limites no
 [README da aplicação](../../apps/levi/README.md). A cópia adota MIT e preserva
-atribuições conforme [Licenças](../runbooks/licensing.md). Seu deploy continua
-no repositório original.
+atribuições conforme [Licenças](../runbooks/licensing.md). Seu deploy DEV é
+controlado pelo Foundation, conforme o
+[runbook do Levi](../../apps/levi/docs/deploy-dev.md).
 
 Aplicações mantêm domínio, schema/migrations, deploy e recursos operacionais
 próprios. Compartilham mecanismos pelos exports dos pacotes, com dependências

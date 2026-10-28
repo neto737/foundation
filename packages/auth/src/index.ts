@@ -49,6 +49,8 @@ export interface FoundationAuthOptions {
 
 export interface FoundationAuth {
   handler(request: Request): Promise<Response>;
+  /** Server-only first password; requires a fresh, verified session. */
+  setInitialPassword(headers: Headers, newPassword: string): Promise<Response>;
   resolveSession(headers: Headers): Promise<{
     data: FoundationSession | null;
     headers: Headers;
@@ -200,6 +202,45 @@ export function createFoundationAuth(
     ...(options.google ? { socialProviders: { google: options.google } } : {}),
   });
   return {
+    async setInitialPassword(headers, newPassword) {
+      try {
+        const identity = await auth.api.getSession({
+          headers,
+          query: { disableRefresh: true, disableCookieCache: true },
+        });
+        if (!identity?.user.emailVerified)
+          return Response.json(
+            {
+              erro: "SESSAO_NECESSARIA",
+              mensagem: "Confirme seu e-mail novamente para definir a senha.",
+            },
+            { status: 401 },
+          );
+        const freshAge = (await auth.$context).sessionConfig.freshAge;
+        if (
+          freshAge !== 0 &&
+          Date.now() - new Date(identity.session.createdAt).getTime() >=
+            freshAge * 1000
+        )
+          throw new Error("SESSION_NOT_FRESH");
+        const response = await auth.api.setPassword({
+          headers,
+          body: { newPassword },
+          asResponse: true,
+        });
+        if (!response.ok) throw new Error("INITIAL_PASSWORD_REJECTED");
+        return Response.json({ ok: true }, { headers: response.headers });
+      } catch {
+        return Response.json(
+          {
+            erro: "SENHA_NAO_DEFINIDA",
+            mensagem:
+              "Não foi possível definir a senha. Confirme seu e-mail novamente ou entre na sua conta.",
+          },
+          { status: 400 },
+        );
+      }
+    },
     async handler(request) {
       const path = new URL(request.url).pathname.replace(/\/+$/, "");
       const indeterminate = Boolean(
