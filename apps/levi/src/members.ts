@@ -93,9 +93,9 @@ export async function findMember(
     .innerJoin(churches, churchJoin)
     .where(and(eq(members.tenantId, current.tenantId), eq(members.id, id)));
   if (!row) notFound();
-  const { tenantId: _tenantId, ...member } = row.member;
+  const { tenantId, ...member } = row.member;
   return {
-    organizationId: current.tenantId,
+    organizationId: tenantId,
     member: {
       ...member,
       churchName: row.churchName,

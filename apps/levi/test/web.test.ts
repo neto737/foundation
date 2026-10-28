@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
+import { formText } from "../web/src/form-data.js";
 import { api, ApiError } from "../web/src/api.js";
 import {
   takeLinkReturn,
@@ -302,4 +303,15 @@ test("cliente administrativo mantém versões e confirmação, sem gestão de co
   });
   assert.ok(!("find" in adminApi));
   assert.ok(!("change" in adminApi));
+});
+
+test("campos textuais preservam valores e não convertem arquivos em texto", () => {
+  const data = new FormData();
+  data.set("name", "  Nome sintético  ");
+  data.set("empty", "");
+  data.set("file", new File(["conteúdo sintético"], "synthetic.txt"));
+  assert.equal(formText(data, "name"), "  Nome sintético  ");
+  assert.equal(formText(data, "empty"), "");
+  assert.equal(formText(data, "missing"), "");
+  assert.equal(formText(data, "file"), "");
 });
