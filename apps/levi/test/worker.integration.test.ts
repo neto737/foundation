@@ -90,12 +90,11 @@ async function resetToken(account: { email: string; cookie: string }) {
 }
 async function ready() {
   const account = await verified();
-  const token = await resetToken(account);
   assert.equal(
     (
       await send(
         "/api/onboarding/password",
-        { token, newPassword: password },
+        { newPassword: password },
         account.cookie,
       )
     ).status,

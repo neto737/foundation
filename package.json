@@ -10,18 +10,18 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:workspace && pnpm test:migrations && pnpm test:levi:runtime",
-    "dev": "turbo run dev --filter=@t00ls-dev/example-links",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e && pnpm test:workspace && pnpm test:operations && pnpm test:levi:runtime",
+    "dev": "pnpm --filter levi dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "test:migrations": "node --test .github/scripts/deploy-diagnostics.test.mjs .github/scripts/migrations.test.mjs .github/scripts/migration-recovery.test.mjs .github/scripts/deploy-summary.test.mjs",
     "test:integration": "turbo run test:integration",
     "typecheck": "turbo run typecheck",
     "test:levi:runtime": "pnpm --filter levi worker:build && pnpm --filter levi test:integration --runtime-acls && pnpm --filter levi test:worker --runtime-acls && pnpm --filter levi test:e2e --runtime-acls",
-    "test:workspace": "node --test .github/scripts/workspace.test.mjs .github/scripts/levi-workspace.test.mjs .github/scripts/levi-cloudflare-read.test.mjs .github/scripts/ci-reporting.test.mjs .github/scripts/ci.test.mjs"
+    "test:workspace": "node --test .github/scripts/workspace.test.mjs .github/scripts/levi-workspace.test.mjs .github/scripts/levi-cloudflare-read.test.mjs .github/scripts/ci-reporting.test.mjs .github/scripts/ci.test.mjs",
+    "test:operations": "node --test .github/scripts/deploy-diagnostics.test.mjs"
   },
   "pnpm": {
     "overrides": {

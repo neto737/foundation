@@ -146,7 +146,7 @@ const check = (report, name) =>
 test("diagnóstico só aceita contexto manual da master, SHA exato e configuração válida", async () => {
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
-    { GITHUB_REPOSITORY: "t00ls-dev/levi" },
+    { GITHUB_REPOSITORY: "unrelated/levi" },
     { GITHUB_EVENT_NAME: "workflow_run" },
     { GITHUB_EVENT_NAME: "pull_request" },
     { GITHUB_REF: "refs/heads/feature" },
@@ -396,7 +396,7 @@ test("workflow manual só usa código integrado da master e secrets do Environme
   };
   assert.equal(runInNewContext(job.if, trusted), true);
   for (const changes of [
-    { repository: "t00ls-dev/levi" },
+    { repository: "unrelated/levi" },
     { event_name: "pull_request" },
     { event_name: "workflow_run" },
     { ref: "refs/heads/feature" },

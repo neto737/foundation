@@ -69,10 +69,10 @@ Drizzle por URL que cria um Pool implicitamente.
 
 O consumidor deve habilitar a compatibilidade Node adequada à sua data/runtime e
 fazer o bundle com a condição `workerd`, usada por `pg-cloudflare`. O harness
-local usa a data `2025-09-01` e `nodejs_compat`, como Links. Em Node, encerre o
-cliente em `finally`; uma falha na factory também libera o cliente criado. A
-Cloudflare documenta limpeza automática da conexão Worker→Hyperdrive ao terminar
-a invocação, sem exigir `client.end()` nesse cenário. Encerramento explícito só
+local usa a data `2025-09-01` e `nodejs_compat`. Em Node, encerre o cliente em
+`finally`; uma falha na factory também libera o cliente criado. A Cloudflare
+documenta limpeza automática da conexão Worker→Hyperdrive ao terminar a
+invocação, sem exigir `client.end()` nesse cenário. Encerramento explícito só
 deve ocorrer depois de terminar todo o trabalho do cliente; commit/rollback
 devem ser aguardados antes de responder sucesso.
 

@@ -1,5 +1,16 @@
 # `@t00ls-dev/auth`
 
+## Primeira senha após confirmação
+
+`setInitialPassword(headers, newPassword)` é uma operação somente de servidor.
+Ela consulta a sessão persistida sem renovação/cache, exige e-mail verificado e
+usa `auth.api.setPassword` do Better Auth. O wrapper exige sessão recente
+conforme `freshAge` do Better Auth; a biblioteca valida e armazena a senha e
+recusa sobrescrever credencial existente. O consumidor deve proteger seu
+endpoint com CSRF e limitar tentativas; nenhum endpoint público `set-password` é
+adicionado ao handler. O Levi usa essa operação após Magic Link, sem enviar
+outro e-mail. Links de reset antigos continuam no caminho legado.
+
 ## Turnstile opt-in
 
 `createFoundationAuth` aceita
@@ -30,8 +41,7 @@ sem liberar auth. JSON inválido retorna rejeição de verificação. A integra�
 não usa o provider CAPTCHA nativo, que aceita `success` truthy, nem valida o
 token duas vezes. Better Auth continua responsável por autenticação, sessões e
 resolução de IP pelo contrato público `getIP`. Nenhuma API pública Foundation
-mudou. Veja o [runbook Links](../../docs/runbooks/links-turnstile.md) para
-configuração/lifecycle.
+mudou.
 
 Configuração opinativa do Better Auth para senha, verificação de e-mail,
 recuperação, magic link e Google OAuth opcional.
@@ -98,7 +108,6 @@ ter tipo compatível (`uuid`). Tokens, `accountId`, `providerId`, `identifier` e
 `value` continuam textuais. Somente mudar a opção sem preparar o schema pode
 causar falhas de inserção. Com adapters sem geração UUID nativa, Better Auth usa
 `crypto.randomUUID()` no servidor; em D1, UUIDs são strings em colunas `text`.
-Links mantém a opção omitida e seu schema atual.
 
 O schema e as migrations pertencem à aplicação. A opção não converte registros
 existentes nem permite migrar automaticamente IDs textuais para UUID. Planeje a
@@ -108,13 +117,14 @@ existente, conforme o
 
 ### TOTP opt-in
 
-`totp: { issuer: "Links", enrollmentEnabled: false }` instala o plugin público
-twoFactor, alinha appName/issuer, exige senha e confirmação para habilitar TOTP
-de seis dígitos/30 segundos. Sem a opção, consumidores mantêm seu comportamento
-anterior. `twoFactorEnabled` é opcional no tipo público de sessão; estado deve
-ser obtido por sessão autoritativa, não pelo body de confirmação (que pode
-conter o snapshot anterior). Não há exposição da instância, contexto ou APIs
-server-side do Better Auth, incluindo geração/visualização de backup codes.
+`totp: { issuer: "Minha aplicação", enrollmentEnabled: false }` instala o plugin
+público twoFactor, alinha appName/issuer, exige senha e confirmação para
+habilitar TOTP de seis dígitos/30 segundos. Sem a opção, consumidores mantêm seu
+comportamento anterior. `twoFactorEnabled` é opcional no tipo público de sessão;
+estado deve ser obtido por sessão autoritativa, não pelo body de confirmação
+(que pode conter o snapshot anterior). Não há exposição da instância, contexto
+ou APIs server-side do Better Auth, incluindo geração/visualização de backup
+codes.
 
 Enrollment HTTP fica bloqueado por padrão e requer `enrollmentEnabled: true`
 somente quando o consumidor estiver pronto para enrollment e challenge de login.

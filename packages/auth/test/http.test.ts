@@ -54,7 +54,11 @@ describe.each(idModes)("foundation auth HTTP flows (%s)", (generateId) => {
       (await post("/api/auth/two-factor/enable", { password: "unused" }))
         .status,
     ).toBe(404);
-    expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+    expect(Object.keys(auth).sort()).toEqual([
+      "handler",
+      "resolveSession",
+      "setInitialPassword",
+    ]);
   });
 
   it("requires a second explicit opt-in before exposing enrollment", async () => {
@@ -76,7 +80,11 @@ describe.each(idModes)("foundation auth HTTP flows (%s)", (generateId) => {
       (await post("/api/auth/two-factor/enable", { password: "unused" }))
         .status,
     ).toBe(404);
-    expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+    expect(Object.keys(auth).sort()).toEqual([
+      "handler",
+      "resolveSession",
+      "setInitialPassword",
+    ]);
   });
 
   it("accepts magic-link and password-reset requests without user enumeration", async () => {
@@ -150,7 +158,11 @@ describe.each(idModes)("foundation auth HTTP flows (%s)", (generateId) => {
     );
     expect(logout.ok).toBe(true);
     expect((await auth.resolveSession(headers)).data).toBeNull();
-    expect(Object.keys(auth).sort()).toEqual(["handler", "resolveSession"]);
+    expect(Object.keys(auth).sort()).toEqual([
+      "handler",
+      "resolveSession",
+      "setInitialPassword",
+    ]);
   });
 
   it("rejects Google OAuth state as a Magic Link without issuing a session", async () => {
@@ -309,6 +321,41 @@ describe.each(idModes)("foundation auth HTTP flows (%s)", (generateId) => {
     expect(logs).not.toContain(secret);
     expect(logs).not.toContain("SQL params");
     expect(logs).not.toContain("https://example.com/auth");
+  });
+
+  it("sets the first password from a verified session without another email and keeps the HTTP API closed", async () => {
+    const password = "synthetic-initial-password";
+    expect(
+      (await auth.setInitialPassword(new Headers(), password)).status,
+    ).toBe(401);
+    await post("/api/auth/sign-in/magic-link", {
+      email: "initial@example.test",
+      callbackURL: "/",
+    });
+    const verified = await auth.handler(new Request(sent[0]!.text));
+    const headers = new Headers({
+      cookie: verified.headers
+        .getSetCookie()
+        .map((value) => value.split(";")[0])
+        .join("; "),
+    });
+    expect((await auth.setInitialPassword(headers, "short")).status).toBe(400);
+    expect((await auth.setInitialPassword(headers, password)).status).toBe(200);
+    expect(
+      (await auth.setInitialPassword(headers, "replacement-password")).status,
+    ).toBe(400);
+    expect(
+      (await post("/api/auth/set-password", { newPassword: password })).status,
+    ).toBe(404);
+    expect(
+      (
+        await post("/api/auth/sign-in/email", {
+          email: "initial@example.test",
+          password,
+        })
+      ).status,
+    ).toBe(200);
+    expect(sent).toHaveLength(1);
   });
 
   function post(path: string, body: Readonly<Record<string, unknown>>) {

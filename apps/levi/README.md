@@ -7,15 +7,18 @@ recursos operacionais pertencem à aplicação.
 
 ## Origem e histórico
 
-Origem: [t00ls-dev/levi](https://github.com/t00ls-dev/levi), main
-[`b2c892e27e3a8988f0be554692ffea43d35fcd61`](https://github.com/t00ls-dev/levi/commit/b2c892e27e3a8988f0be554692ffea43d35fcd61).
+O código está em [apps/levi](./) no repositório t00ls-dev/foundation.
+O histórico incorporado é identificado pelo commit
+[`b2c892e27e3a8988f0be554692ffea43d35fcd61`](https://github.com/t00ls-dev/foundation/commit/b2c892e27e3a8988f0be554692ffea43d35fcd61).
+A atribuição a um repositório `t00ls-dev/levi` no texto do commit de importação
+está incorreta; esse repositório nunca existiu. O histórico Git foi preservado.
 A incorporação usa subtree sem squash sobre Foundation
 `3f892412a3f223df7ea394720b3bfe5b149c01c6`. O commit
 `dfd1192b7b5e509878f65bec09228cb269d9cd82` preserva a árvore original sob
 `apps/levi` e os 35 commits alcançáveis, com autoria, datas e SHAs intactos.
 Adaptações de workspace, CI e licença são commits posteriores. Caminhos antigos
 continuam na raiz dos commits originais; seguir apenas o prefixo atual não mostra
-automaticamente todo o passado. PRs antigos permanecem no repositório de origem.
+automaticamente todo o passado. O grafo incorporado pode ser consultado neste monorepo.
 Para manter esse grafo na master, a integração do PR exige merge commit, sem squash.
 
 ## Estado e limites operacionais
@@ -25,8 +28,7 @@ provisionamento atômico de organização/igreja/membership/auditoria, contexto
 organizacional, gestão de membros e interface React. Os testes usam PostgreSQL
 descartável e runtime workerd local.
 
-O Foundation é o publicador DEV autorizado; o repositório original permanece
-preservado e contido. O [publicador manual](../../.github/workflows/deploy-levi-dev.yml)
+O Foundation é o publicador DEV autorizado. O [publicador manual](../../.github/workflows/deploy-levi-dev.yml)
 usa `t00ls-dev/foundation/master` e o Environment `levi-dev`, com token Cloudflare
 único. Esta revisão adota cadastros canônicos LEVI_ e o gate `LEVI_DEPLOY_READY`;
 a migração administrativa dos nomes ainda precisa ser realizada antes de qualquer
@@ -95,7 +97,7 @@ Todos os pacotes Foundation são privados e consumidos com `workspace:*`.
 A distribuição npm e o versionamento por Changesets foram encerrados.
 
 O código próprio adota [MIT](LICENSE). [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
-preservam as licenças de ícones e dependências. A licença do repositório original
+preservam as licenças de ícones e dependências. A licença no histórico incorporado
 não foi alterada. Extração futura leva a aplicação com seu histórico/proveniência
 e seu fecho de dependências;
 não exige banco, sessão ou deploy compartilhado com outro aplicativo.

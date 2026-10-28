@@ -59,7 +59,6 @@ export function App({
   const [token, setToken] = useState(link.token);
   const [busy, setBusy] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  const [passwordSent, setPasswordSent] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -94,7 +93,7 @@ export function App({
         if (tokenRef.current)
           setNotice({
             kind: "info",
-            text: "Verifique seu e-mail neste navegador antes de definir a senha. Depois, solicite um novo link para a senha.",
+            text: "Verifique seu e-mail neste navegador para definir a senha.",
           });
         setToken(null);
         return;
@@ -269,7 +268,6 @@ export function App({
     screen.kind,
     screen.kind === "members" ? screen.path : "",
     emailSent,
-    passwordSent,
     Boolean(token),
   ]);
 
@@ -327,9 +325,7 @@ export function App({
     login: "Bem-vindo de volta",
     password: token
       ? "Escolha sua senha"
-      : passwordSent
-        ? "O segundo e-mail está a caminho"
-        : "E-mail verificado. Agora, sua senha.",
+      : "E-mail verificado. Agora, sua senha.",
     organization: "Um lugar para sua comunidade",
     organizations: "Suas organizações",
     dashboard: "Visão geral",
@@ -467,7 +463,6 @@ export function App({
                 attempt.current = null;
                 denied.current = false;
                 setEmailSent(false);
-                setPasswordSent(false);
                 navigate("/");
                 await refresh(false);
               })
@@ -519,8 +514,8 @@ export function App({
               ))}
             </ol>
             <p className="journey-note">
-              Neste processo, você recebe dois e-mails: um para verificar seu
-              acesso e outro para definir a senha.
+              Você recebe um e-mail para confirmar seu acesso e depois define
+              sua senha aqui.
             </p>
           </aside>
         )}
@@ -567,8 +562,7 @@ export function App({
                     pedir outro link.
                   </p>
                   <p>
-                    Depois da verificação, você vai solicitar um segundo e-mail
-                    para definir sua senha.
+                    Depois da verificação, defina sua senha diretamente aqui.
                   </p>
                   <button className="primary" disabled={busy} onClick={update}>
                     Já abri o link. Continuar
@@ -647,65 +641,44 @@ export function App({
           )}
           {screen.kind === "password" && (
             <>
-              {token ? (
-                <>
-                  <p>
-                    Defina e confirme sua senha para concluir a preparação da
-                    sua conta.
-                  </p>
-                  <AccessForm
-                    mode="password"
-                    busy={busy}
-                    onSubmit={(values) =>
-                      perform(async () => {
-                        try {
-                          await api.password(token, values.newPassword!);
-                        } catch (error) {
-                          setToken(null);
-                          tokenRef.current = null;
-                          setPasswordSent(false);
-                          await refresh(false);
-                          throw error;
-                        }
-                        setToken(null);
-                        tokenRef.current = null;
-                        await refresh(false);
-                        setNotice({
-                          kind: "success",
-                          text: "Senha definida. Sua conta está pronta para continuar.",
-                        });
-                      })
+              <p>
+                Defina e confirme sua senha para concluir a preparação da sua
+                conta.
+              </p>
+              <AccessForm
+                mode="password"
+                busy={busy}
+                onSubmit={(values) =>
+                  perform(async () => {
+                    try {
+                      await api.password(token, values.newPassword!);
+                    } catch (error) {
+                      setToken(null);
+                      tokenRef.current = null;
+                      await refresh(false);
+                      throw error;
                     }
-                  />
-                </>
-              ) : (
-                <>
-                  <p>
-                    {passwordSent
-                      ? "Abra o link desta segunda mensagem neste navegador para escolher sua senha. Confira também o spam."
-                      : "O primeiro link confirmou seu e-mail. Agora vamos enviar uma segunda mensagem, com o link para você escolher sua senha."}
-                  </p>
-                  <button
-                    className="primary"
-                    disabled={busy}
-                    onClick={() =>
-                      void perform(async () => {
-                        await api.passwordEmail();
-                        setPasswordSent(true);
-                      })
-                    }
-                  >
-                    {passwordSent
-                      ? "Enviar outro link para definir senha"
-                      : "Receber e-mail para definir senha"}
-                  </button>
-                  <p className="hint">
-                    Por segurança, se você atualizar a página depois de abrir o
-                    link de senha, solicite uma nova mensagem. Não guardamos o
-                    link no navegador.
-                  </p>
-                </>
-              )}
+                    setToken(null);
+                    tokenRef.current = null;
+                    await refresh(false);
+                    setNotice({
+                      kind: "success",
+                      text: "Senha definida. Sua conta está pronta para continuar.",
+                    });
+                  })
+                }
+              />
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setEmailSent(false);
+                  setToken(null);
+                  tokenRef.current = null;
+                  setScreen({ kind: "email" });
+                }}
+              >
+                Confirmar meu e-mail novamente
+              </button>
             </>
           )}
           {screen.kind === "organization" && (

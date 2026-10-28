@@ -174,7 +174,7 @@ test("CI do Levi não recebe Environment, secrets ou entrada operacional", () =>
     assert(ci.jobs.checks.needs.includes(name));
   }
   const deploy = parse(
-    readFileSync(join(root, ".github/workflows/deploy-dev.yml"), "utf8"),
+    readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
   );
   assert.deepEqual(Object.keys(deploy.on), ["workflow_dispatch"]);
   assert.equal(
@@ -227,7 +227,7 @@ test("publicador Levi manual permanece isolado e bloqueia readiness antes de cre
         ...trusted,
         github: { ...trusted.github, event_name },
       })),
-      ...["t00ls-dev/levi", "fork/foundation"].map((repository) => ({
+      ...["unrelated/levi", "fork/foundation"].map((repository) => ({
         ...trusted,
         github: { ...trusted.github, repository },
       })),

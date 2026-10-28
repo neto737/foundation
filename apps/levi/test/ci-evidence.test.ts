@@ -90,7 +90,7 @@ void test("CI: aceita somente push canônico na master, SHA exato e tentativa at
 void test("CI: contexto manual inválido é recusado antes de qualquer request", async () => {
   for (const changes of [
     { GITHUB_ACTIONS: "false" },
-    { GITHUB_REPOSITORY: "t00ls-dev/levi" },
+    { GITHUB_REPOSITORY: "unrelated/levi" },
     { GITHUB_REPOSITORY: "fork/foundation" },
     { GITHUB_REF: "refs/heads/main" },
     { GITHUB_REF: "refs/pull/150/merge" },

@@ -1,6 +1,6 @@
 # Foundation UI v1
 
-Workspace **privado**, consumido por fontes no Links, sem publicação ou
+Workspace **privado**, disponível para consumo por fontes, sem publicação ou
 Changeset. Veja [ADR-008](../../docs/decisions/008-foundation-ui-v1.md).
 
 ## Consumo
@@ -13,17 +13,17 @@ Dialog, Collapsible e AlertDialog são adaptações MIT das primitives shadcn.
 Spinner é decorativo. Só acrescente primitives com consumidor real. Composições
 pertencem ao Foundation.
 
-O Vite do Links pré-otimiza os imports TSX do shell (incluindo `.tsx` nas
-extensões do optimizer), para evitar uma cadeia de requests de módulos do
-workspace em cada reload. Ao editar fontes UI durante dev, reinicie o Vite com
-`--force` para atualizar a pré-otimização; isso não altera o build de produção.
+O Vite pode pré-otimizar os imports TSX do shell (incluindo `.tsx` nas extensões
+do optimizer), para evitar uma cadeia de requests de módulos do workspace em
+cada reload. Ao editar fontes UI durante dev, reinicie o Vite com `--force` para
+atualizar a pré-otimização; isso não altera o build de produção.
 
 Tokens: background/foreground, card, primary, muted, accent, destructive,
 border/input/ring, info, espaçamento, tipografia, radius, fonte local, foco,
-alvo de toque e duração de movimento. O Links usa composições explícitas, sem
-moldura automática para form/article. Camadas
-`theme, base, components, utilities` permitem especializações locais. Não
-estilize roles ARIA; aplique classes visuais explícitas.
+alvo de toque e duração de movimento. Use composições explícitas, sem moldura
+automática para form/article. Camadas `theme, base, components, utilities`
+permitem especializações locais. Não estilize roles ARIA; aplique classes
+visuais explícitas.
 
 ## Loading e ações
 
@@ -95,8 +95,8 @@ fora da sessão autoritativa. O refetch anônimo já resolvido preserva
 formulários; sessão inicial desconhecida não exibe controles presumidamente
 anônimos.
 
-Validação: `pnpm --filter @t00ls-dev/ui test`, lint/typecheck, E2E do shell no
-Links e `pnpm check` como gate final.
+Validação: `pnpm --filter @t00ls-dev/ui test`, lint/typecheck e `pnpm check`
+como gate final.
 
 O Vitest compartilhado usa jsdom 26.1.0 para lifecycle DOM/StrictMode. A versão
 é fixada também no peer opcional `vitest>jsdom`, para não introduzir via

@@ -4,8 +4,7 @@
 
 - Levi é a aplicação de gestão de igrejas. Foundation é o monorepo
   principal; esta cópia vive em `apps/levi` e consome seus pacotes pelo workspace.
-  A operação DEV está integrada ao Foundation, sem dependência operacional do
-  repositório Levi original; consulte `docs/deploy-dev.md` para os gates vigentes.
+  A operação DEV está integrada ao Foundation; consulte `docs/deploy-dev.md` para os gates vigentes.
 - Consulte o [README](README.md) para o estágio atual e
   [Decisões do MVP](docs/decisoes-mvp.md) para o escopo vigente. Recomendações e
   relatos históricos não constituem aprovação de funcionalidades.

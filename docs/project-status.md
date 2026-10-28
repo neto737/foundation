@@ -12,19 +12,19 @@ runbooks.
 
 O repositório é público. `master` possui proteção clássica com pull request
 obrigatório e status check `checks` do GitHub Actions, sem aprovação humana
-obrigatória e com possibilidade de bypass administrativo. O único Environment
-existente no GitHub é `dev`; não há Environment nem operação PROD no Foundation.
+obrigatória e com possibilidade de bypass administrativo. O Levi utiliza o
+Environment `levi-dev`; não há operação PROD autorizada.
 
 ## Objetivo e escopo
 
 O foundation fornece pacotes, convenções e ferramentas reutilizáveis para apps
 da `t00ls-dev` e será a base principal do monorepo. O workspace está preparado
 para `apps/*`, incluindo o Levi em `apps/levi`, sob MIT com histórico subtree
-sem squash e preservação das atribuições. Links permanece em `examples/links`. A
-transferência DEV do Levi foi concluída; sua operação está integrada ao
-Foundation, sem dependência operacional do repositório original. Aplicações
-mantêm versões, deploys, bancos e recursos próprios, compartilhando contratos
-públicos dos pacotes via workspace.
+sem squash e preservação das atribuições. A transferência DEV do Levi foi
+concluída; sua operação está integrada ao Foundation, sem dependência
+operacional do repositório original. Aplicações mantêm versões, deploys, bancos
+e recursos próprios, compartilhando contratos públicos dos pacotes via
+workspace.
 
 A v0.1 valida um caminho completo e pequeno:
 
@@ -33,8 +33,7 @@ A v0.1 valida um caminho completo e pequeno:
 - D1 como preset inicial e PostgreSQL como adapter suportado;
 - Better Auth, e-mail, segurança, tenancy e autorização;
 - gerador de projeto e diagnóstico básico;
-- desenvolvimento local, CI e fluxo de deploy manual do exemplo somente em DEV,
-  com reativação e execução ainda não autorizadas nesta preparação.
+- desenvolvimento local e CI dos pacotes compartilhados e do Levi.
 
 O projeto é Cloudflare-first e internal-first, sem regras de negócio de um
 produto específico. Providers e capabilities sem consumidor real não fazem parte
@@ -72,11 +71,6 @@ da primeira entrega.
   aplicativos sintéticos, componentes privados e dependências transitivas com
   `^build`, sem seleção agressiva ou publicação npm.
 
-O desacoplamento operacional das migrations persistentes permanece bloqueado
-nesta preparação. O coordenador atual ainda executa fases D1 no ciclo de deploy;
-a política aprovada e o motivo para não alterar parcialmente esse ciclo estão em
-[Migrations](runbooks/migrations.md#política-aprovada-e-desacoplamento-pendente).
-
 ### Automação de manutenção existente
 
 - Dependabot semanal, segunda-feira às 03:00 UTC, com limite de 15 PRs de versão
@@ -107,64 +101,6 @@ dependências `workspace:*`, resolvidas como links locais pelo pnpm. A
 distribuição npm foi encerrada; não há automação de publicação ou versionamento
 por Changesets. Versões e changelogs existentes são históricos. Builds, APIs,
 testes e deploys das aplicações permanecem independentes.
-
-### Aplicação de referência
-
-`examples/links` apresenta **Links**, uma biblioteca privada de bookmarks. O
-package é `@t00ls-dev/example-links`. Demonstra:
-
-- React, React Router, React Hook Form, Zod e Tailwind CSS;
-- base UI v1 privada em `packages/ui`: tokens semânticos, primitives shadcn
-  incrementais, PageProgress/feedback e Sonner único; shell preservado no
-  refetch da mesma identidade, com limites de sessão mantidos. Veja o
-  [ADR-008](decisions/008-foundation-ui-v1.md) e os
-  [padrões](../packages/ui/README.md);
-- Hono no mesmo Worker que serve os assets da SPA;
-- D1 e Drizzle;
-- Better Auth por meio dos pacotes do foundation;
-- senha, verificação, recuperação, magic link e Google opcional;
-- envio de e-mail via Resend;
-- `/health` para saúde do Worker e do D1 e fallback de rotas da SPA;
-- configuração local e DEV, com Custom Domain `foundation.t00ls.dev`, sem
-  `*.workers.dev` nem Preview URLs e com Workers Logs habilitados;
-- migration inicial e journal Drizzle do schema de autenticação;
-- comandos padronizados de geração, migration, seed e status;
-- formulários com labels, erros associados, foco inválido e estados de envio;
-- CRUD de bookmarks, tags JSON, busca simples, filtro exato e paginação
-  limit/offset;
-- Bookmarks usa Skeleton inicial, refresh que mantém resultados e feedback
-  local, PendingButton e AlertDialog de exclusão com foco acessível. Filtros e
-  página aplicada acompanham o retorno de add/edit; sucessos breves usam Sonner,
-  falhas recuperáveis permanecem inline;
-- isolamento por usuário em todas as queries e mutações, sem tenancy/RBAC;
-- sessão tipada no servidor pela API mínima `resolveSession` de
-  `@t00ls-dev/auth`, com propagação de cookies e verificação de e-mail
-  obrigatória;
-- headers privados e CSRF nas mutações autenticadas por cookie;
-- testes unitários e testes D1 reais do exemplo, incluindo falhas de
-  revogação/confirmação, logs sanitizados e gerações de sessão;
-- cenários Playwright em desktop e mobile, incluindo
-  cadastro/verificação/login/logout, persistência, isolamento e respostas
-  atrasadas;
-- harness E2E com banco temporário e e-mails capturados, sem providers externos.
-- TOTP password-only: Account oferece senha → QR/key local → confirmação e
-  desativação com senha; login por senha passa por `/two-factor` antes de
-  concluir sessão/retorno privado. Magic Link/Google continuam alternativas sem
-  TOTP. Backend opt-in, schema D1 e limiter database já existentes; sem backup
-  codes, OTP ou trusted devices. Veja o [fluxo](runbooks/links-totp.md).
-- Account usa seções Profile/Security, edição explícita e uma tarefa por vez;
-  Auth/Password usam Input/PendingButton/feedback Foundation. TOTP usa Dialog
-  responsivo, QR primário, key sob demanda e Copy local; recuperação aparece
-  somente após exceção observada, preservando reconciliação e limites de sessão.
-- Turnstile V1 opt-in protege somente pedidos públicos de cadastro/login por
-  senha, Magic Link e reset, usando plugin oficial Better Auth, actions
-  distintas e CSP mínimo. Google/TOTP/ações autenticadas ficam excluídos;
-  Account encaminha a primeira senha ao formulário público. Limitação
-  truthy-success 1.7.7 aceita/documentada; DEV ainda depende de configuração de
-  chaves. Veja [Turnstile](runbooks/links-turnstile.md).
-
-O ambiente local usa `.dev.vars.example` como contrato de nomes de secrets, sem
-versionar valores reais.
 
 ### Create App
 
@@ -208,7 +144,7 @@ O comando `pnpm check` executa, nesta ordem:
 6. builds;
 7. testes E2E;
 8. contratos de consumo local do workspace;
-9. contratos de migrations e execução D1 descartável.
+9. contratos de diagnósticos operacionais e runtime do Levi.
 
 A cobertura atual inclui:
 
@@ -222,7 +158,6 @@ A cobertura atual inclui:
   isolamento, concorrência de convites e rollback conjunto com audit;
 - Better Auth PostgreSQL com IDs textuais e e-mails capturados, mais execução
   `pg`/Drizzle/audit em Workers local; Hyperdrive remoto não comprovado;
-- integrações de Links com isolamento por usuário em D1;
 - cenários Playwright em desktop e mobile;
 - geração, instalação, typecheck e build do starter fora do workspace.
 
@@ -233,71 +168,17 @@ os resumos de cada execução são a referência para cobertura e contagens.
 
 ### Automação
 
-- `CI`: executa o gate completo em PRs e pushes para `master`; execuções antigas
-  da mesma ref são canceladas.
-- `Deploy DEV`: aceita somente `workflow_dispatch`, com SHA atual de master e CI
-  push/master aprovada; não recebe mais eventos `workflow_run`. Na consulta
-  remota de 27/10/2026 estava `active`; isso não implica execução automática nem
-  autoriza dispatch. Faz checkout do SHA validado e coordena
-  expand/deploy/backfill/contract em jobs independentes. Migration DEV é
-  workflow reutilizável; deploy não aplica SQL e verifica `/health` com SHA/D1
-  obrigatórios. Verifica evento push/master, repositório de origem, identidade
-  do workflow e job aprovado na mesma tentativa. Não repete a suíte de testes.
-  Como registro histórico anterior ao modo manual, em 16/10/2026 a execução
-  automática
-  [38788787384](https://github.com/t00ls-dev/foundation/actions/runs/38788787384)
-  concluiu com sucesso para o SHA `abe0483d8ef6366b81e5b8d0da0dcd086559451e`,
-  após a
-  [CI aprovada](https://github.com/t00ls-dev/foundation/actions/runs/38788305767)
-  do mesmo SHA.
-- O Foundation não possui ambiente ou workflow PROD. Aplicações consumidoras
-  definem seus próprios ambientes e processos de deploy.
-- Operações D1/recuperação compartilham serialização sem cancelar mutation
-  iniciada. Dirty persiste no banco e bloqueia avanço; Recovery DEV exige
-  diagnóstico versionado e confirmação humana. Ativação exige tokens segregados
-  descritos em [Ambientes](runbooks/environments.md).
-- `Smoke Hyperdrive`: execução manual contra um endpoint configurado. É apenas
-  um smoke remoto; não implementa um binding Hyperdrive dentro deste
-  repositório.
-- Migrations são app-owned: Drizzle Kit gera os históricos por dialeto, Wrangler
-  aplica e consulta D1, e Drizzle Kit aplica PostgreSQL. Seeds são separados e
-  migrations aplicadas recebem somente correções forward-only. O procedimento
-  está em [Migrations](runbooks/migrations.md).
-- Respostas operacionais e auth usam headers conservadores, e os domínios devem
-  aplicar o bypass descrito em [Cache](runbooks/cache.md).
+CI valida pacotes compartilhados e Levi. Deploy do Levi permanece manual. As
+automações exclusivas do exemplo D1 foram removidas, sem excluir recursos
+remotos. Migrations persistentes exigem operação independente e autorizada.
 
 ## Pendências para a v0.1 operacional
 
-### Infraestrutura externa
+### Operação
 
-DEV possui banco, secrets, envio de e-mail e histórico de deploy validado. O
-Custom Domain `foundation.t00ls.dev` responde ao smoke em `/health` com o Worker
-e o D1 operacionais. `DEV_HEALTH_URL` está configurado no GitHub; `BASE_URL` e
-`EMAIL_FROM` estão declarados em `env.dev.vars`. O bypass de cache no domínio
-foi configurado e as respostas verificadas não apresentaram
-`CF-Cache-Status: HIT`. O envio do e-mail de Magic Link foi validado manualmente
-em DEV; o acesso pelo link ainda não foi testado.
-
-Ainda faltam para a operação completa:
-
-- configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` apenas se OAuth Google
-  for usado;
-- concluir a validação manual de cadastro com um endereço não cadastrado,
-  verificação de e-mail, login, logout e acesso pelo Magic Link em DEV.
-
-### Fechamento operacional
-
-Links possui cobertura determinística local de autenticação e bookmarks. Após
-publicação, registrar a validação manual dos fluxos restantes em DEV e do CRUD
-com duas contas, conforme `examples/links/README.md`. A validação local não
-substitui entrega de e-mail e inspeção de cache/cookies no domínio real. O PROD
-de aplicações consumidoras não pertence ao Foundation.
-
-Os runbooks vigentes cobrem [ambientes](runbooks/environments.md),
-[deploy](runbooks/deployment.md), [segurança](runbooks/security.md),
-[testes](runbooks/testing.md), [cache](runbooks/cache.md),
-[migrations](runbooks/migrations.md), [LGPD](runbooks/lgpd.md) e
-[criação de apps](runbooks/creating-an-app.md).
+O ECONNRESET intermitente do Worker permanece em investigação separada. A
+remoção do exemplo não altera os gates operacionais do Levi. Recursos remotos
+antigos exigem inventário e autorização de desativação próprios.
 
 ### Evolução após a v0.1
 
@@ -360,7 +241,7 @@ pnpm check
 pnpm format:check
 pnpm dev
 pnpm --filter @t00ls-dev/create-app build
-pnpm --filter @t00ls-dev/doctor exec doctor ./examples/links
+pnpm --filter @t00ls-dev/doctor exec doctor ./app
 ```
 
 Requisitos locais: Node.js 22, Corepack/pnpm e Docker para os testes PostgreSQL.

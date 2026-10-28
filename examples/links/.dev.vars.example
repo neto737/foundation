@@ -1,9 +1,0 @@
-AUTH_SECRET=replace-with-at-least-32-random-characters
-BASE_URL=http://localhost:5173
-EMAIL_FROM=Foundation <foundation@example.com>
-RESEND_API_KEY=re_example
-# GOOGLE_CLIENT_ID=
-# GOOGLE_CLIENT_SECRET=
-# Opt-in: configure both. Site key is public; secret stays server-side.
-# TURNSTILE_SITE_KEY=
-# TURNSTILE_SECRET_KEY=

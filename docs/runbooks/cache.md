@@ -49,26 +49,17 @@ incluir nomes apenas parecidos, como `/apiary`.
 
 ## Responsabilidades da aplicação
 
-- `/health` envia `Cache-Control: no-store` e verifica a conectividade D1.
-- `/api/auth/**` envia `Cache-Control: private, no-store`.
-- novos endpoints privados devem definir uma política de resposta equivalente.
-- Links inclui `/api/bookmarks` e seus descendentes no bypass existente de
-  `/api/*`; todas as respostas, inclusive `401`, `403` e `404`, são privadas.
-- APIs públicas só podem habilitar cache por decisão explícita e com testes.
-
 Os headers são uma defesa em profundidade. Eles não substituem o bypass na borda
 quando o domínio possui regras amplas de cache.
 
 ## Validação
 
-Depois de cada mudança de regra ou deploy, consulte os endpoints no domínio
-real:
+Depois de cada mudança de regra ou deploy, consulte os endpoints no domínio real
+(substitua pelo domínio da aplicação):
 
 ```bash
-curl --fail --silent --show-error --dump-header - --output /dev/null \
-  https://foundation.t00ls.dev/health
-curl --fail --silent --show-error --dump-header - --output /dev/null \
-  https://foundation.t00ls.dev/api/auth/get-session
+curl --head https://app.example.com/health
+curl --head https://app.example.com/api/auth/get-session
 ```
 
 Confirme `Cache-Control: no-store` nos endpoints operacionais e

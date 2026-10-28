@@ -31,12 +31,11 @@ scripts.
 - Cloudflare não implica adoção de `cf`, Hyperdrive, Queues, Workflows, cache de
   respostas privadas ou produtos sem consumidor real. Preserve Wrangler e o
   deploy DEV existente; consulte também `docs/runbooks/cache.md`.
-- `playwright-cli` pode usar o Playwright já instalado em `examples/links`:
-  `pnpm --filter @t00ls-dev/example-links exec playwright cli --help`. É
-  auxiliar de inspeção, sem substituir os testes E2E e seus critérios. Não
-  instale a CLI global. MCP/Chrome DevTools/Lighthouse/axe são opcionais;
-  registre limitações quando as ferramentas necessárias à medição estiverem
-  indisponíveis.
+- `playwright-cli` pode usar o Playwright já instalado em `apps/levi`:
+  `pnpm --filter levi exec playwright cli --help`. É auxiliar de inspeção, sem
+  substituir os testes E2E e seus critérios. Não instale a CLI global.
+  MCP/Chrome DevTools/Lighthouse/axe são opcionais; registre limitações quando
+  as ferramentas necessárias à medição estiverem indisponíveis.
 - As Skills TypeScript se complementam: `typescript-advanced-types` é referência
   de sintaxe; `principle-type-system-discipline` e `typescript-best-practices`
   orientam modelagem e validação. A referência abreviada

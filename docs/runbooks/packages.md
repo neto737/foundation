@@ -16,9 +16,9 @@ Adicione a dependência no manifesto do consumidor dentro de um dos globs de
 ```
 
 Execute `pnpm install` na raiz e versione o lockfile. Compile com `pnpm build`;
-os consumidores usam os exports compilados dos pacotes locais. Links e Levi já
-seguem esse contrato. O gerador basic-d1 usa bibliotecas upstream diretamente e
-não depende de pacotes Foundation publicados.
+os consumidores usam os exports compilados dos pacotes locais. O Levi já seguem
+esse contrato. O gerador basic-d1 usa bibliotecas upstream diretamente e não
+depende de pacotes Foundation publicados.
 
 `pnpm test:workspace` verifica manifests privados, protocolos internos, links
 reais, lockfile e o grafo de builds. O gate final é `pnpm check`. Consulte

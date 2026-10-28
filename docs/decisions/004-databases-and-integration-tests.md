@@ -11,10 +11,6 @@ caminhos sem fingir equivalência entre dialetos.
 
 ## Decisão
 
-D1 e PostgreSQL são suportados por Drizzle, com schemas, migrations e
-adaptadores explícitos por banco quando necessário. O exemplo Links
-(`examples/links`) demonstra o caminho mínimo sem tenancy.
-
 O driver PostgreSQL é `pg` (node-postgres), com `drizzle-orm/node-postgres`
 sobre um `pg.Client` explicitamente conectado. A factory é assíncrona e preserva
 `{ client, db }`; Postgres.js não é mantido como alternativa. A escolha

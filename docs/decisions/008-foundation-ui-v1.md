@@ -3,6 +3,9 @@
 - Status: aceito
 - Escopo: base UI e shell do Links (PR 1)
 
+O consumidor original foi removido em outubro de 2026. A base UI compartilhada e
+seus contratos permanecem disponíveis; o contexto abaixo é histórico.
+
 ## Contexto
 
 O Links precisa de feedback acessível e de um shell estável durante a leitura de

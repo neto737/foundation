@@ -1,7 +1,7 @@
 # Cloudflare Workers
 
-A composição e os recursos descritos pertencem ao Levi. Esta cópia no workspace
-não transfere o deploy: o fluxo operacional permanece no repositório original.
+A composição e os recursos descritos pertencem ao Levi. O fluxo operacional DEV está
+no Foundation, conforme o [runbook de deploy](deploy-dev.md).
 A incorporação não comprova o estado atual de migrations, ACLs ou feature gates
 remotos. Consulte o [README](../README.md) para origem e validação no monorepo.
 

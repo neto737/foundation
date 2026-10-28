@@ -2,15 +2,6 @@
 
 ## Objetivo
 
-O `foundation` fornece pacotes, convenções e ferramentas compartilhadas para
-apps da `t00ls-dev` e será o monorepo principal. O workspace aceita `apps/*`,
-preservando `packages/*`, `tooling/*`, `examples/*` e `tests/*`. Links permanece
-em `examples/links`; o Levi está em `apps/levi`, incorporado por subtree sem
-squash, com origem e limites no
-[README da aplicação](../../apps/levi/README.md). A cópia adota MIT e preserva
-atribuições conforme [Licenças](../runbooks/licensing.md). Seu deploy continua
-no repositório original.
-
 Aplicações mantêm domínio, schema/migrations, deploy e recursos operacionais
 próprios. Compartilham mecanismos pelos exports dos pacotes, com dependências
 `workspace:*`, sem imports entre implementações de aplicações. Pacotes não
@@ -62,11 +53,6 @@ Cada produto decide no ponto zero entre D1 e PostgreSQL:
 - Portabilidade é desejável, mas não há promessa de compatibilidade perfeita
   entre SQLite e PostgreSQL.
 
-O exemplo D1 da v0.1 é deliberadamente sem tenancy (`examples/links`).
-PostgreSQL possui testes de integração reais executados contra container. Um
-smoke test remoto via Hyperdrive é opcional e separado da suíte determinística
-principal.
-
 ## Autenticação e acesso
 
 Better Auth OSS/self-hosted é a implementação padrão. Usuários, contas e sessões
@@ -105,7 +91,6 @@ config <--- email
 app ---> auth + tenant + access
 tooling/create-app ---> pacotes compartilhados
 tooling/doctor -----> config e adaptadores de diagnóstico
-examples/links -----> pacotes via workspace
 ```
 
 Responsabilidades:
@@ -144,37 +129,14 @@ testes e deploys das aplicações permanecem independentes.
 
 ## Ambientes e entrega
 
-O exemplo do Foundation possui apenas `local` e `dev`. Aplicações consumidoras
-definem seus próprios ambientes DEV e PROD com recursos e secrets separados.
-
-- O exemplo possui fluxo de deploy DEV exclusivamente manual, condicionado à CI
-  aprovada do SHA atual de master, no Custom Domain `foundation.t00ls.dev`. O
-  workflow permanece suspenso até autorização de reativação; habilitar não
-  autoriza sua execução.
-- O Foundation não possui deploy PROD.
-- migrations são executadas apenas no ambiente alvo e quando forem seguras para
-  o fluxo.
-- smoke em `/health` com D1 encerra o deploy; correções de schema preferem
-  forward-fix.
-- staging não existe na v0.1.
+Aplicações definem seus próprios ambientes com recursos e secrets separados. O
+deploy do Levi permanece manual e sujeito aos gates existentes.
 
 ## Escopo v0.1
 
-A v0.1 entrega uma fundação pequena e executável:
-
-- monorepo pnpm/Turborepo com TypeScript strict e tooling compartilhado;
-- SPA React e API Hono no mesmo Worker com Workers Assets;
-- configuração tipada;
-- Drizzle com suporte a D1 e PostgreSQL;
-- exemplo Links (`examples/links`) sem tenancy;
-- Better Auth e seus fluxos básicos;
-- tenancy opcional com contrato padronizado, access e convites seguros;
-- security, logging/observability e e-mail em nível básico necessário aos
-  fluxos;
-- testes unitários, PostgreSQL em container e smoke Hyperdrive opcional;
-- `create-app` e `doctor` básicos, se necessários para validar o caminho do
-  consumidor;
-- CI, consumo interno pelo workspace e deploy DEV do exemplo conforme os ADRs.
+A v0.1 entrega pacotes de configuração, dados D1/PostgreSQL, autenticação,
+tenancy, acesso, segurança, auditoria, observabilidade e e-mail. Inclui tooling,
+gerador, Doctor e validação automatizada dos consumidores locais.
 
 ## Não objetivos da v0.1
 

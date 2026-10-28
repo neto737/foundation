@@ -198,8 +198,11 @@ export const api = {
   },
   email: (email: string) => request("/api/onboarding/email", { email }),
   passwordEmail: () => request("/api/onboarding/password-email", {}),
-  password: (token: string, newPassword: string) =>
-    request("/api/onboarding/password", { token, newPassword }),
+  password: (token: string | null, newPassword: string) =>
+    request("/api/onboarding/password", {
+      ...(token ? { token } : {}),
+      newPassword,
+    }),
   login: (email: string, password: string) =>
     request("/api/auth/sign-in/email", { email, password }),
   logout: () => request("/api/auth/sign-out", {}),
