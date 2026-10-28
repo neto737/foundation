@@ -10,23 +10,20 @@ Nosso objetivo é atender às [WCAG 2.2 nível AA](https://www.w3.org/TR/WCAG22/
 nas interfaces web, com navegação por teclado, foco visível, estrutura
 semântica, contraste legível, formulários identificados e mensagens de erro e
 carregamento compreensíveis. A declaração abrange o monorepo, incluindo Levi
-(`apps/levi`), Links (`examples/links`), componentes compartilhados e
-documentação. Não foi realizada uma avaliação completa que permita declarar
-conformidade formal.
+(`apps/levi`), componentes compartilhados e documentação. Não foi realizada uma
+avaliação completa que permita declarar conformidade formal.
 
 ## Ambientes e avaliações existentes
 
 As interfaces disponíveis são aplicações web React; não há nesta declaração uma
 matriz de navegadores ou sistemas operacionais homologados. Os harnesses
-Playwright avaliam Chromium em desktop e emulação móvel: Pixel 7 no Links e
-iPhone 13 Mini no Levi. O Levi também oferece execução opcional em WebKit com
-emulação de iPhone, e testes pelo proxy de desenvolvimento. Emulação não
-comprova funcionamento em dispositivos físicos nem em Safari real.
+Playwright avaliam Chromium em desktop e emulação móvel: iPhone 13 Mini no Levi.
+O Levi também oferece execução opcional em WebKit com emulação de iPhone, e
+testes pelo proxy de desenvolvimento. Emulação não comprova funcionamento em
+dispositivos físicos nem em Safari real.
 
 Os [testes do Levi](apps/levi/e2e/) incluem verificações automatizadas com
-axe-core em cenários de onboarding, membros e administração. Os
-[testes do Links](examples/links/e2e/) exercitam teclado, foco, formulários,
-diálogos e preferência por movimento reduzido. Veja o
+axe-core em cenários de onboarding, membros e administração. Veja o
 [runbook de testes](docs/runbooks/testing.md) e os
 [padrões de componentes](packages/ui/README.md). Esses testes cobrem cenários
 específicos; sua existência não significa que cada execução ou todas as telas

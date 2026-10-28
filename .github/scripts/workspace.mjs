@@ -2,13 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const workspaceGroups = [
-  "packages",
-  "tooling",
-  "examples",
-  "tests",
-  "apps",
-];
+export const workspaceGroups = ["packages", "tooling", "tests", "apps"];
 
 // Accept the historical layout only when recalculating an immutable old base.
 export function validateWorkspaceLayout(bytes, { historical = false } = {}) {
@@ -17,7 +11,11 @@ export function validateWorkspaceLayout(bytes, { historical = false } = {}) {
     `packages:\n${groups.map((group) => `  - ${group}/*`).join("\n")}`;
   assert(
     stanza === layout(workspaceGroups) ||
-      (historical && stanza === layout(workspaceGroups.slice(0, -1))),
+      (historical &&
+        [
+          ["packages", "tooling", "examples", "tests"],
+          ["packages", "tooling", "examples", "tests", "apps"],
+        ].some((groups) => stanza === layout(groups))),
     "Unexpected planning-base workspaces",
   );
 }

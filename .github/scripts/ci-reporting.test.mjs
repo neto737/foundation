@@ -16,7 +16,7 @@ import { testSummary, writeSummary } from "./test-summary.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const reporter = (name) => join(root, ".github/scripts", name);
-const require = createRequire(join(root, "examples/links/package.json"));
+const require = createRequire(join(root, "apps/levi/package.json"));
 const playwright = dirname(require.resolve("@playwright/test/package.json"));
 const fixture = (run) => {
   const directory = mkdtempSync(join(tmpdir(), "foundation-ci-report-"));

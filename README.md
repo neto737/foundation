@@ -25,18 +25,10 @@ produto específico. Combina **React SPA e API Hono no mesmo Cloudflare Worker**
 com D1 como preset inicial e suporte a PostgreSQL via Drizzle.
 
 Os **pacotes são internos ao monorepo**, consumidos com `workspace:*`. O
-repositório inclui [Links](examples/links/README.md), uma biblioteca privada de
-bookmarks que demonstra a integração dos pacotes. Inclui também o
-[Levi](apps/levi/README.md), aplicação privada de gestão de igrejas com domínio
-e banco próprios. O projeto está em evolução; consulte o
-[estado atual](docs/project-status.md) para entregas e pendências. O exemplo
-possui fluxo de deploy manual somente em DEV; cada execução exige autorização
-específica, conforme o [runbook](docs/runbooks/deployment.md). Aplicações
-consumidoras definem seus próprios ambientes e controladores de deploy.
+repositório inclui o [Levi](apps/levi/README.md), aplicação privada de gestão de
+igrejas com domínio e banco próprios. Consulte o
+[estado atual](docs/project-status.md) para entregas e pendências.
 
-O Foundation é a base principal da consolidação em monorepo. O workspace já
-aceita `apps/*`; o Levi está incorporado em `apps/levi` com histórico
-preservado, sem transferência operacional. Links permanece em `examples/links`.
 Aplicações consomem pacotes com `workspace:*`, mantendo versões, deploys e
 recursos próprios. O consumo e a validação seguem o
 [runbook de pacotes](docs/runbooks/packages.md).
@@ -56,7 +48,7 @@ recursos próprios. O consumo e a validação seguem o
 - **Qualidade automatizada:** TypeScript strict, Vitest, Miniflare,
   Testcontainers e Playwright, incluindo cenários desktop e mobile.
 - **Ferramentas no workspace:** gerador `basic-d1`, diagnóstico read-only com
-  Doctor e base UI compartilhada usada pelo exemplo Links.
+  Doctor e base UI compartilhada reutilizável.
 
 ## Pacotes oficiais
 
@@ -123,34 +115,14 @@ privado de registry.
 
 ## Início rápido
 
-Com as dependências instaladas e compiladas, copie a configuração do exemplo:
-
-```bash
-cp examples/links/.dev.vars.example examples/links/.dev.vars
-```
-
-Edite `.dev.vars`: substitua `AUTH_SECRET` por um segredo local aleatório de
-pelo menos 32 caracteres e ajuste `BASE_URL` para a origem usada pelo servidor.
-Configure `EMAIL_FROM` e `RESEND_API_KEY` próprios para os fluxos de e-mail;
-Google OAuth é opcional. Não versione esse arquivo nem use credenciais de DEV
-nos testes.
-
-Prepare o D1 local e inicie Links:
-
-```bash
-pnpm --filter @t00ls-dev/example-links db:migrate:local
-pnpm dev
-```
-
-Abra a URL informada pelo servidor. A verificação de e-mail é obrigatória para
-acessar a área privada. Veja o
-[guia do exemplo](examples/links/README.md#desenvolvimento-local) para
-configuração de origem, HMR e fluxos de autenticação.
+Consulte o [guia do Levi](apps/levi/README.md) para configuração e execução
+local. `pnpm dev` inicia o Levi. Para criar aplicações D1, consulte o
+[gerador](docs/runbooks/creating-an-app.md).
 
 Para executar o gate completo, com Docker disponível:
 
 ```bash
-pnpm --filter @t00ls-dev/example-links exec playwright install --with-deps chromium
+pnpm --filter levi exec playwright install --with-deps chromium
 pnpm check
 ```
 
@@ -163,7 +135,6 @@ as suítes e os checks focados.
 - **Visão do projeto:** [arquitetura](docs/architecture/overview.md),
   [decisões técnicas](docs/decisions) e [estado atual](docs/project-status.md).
 - **Construir aplicações:** [criação de apps](docs/runbooks/creating-an-app.md),
-  [exemplo Links](examples/links/README.md) e
   [pacotes internos](docs/runbooks/packages.md).
 - **Desenvolver e operar:** [testes](docs/runbooks/testing.md),
   [ambientes](docs/runbooks/environments.md),

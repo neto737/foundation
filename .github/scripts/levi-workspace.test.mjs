@@ -174,7 +174,7 @@ test("CI do Levi não recebe Environment, secrets ou entrada operacional", () =>
     assert(ci.jobs.checks.needs.includes(name));
   }
   const deploy = parse(
-    readFileSync(join(root, ".github/workflows/deploy-dev.yml"), "utf8"),
+    readFileSync(join(root, ".github/workflows/deploy-levi-dev.yml"), "utf8"),
   );
   assert.deepEqual(Object.keys(deploy.on), ["workflow_dispatch"]);
   assert.equal(

@@ -1,47 +1,25 @@
-# ADR-006: Foundation DEV-only
+# ADR-006: Ambientes por aplicação
 
-- Status: aceito
-- Escopo: v0.1
+- Status: aceito; atualizado após remoção do exemplo D1
+- Escopo: operação do monorepo
 
 ## Contexto
 
-O Foundation fornece packages e valida a integração com `examples/links`. Essa
-aplicação de referência não é um produto de produção. Cada aplicação consumidora
-é responsável pelos próprios ambientes DEV e PROD.
+A fundação fornece pacotes compartilhados. O exemplo e suas automações DEV foram
+removidos; o Levi mantém recursos e operação próprios.
 
 ## Decisão
 
-O fluxo do exemplo no ambiente Cloudflare DEV aceita somente
-`workflow_dispatch`, com SHA atual de master e CI aprovada. A entrada automática
-`workflow_run` foi retirada; reativação e execução continuam dependendo de
-autorizações próprias. O workflow permanece suspenso nesta preparação. O Worker
-usa o Custom Domain `foundation.t00ls.dev`, sem `*.workers.dev` nem Preview
-URLs. O Foundation não provisiona nem implanta um ambiente PROD.
-
-O D1 e os secrets são exclusivos de DEV. A política aprovada exige que
-migrations persistentes tenham operação independente e autorizada, sem execução
-automática em CI, deploy ou inicialização. Replays sintéticos isolados continuam
-permitidos como testes. O coordenador existente ainda precisa ser desacoplado:
-DEV coordena `expand → deploy → [backfill] → contract` com fases em workflow
-próprio, metadata versionada e journal nativo. Deploy verifica pré-condições
-read-only e termina com smoke Worker/SHA/D1. Contract exige evidências atuais;
-tempo é proteção adicional, inicialmente zero. Dirty exige recuperação
-explícita. Falhas de schema preferem forward-fix.
-
-A entrada manual preserva o ciclo e o protocolo existentes, sem separar as fases
-persistentes em execuções independentes. O
-[bloqueio de autorização e evidência](../runbooks/migrations.md#política-aprovada-e-desacoplamento-pendente)
-precisa ser resolvido antes de separar as fases, sem interromper deploys por uma
-adaptação parcial. A entrada manual do ciclo completo não equivale a declarar
-concluída a política de desacoplamento.
+Cada aplicação define ambientes, secrets e políticas de promoção. O deploy do
+Levi permanece manual, condicionado à CI aprovada do SHA exato e aos gates
+existentes. CI usa bancos descartáveis sem credenciais persistentes. Migrations
+persistentes exigem operação independente e autorizada, sem execução automática
+em CI, deploy ou startup. Nenhum recurso remoto foi excluído nesta remoção.
 
 ## Consequências
 
-- DEV oferece feedback contínuo remoto sem operar um produto em PROD.
-- Consumidores definem e operam seus próprios ambientes e políticas de promoção.
-- Rollback de código não deve presumir rollback destrutivo de migration.
-- O fluxo local continua separado do D1 e dos secrets remotos.
-- Operações/recuperação são serializadas sem cancelar migration iniciada; CI usa
-  bancos descartáveis, nunca o DEV persistente.
-- O [runbook de migrations](../runbooks/migrations.md) define classificação,
-  evidências, limites da validação SQL e recuperação auditável.
+- Criar um PR não autoriza merge, deploy ou publicação.
+- Rollback de código não presume rollback destrutivo de migration.
+- Infraestrutura remota antiga exige inventário e autorização separados.
+- O [runbook de migrations](../runbooks/migrations.md) mantém os contratos de
+  evolução.

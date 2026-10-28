@@ -10,19 +10,17 @@ Ele verifica a formatação e executa lint, typecheck, testes unitários,
 integrações, builds e Playwright. O Docker deve estar disponível para PostgreSQL
 por Testcontainers. O Playwright requer Chromium instalado.
 
-Inclui `pnpm test:migrations`: fases/metadata, SQL conservador, guards
-CI/deploy, dirty/retry/recuperação e evidências de contract, com ciclo em D1
-Miniflare descartável. Não usa credenciais remotas. CI obtém histórico Git
-completo para conferir imutabilidade dos SQL versionados.
+Inclui `pnpm test:operations`, com testes dos diagnósticos compartilhados de
+deploy.
 
-Em Actions, o gate completo é dividido entre `static`, `tests`, quatro shards
-`e2e` (com Chromium e ambiente próprios) e contratos de consumo local. O Levi
-possui jobs próprios `levi-tests` e `levi-e2e`, sem secrets ou Environment. O
-agregador obrigatório `checks` exige sucesso de todos esses jobs, inclusive de
-todas as entradas das matrizes; falha, cancelamento ou skip bloqueiam o gate.
-Deploy valida a CI aprovada do SHA exato. Não se substituem testes por cache de
-resultados. Reexecuções da CI e SHAs distintos (PR/merge) continuam sendo
-validados integralmente. Veja [Pacotes internos](packages.md).
+Em Actions, o gate completo é dividido entre `static`, `tests`, contratos de
+consumo local. O Levi possui jobs próprios `levi-tests` e `levi-e2e`, sem
+secrets ou Environment. O agregador obrigatório `checks` exige sucesso de todos
+esses jobs, inclusive de todas as entradas das matrizes; falha, cancelamento ou
+skip bloqueiam o gate. Deploy valida a CI aprovada do SHA exato. Não se
+substituem testes por cache de resultados. Reexecuções da CI e SHAs distintos
+(PR/merge) continuam sendo validados integralmente. Veja
+[Pacotes internos](packages.md).
 
 ### Resumos no GitHub Actions
 
@@ -31,25 +29,12 @@ Os testes Vitest exibem um resumo compacto por pacote e suíte em
 Incluem Passed, Failed, Skipped (também `todo`), Flaky e duração desde a
 inicialização do reporter. No Vitest, Flaky é subconjunto de Passed.
 
-Cada shard Playwright apresenta sua identificação `N/4`, as contagens finais
-obtidas por `TestCase.outcome()` e a duração nativa. Passed significa resultado
-esperado, incluindo falhas esperadas; Flaky é separado de Passed. Erros de
-coleta/setup são destacados sem transformá-los em falhas de testes fictícias. O
-reporter `github`, os retries e os traces existentes continuam ativos.
-
 As durações dos reporters não incluem setup de Node/dependências nem builds
 anteriores. Os checks estáticos mantêm os diagnósticos e estados de steps
-nativos do Actions. Deploy/migrations apresentam os resultados estruturados e
-outcomes dos steps conforme [Deploy](deployment.md#resumos-do-actions).
-`pnpm test:migrations` inclui os contratos de renderização: execução,
-reaplicação, no-op, falha/dirty, inelegibilidade, cancelamento, JSON incompleto,
-proteção de informações sensíveis e falhas de escrita. Usa um JSON real
-sanitizado do Deploy DEV #84 e variações no formato dos registros existentes,
-sem mutation remota.
-
-Os resumos são informativos: nenhuma contagem é extraída de logs, o estado e o
-exit code dos frameworks determinam o gate, e falhas de escrita de resumo não
-alteram os resultados. Nenhum serviço externo ou runner adicional é necessário.
+nativos do Actions. Os resumos são informativos: nenhuma contagem é extraída de
+logs, o estado e o exit code dos frameworks determinam o gate, e falhas de
+escrita de resumo não alteram os resultados. Nenhum serviço externo ou runner
+adicional é necessário.
 
 ## Durante o desenvolvimento
 
@@ -94,40 +79,13 @@ memória, sem envio real ou alteração dos defaults de autenticação.
 
 O Worker sintético é compilado em memória com a condição `workerd` (necessária
 para `pg-cloudflare`) e executado em Miniflare com a data de compatibilidade
-`2025-09-01` e `nodejs_compat`, como Links. Invocações distintas criam conexões
-próprias, executam queries raw/Drizzle e testam commit/rollback de audit. O
-binding Hyperdrive local aponta somente ao container descartável: não exercita o
+`2025-09-01` e `nodejs_compat`.. Invocações distintas criam conexões próprias,
+executam queries raw/Drizzle e testam commit/rollback de audit. O binding
+Hyperdrive local aponta somente ao container descartável: não exercita o
 pooling/cache do serviço nem comprova compatibilidade remota com Hyperdrive.
 
 As fixtures de auth e o SQL audit existente são aplicados somente no container;
 nenhuma migration de banco persistente é executada por esse harness.
-
-## Links (`examples/links`)
-
-```bash
-pnpm --filter @t00ls-dev/example-links test
-pnpm --filter @t00ls-dev/example-links test:integration
-pnpm --filter @t00ls-dev/example-links build
-pnpm --filter @t00ls-dev/example-links test:e2e
-```
-
-Integração aplica as migrations reais em D1 Miniflare descartável e cobre auth,
-CRUD, filtros, isolamento A/B, CSRF, expiração/revogação e múltiplos Set-Cookie.
-Também injeta falhas na execução de queries para verificar confirmação de logout
-sem renovação, retry após recuperação e ausência de tokens/parâmetros nos logs.
-E2E usa um Worker/configuração próprios, captura e-mail em banco temporário e
-valida os cenários de `examples/links/e2e` em desktop e mobile, incluindo `401`
-de mutação antiga após login de outra identidade sem recarregar a página. Nenhum
-teste envia e-mail real. A caixa `/__test/mail` pertence apenas a
-`e2e/worker.ts`, fora do bundle DEV. O harness não reutiliza servidor ou estado
-de desenvolvimento e executa migration duas vezes para conferir reaplicação
-idempotente pelo journal Wrangler.
-
-O E2E de security headers usa também o Worker de produção compilado e Workers
-Assets reais em Wrangler local (porta 5175, D1 descartável e chaves Turnstile
-fictícias). Por isso requer o build antes de `test:e2e`, já ordenado pelo gate
-`pnpm check`. Verifica a resposta final de `/`, `/bookmarks`, um JavaScript
-estático e `/health`, incluindo CSP, proteção contra framing e Referrer-Policy.
 
 ## Contratos de preparação do workspace
 
@@ -140,8 +98,7 @@ A [aplicação](../../apps/levi/README.md) preserva `node:test` via tsx,
 PostgreSQL sintético, ACLs restritas, Node/web, dry-run Worker e E2E
 desktop/mobile/proxy. O build usa os exports públicos e `^build` dos pacotes
 workspace; não depende de publicação npm. A CI separa o Levi dos comandos que
-encaminham reporters Vitest e dos shards do Links para não duplicar ou omitir
-sua cobertura.
+encaminham reporters Vitest para não duplicar ou omitir sua cobertura.
 
 `pnpm test:levi:runtime`, incluído no gate local, executa dry-run Worker,
 integração/Worker e E2E com `--runtime-acls`. As tasks normais continuam

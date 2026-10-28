@@ -5,7 +5,7 @@
 
 ## Contexto
 
-Links e Levi consomem pacotes locais; a distribuição npm adicionava um ciclo de
+O Levi consomem pacotes locais; a distribuição npm adicionava um ciclo de
 release desnecessário ao desenvolvimento integrado.
 
 ## Decisão
