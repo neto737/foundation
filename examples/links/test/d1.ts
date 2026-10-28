@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
-import { Miniflare } from "miniflare";
+import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
 // Preserve real D1 execution while injecting failures at execution, not prepare.
 export function faultD1Queries(
@@ -53,11 +53,13 @@ export function faultD1Queries(
 }
 
 export async function createTestDatabase() {
-  const miniflare = new Miniflare({
-    d1Databases: ["DB"],
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-  });
+  const miniflare = new Miniflare(
+    convertV4MiniflareOptions({
+      d1Databases: ["DB"],
+      modules: true,
+      script: "export default { fetch() { return new Response('ok') } }",
+    }),
+  );
   const binding = await miniflare.getD1Database("DB");
   return { miniflare, binding };
 }

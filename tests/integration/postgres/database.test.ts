@@ -26,7 +26,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { build } from "esbuild";
-import { Miniflare } from "miniflare";
+import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import type { Client } from "pg";
 import {
   GenericContainer,
@@ -756,14 +756,16 @@ describe("PostgreSQL adapter", () => {
     });
     const script = bundle.outputFiles[0]?.text;
     if (!script) throw new Error("Worker bundle was not generated");
-    const miniflare = new Miniflare({
-      // Exercise the same compatibility date as Links, supported by installed workerd.
-      modules: true,
-      script,
-      compatibilityDate: "2025-09-01",
-      compatibilityFlags: ["nodejs_compat"],
-      hyperdrives: { HYPERDRIVE: url() },
-    });
+    const miniflare = new Miniflare(
+      convertV4MiniflareOptions({
+        // Exercise the same compatibility date as Links, supported by installed workerd.
+        modules: true,
+        script,
+        compatibilityDate: "2025-09-01",
+        compatibilityFlags: ["nodejs_compat"],
+        hyperdrives: { HYPERDRIVE: url() },
+      }),
+    );
     try {
       for (let invocation = 0; invocation < 2; invocation++) {
         const response = await miniflare.dispatchFetch(
