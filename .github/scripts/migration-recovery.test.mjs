@@ -20,7 +20,7 @@ import {
 const require = createRequire(
   new URL("../../examples/links/package.json", import.meta.url),
 );
-const { Miniflare } = require("miniflare");
+const { convertV4MiniflareOptions, Miniflare } = require("miniflare");
 const sha = "a".repeat(40);
 const context = { sha, runId: "200", attempt: "1", actor: "local-test" };
 
@@ -109,11 +109,13 @@ function fixture() {
 // Only the HTTP transport/native invocation is replaced. State, SQL CAS,
 // audit writes, reconciliation and the recovery algorithm are production code.
 async function withDatabase(fn) {
-  const mf = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('local') } }",
-    d1Databases: ["DB"],
-  });
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      script: "export default { fetch() { return new Response('local') } }",
+      d1Databases: ["DB"],
+    }),
+  );
   const db = await mf.getD1Database("DB");
   const previousFetch = globalThis.fetch;
   const previousAccount = process.env.CLOUDFLARE_ACCOUNT_ID;

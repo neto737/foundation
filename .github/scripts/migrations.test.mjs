@@ -502,12 +502,14 @@ test("real local D1: intent uniqueness, phased native journal, rollback, resume 
   const require = createRequire(
     new URL("../../examples/links/package.json", import.meta.url),
   );
-  const { Miniflare } = require("miniflare");
-  const mf = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('test') } }",
-    d1Databases: ["DB"],
-  });
+  const { convertV4MiniflareOptions, Miniflare } = require("miniflare");
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      script: "export default { fetch() { return new Response('test') } }",
+      d1Databases: ["DB"],
+    }),
+  );
   try {
     const db = await mf.getD1Database("DB");
     const parts = (sql) =>
