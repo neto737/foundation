@@ -39,6 +39,7 @@ describe("Foundation TOTP integration on the production Links D1 migration", () 
     expect(Object.keys(h.foundationAuth()).sort()).toEqual([
       "handler",
       "resolveSession",
+      "setInitialPassword",
     ]);
     const jar = await h.signup();
     const before = await resolved(jar);
@@ -161,11 +162,13 @@ describe("Foundation TOTP integration on the production Links D1 migration", () 
       "/two-factor/verify-otp",
       "/two-factor/view-backup-codes",
       "/totp/generate",
+      "/set-password",
     ]) {
       expect(
         (
           await h.request(path, jar, {
             password,
+            newPassword: password,
             code: "unused",
             trustDevice: true,
           })
@@ -175,6 +178,7 @@ describe("Foundation TOTP integration on the production Links D1 migration", () 
     expect(Object.keys(h.foundationAuth()).sort()).toEqual([
       "handler",
       "resolveSession",
+      "setInitialPassword",
     ]);
     expect((await resolved(jar)).data?.user.twoFactorEnabled).toBe(true);
   });
