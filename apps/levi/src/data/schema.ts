@@ -1,3 +1,5 @@
+import type { FeatureKey, FeaturePolicy } from "../feature-contracts.js";
+import type { MemberProfile } from "../member-types.js";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -232,13 +234,8 @@ export const featureFlags = pgTable(
   "feature_flags",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    key: text("key")
-      .$type<import("../feature-contracts.js").FeatureKey>()
-      .notNull()
-      .unique(),
-    policy: text("policy")
-      .$type<import("../feature-contracts.js").FeaturePolicy["kind"]>()
-      .notNull(),
+    key: text("key").$type<FeatureKey>().notNull().unique(),
+    policy: text("policy").$type<FeaturePolicy["kind"]>().notNull(),
     version: integer("version").notNull().default(1),
     updatedAt: instant("updated_at").notNull().defaultNow(),
     updatedBy: uuid("updated_by").notNull(),
@@ -358,9 +355,7 @@ export const memberProfileHistory = pgTable(
     memberId: uuid("member_id").notNull(),
     actorId: uuid("actor_id").notNull(),
     version: integer("version").notNull(),
-    previousProfile: jsonb("previous_profile")
-      .$type<import("../member-types.js").MemberProfile>()
-      .notNull(),
+    previousProfile: jsonb("previous_profile").$type<MemberProfile>().notNull(),
     createdAt: instant("created_at").notNull().defaultNow(),
   },
   (t) => [

@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => {
       process.stderr.write("Falha no servidor de desenvolvimento.\n");
     logger.warn = () =>
       process.stderr.write("Aviso do servidor de desenvolvimento.\n");
-    logger.warnOnce = logger.warn;
+    logger.warnOnce = (message, options) => logger.warn(message, options);
   }
   return {
     root: fileURLToPath(new URL("./web", import.meta.url)),
