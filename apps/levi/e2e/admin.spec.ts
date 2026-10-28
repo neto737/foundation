@@ -150,7 +150,7 @@ test("políticas selected/all/disabled exigem seleção e confirmação e preser
     await expect(
       page.getByText("Política de Membros atualizada.", { exact: true }),
     ).toBeVisible();
-    const policy = await database.client.query(
+    const policy = await database.client.query<{ policy: string }>(
       "SELECT policy FROM feature_flags WHERE key='members'",
     );
     expect(policy.rows[0]?.policy).toBe("disabled");
